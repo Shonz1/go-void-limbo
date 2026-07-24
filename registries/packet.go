@@ -77,5 +77,10 @@ func (r *PacketRegistry) GetClientboundId(phase types.Phase, packet reflect.Type
 		return -1
 	}
 
-	return packetRegistry[protocolVersion.ID]
+	id, ok := packetRegistry[protocolVersion.ID]
+	if !ok {
+		return -1
+	}
+
+	return id
 }

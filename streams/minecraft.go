@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -47,7 +48,7 @@ func (s *MinecraftStream) WriteByte(b byte) error {
 
 func (s *MinecraftStream) ReadBytes(size int32) ([]byte, error) {
 	buf := make([]byte, size)
-	_, err := s.stream.Read(buf)
+	_, err := io.ReadFull(s.stream, buf)
 	return buf, err
 }
 

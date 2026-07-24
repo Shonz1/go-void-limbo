@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
@@ -112,6 +111,7 @@ func main() {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		slog.Error(fmt.Sprintf("Failed to start server: %v", err))
+		return
 	}
 
 	defer listener.Close()
@@ -125,7 +125,7 @@ func main() {
 			continue
 		}
 
-		go handleConnection(context.Background(), conn, packetRegistry)
+		go handleConnection(conn, packetRegistry)
 	}
 }
 
@@ -136,8 +136,7 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
 }
 
-func handleConnection(ctx context.Context, conn net.Conn, packetRegistry *registries.PacketRegistry) {
-	defer ctx.Done()
+func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
