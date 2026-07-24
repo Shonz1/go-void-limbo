@@ -5,7 +5,7 @@ import "go-void-limbo/streams"
 type PacketId = int32
 
 type ServerboundPacket interface {
-	ToString() string
+	String() string
 }
 
 type ClientboundPacket interface {

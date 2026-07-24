@@ -9,7 +9,7 @@ import (
 
 type fakeServerboundPacket struct{}
 
-func (p *fakeServerboundPacket) ToString() string { return "fakeServerboundPacket" }
+func (p *fakeServerboundPacket) String() string { return "fakeServerboundPacket" }
 
 type fakeClientboundPacket struct{}
 

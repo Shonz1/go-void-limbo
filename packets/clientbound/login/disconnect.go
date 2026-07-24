@@ -9,8 +9,8 @@ type DisconnectClientboundPacket struct {
 	Reason string
 }
 
-func (p *DisconnectClientboundPacket) ToString() string {
-	return fmt.Sprintf("DisconnectClientboundPacket %v", p)
+func (p *DisconnectClientboundPacket) String() string {
+	return fmt.Sprintf("DisconnectClientboundPacket{Reason:%s}", p.Reason)
 }
 
 func (p *DisconnectClientboundPacket) Encode(minecraftStream *streams.MinecraftStream) error {

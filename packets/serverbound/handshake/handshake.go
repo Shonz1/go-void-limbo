@@ -13,8 +13,8 @@ type HandshakeServerboundPacket struct {
 	Intent          int32
 }
 
-func (p *HandshakeServerboundPacket) ToString() string {
-	return fmt.Sprintf("HandshakeServerboundPacket %v", p)
+func (p *HandshakeServerboundPacket) String() string {
+	return fmt.Sprintf("HandshakeServerboundPacket{ProtocolVersion:%d ServerAddress:%s ServerPort:%d Intent:%d}", p.ProtocolVersion, p.ServerAddress, p.ServerPort, p.Intent)
 }
 
 func DecodeHandshakeServerboundPacket(minecraftStream *streams.MinecraftStream) (types.ServerboundPacket, error) {

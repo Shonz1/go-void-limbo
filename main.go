@@ -57,7 +57,7 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, error) {
 		return nil, fmt.Errorf("failed to decode packet: %w", err)
 	}
 
-	slog.Info("packet received", "packet", packet.ToString())
+	slog.Info("packet received", "packet", packet)
 
 	return packet, nil
 }

@@ -11,8 +11,8 @@ type LoginStartServerboundPacket struct {
 	Uuid string
 }
 
-func (p *LoginStartServerboundPacket) ToString() string {
-	return fmt.Sprintf("LoginStartServerboundPacket %v", p)
+func (p *LoginStartServerboundPacket) String() string {
+	return fmt.Sprintf("LoginStartServerboundPacket{Name:%s Uuid:%s}", p.Name, p.Uuid)
 }
 
 func DecodeLoginStartServerboundPacket(minecraftStream *streams.MinecraftStream) (types.ServerboundPacket, error) {
