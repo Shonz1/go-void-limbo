@@ -49,27 +49,27 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, error) {
 
 	packetDecoder := c.packetRegistry.GetServerbound(c.Phase, c.ProtocolVersion, packetId)
 	if packetDecoder == nil {
-		return nil, errors.New(fmt.Sprintf("Unknown packet id: %d", packetId))
+		return nil, fmt.Errorf("unknown packet id: %d", packetId)
 	}
 
 	packet, err := packetDecoder(c.stream)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Failed to decode packet: %v", err))
+		return nil, fmt.Errorf("failed to decode packet: %w", err)
 	}
 
-	slog.Info(fmt.Sprintf("Packet received: %s", packet.ToString()))
+	slog.Info("packet received", "packet", packet.ToString())
 
 	return packet, nil
 }
 
 func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
 	if packet == nil {
-		return errors.New("Packet is nil")
+		return errors.New("packet is nil")
 	}
 
 	packetId := c.packetRegistry.GetClientboundId(c.Phase, reflect.TypeOf(packet).Elem(), c.ProtocolVersion)
 	if packetId == -1 {
-		return errors.New("Unknown packet id")
+		return errors.New("unknown packet id")
 	}
 
 	buf := new(bytes.Buffer)
@@ -110,18 +110,18 @@ func main() {
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to start server: %v", err))
+		slog.Error("failed to start server", "err", err)
 		return
 	}
 
 	defer listener.Close()
 
-	slog.Info(fmt.Sprintf("TCP Server is running on port %s...", address))
+	slog.Info("TCP server is running", "address", address)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			slog.Error(fmt.Sprintf("Failed to accept connection: %v", err))
+			slog.Error("failed to accept connection", "err", err)
 			continue
 		}
 
@@ -140,7 +140,7 @@ func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) 
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
-	slog.Info(fmt.Sprintf("New client connected: %s", remoteAddr))
+	slog.Info("new client connected", "addr", remoteAddr)
 
 	mc := &MinecraftClient{ProtocolVersion: types.ProtocolVersions.ZERO, Phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry}
 
@@ -151,7 +151,7 @@ func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) 
 				return
 			}
 
-			slog.Error(fmt.Sprintf("Failed to read packet size: %v", err))
+			slog.Error("failed to read packet size", "err", err)
 			continue
 		}
 
@@ -164,7 +164,7 @@ func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) 
 			p := clientboundLogin.DisconnectClientboundPacket{Reason: `{"text": "TODO"}`}
 			err = mc.WritePacket(&p)
 			if err != nil {
-				slog.Error(fmt.Sprintf("Failed to encode DisconnectClientboundPacket: %v", err))
+				slog.Error("failed to encode DisconnectClientboundPacket", "err", err)
 				continue
 			}
 		}
