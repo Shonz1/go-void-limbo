@@ -46,13 +46,9 @@ func (r *PacketRegistry) RegisterClientbound(phase types.Phase, packet reflect.T
 	r.encoderRegistry[clientboundKey{Phase: phase, PacketType: packet, ProtocolID: protocolVersion.ID}] = packetId
 }
 
-func (r *PacketRegistry) GetServerbound(phase types.Phase, protocolVersion types.ProtocolVersion, packetId types.PacketId) *ServerboundEntry {
+func (r *PacketRegistry) GetServerbound(phase types.Phase, protocolVersion types.ProtocolVersion, packetId types.PacketId) (ServerboundEntry, bool) {
 	entry, ok := r.serverboundRegistry[serverboundKey{Phase: phase, ProtocolID: protocolVersion.ID, PacketID: packetId}]
-	if !ok {
-		return nil
-	}
-
-	return &entry
+	return entry, ok
 }
 
 func (r *PacketRegistry) GetClientboundId(phase types.Phase, packet reflect.Type, protocolVersion types.ProtocolVersion) types.PacketId {

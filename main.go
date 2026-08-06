@@ -82,8 +82,8 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 		return nil, nil, err
 	}
 
-	entry := c.packetRegistry.GetServerbound(c.phase, c.protocolVersion, packetId)
-	if entry == nil || entry.Decoder == nil {
+	entry, ok := c.packetRegistry.GetServerbound(c.phase, c.protocolVersion, packetId)
+	if !ok || entry.Decoder == nil {
 		return nil, nil, fmt.Errorf("unknown packet id: %d", packetId)
 	}
 
