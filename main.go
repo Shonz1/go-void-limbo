@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go-void-limbo/handlers"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
@@ -18,6 +19,9 @@ import (
 
 const address = ":25565"
 
+// maxPacketSize is the largest packet body the protocol allows (2^21 - 1 bytes).
+const maxPacketSize = 2097151
+
 func VarIntSize(value int32) int {
 	uvalue := uint32(value)
 	size := 1
@@ -29,37 +33,68 @@ func VarIntSize(value int32) int {
 }
 
 type MinecraftClient struct {
-	ProtocolVersion types.ProtocolVersion
-	Phase           types.Phase
+	protocolVersion types.ProtocolVersion
+	phase           types.Phase
 	conn            net.Conn
 	stream          *streams.MinecraftStream
 	packetRegistry  *registries.PacketRegistry
 }
 
-func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, error) {
-	_, err := c.stream.ReadVarInt()
+func (c *MinecraftClient) ProtocolVersion() types.ProtocolVersion {
+	return c.protocolVersion
+}
+
+func (c *MinecraftClient) SetProtocolVersion(protocolVersion types.ProtocolVersion) {
+	c.protocolVersion = protocolVersion
+}
+
+func (c *MinecraftClient) Phase() types.Phase {
+	return c.phase
+}
+
+func (c *MinecraftClient) SetPhase(phase types.Phase) {
+	c.phase = phase
+}
+
+// ReadPacket decodes the next packet and returns the handler registered for it,
+// which may be nil when the packet needs no reaction. The packet body is consumed
+// from the connection in full before decoding, so an unknown packet id or a failed
+// decode cannot desynchronize subsequent reads.
+func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHandler, error) {
+	length, err := c.stream.ReadVarInt()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	packetId, err := c.stream.ReadVarInt()
-	if err != nil {
-		return nil, err
+	if length < 1 || length > maxPacketSize {
+		return nil, nil, fmt.Errorf("invalid packet length: %d", length)
 	}
 
-	packetDecoder := c.packetRegistry.GetServerbound(c.Phase, c.ProtocolVersion, packetId)
-	if packetDecoder == nil {
-		return nil, fmt.Errorf("unknown packet id: %d", packetId)
+	body, err := c.stream.ReadBytes(length)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	packet, err := packetDecoder(c.stream)
+	bodyStream := streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(body))
+
+	packetId, err := bodyStream.ReadVarInt()
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode packet: %w", err)
+		return nil, nil, err
+	}
+
+	entry, ok := c.packetRegistry.GetServerbound(c.phase, c.protocolVersion, packetId)
+	if !ok || entry.Decoder == nil {
+		return nil, nil, fmt.Errorf("unknown packet id: %d", packetId)
+	}
+
+	packet, err := entry.Decoder(bodyStream)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decode packet: %w", err)
 	}
 
 	slog.Info("packet received", "packet", packet)
 
-	return packet, nil
+	return packet, entry.Handler, nil
 }
 
 func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
@@ -67,7 +102,7 @@ func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
 		return errors.New("packet is nil")
 	}
 
-	packetId := c.packetRegistry.GetClientboundId(c.Phase, reflect.TypeOf(packet).Elem(), c.ProtocolVersion)
+	packetId := c.packetRegistry.GetClientboundId(c.phase, reflect.TypeOf(packet).Elem(), c.protocolVersion)
 	if packetId == -1 {
 		return errors.New("unknown packet id")
 	}
@@ -130,8 +165,8 @@ func main() {
 }
 
 func registerPackets(packetRegistry *registries.PacketRegistry) {
-	packetRegistry.RegisterServerbound(types.PhaseHandshake, types.ProtocolVersions.ZERO, 0x00, handshake.DecodeHandshakeServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, login.DecodeLoginStartServerboundPacket)
+	packetRegistry.RegisterServerbound(types.PhaseHandshake, types.ProtocolVersions.ZERO, 0x00, handshake.DecodeHandshakeServerboundPacket, handlers.HandleHandshakeServerboundPacket)
+	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, login.DecodeLoginStartServerboundPacket, handlers.HandleLoginStartServerboundPacket)
 
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
 }
@@ -142,31 +177,25 @@ func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) 
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("new client connected", "addr", remoteAddr)
 
-	mc := &MinecraftClient{ProtocolVersion: types.ProtocolVersions.ZERO, Phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry}
+	mc := &MinecraftClient{protocolVersion: types.ProtocolVersions.ZERO, phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry}
 
 	for {
-		packet, err := mc.ReadPacket()
+		packet, handler, err := mc.ReadPacket()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return
 			}
 
-			slog.Error("failed to read packet size", "err", err)
+			slog.Error("failed to read packet", "err", err)
 			continue
 		}
 
-		switch typedPacket := packet.(type) {
-		case *handshake.HandshakeServerboundPacket:
-			mc.ProtocolVersion = types.GetProtocolVersionById(types.ProtocolId(typedPacket.ProtocolVersion))
-			mc.Phase = types.Phase(typedPacket.Intent)
+		if handler == nil {
+			continue
+		}
 
-		case *login.LoginStartServerboundPacket:
-			p := clientboundLogin.DisconnectClientboundPacket{Reason: `{"text": "TODO"}`}
-			err = mc.WritePacket(&p)
-			if err != nil {
-				slog.Error("failed to encode DisconnectClientboundPacket", "err", err)
-				continue
-			}
+		if err := handler(mc, packet); err != nil {
+			slog.Error("failed to handle packet", "packet", packet, "err", err)
 		}
 	}
 }

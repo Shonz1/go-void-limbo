@@ -17,25 +17,37 @@ func decodeFake(ms *streams.MinecraftStream) (types.ServerboundPacket, error) {
 	return &fakeServerboundPacket{}, nil
 }
 
+func handleFake(client types.Client, packet types.ServerboundPacket) error {
+	return nil
+}
+
 func TestRegisterAndGetServerbound(t *testing.T) {
 	r := NewPacketRegistry()
-	r.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, decodeFake)
+	r.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, decodeFake, handleFake)
 
-	decoder := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00)
-	if decoder == nil {
-		t.Fatal("expected registered decoder, got nil")
+	entry, ok := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00)
+	if !ok {
+		t.Fatal("expected registered entry, got none")
 	}
 
-	if r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x01) != nil {
-		t.Error("expected nil for unregistered packet id")
+	if entry.Decoder == nil {
+		t.Error("expected registered decoder, got nil")
 	}
 
-	if r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.ZERO, 0x00) != nil {
-		t.Error("expected nil for unregistered protocol version")
+	if entry.Handler == nil {
+		t.Error("expected registered handler, got nil")
 	}
 
-	if r.GetServerbound(types.PhaseStatus, types.ProtocolVersions.MINECRAFT_26_2, 0x00) != nil {
-		t.Error("expected nil for unregistered phase")
+	if _, ok := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x01); ok {
+		t.Error("expected no entry for unregistered packet id")
+	}
+
+	if _, ok := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.ZERO, 0x00); ok {
+		t.Error("expected no entry for unregistered protocol version")
+	}
+
+	if _, ok := r.GetServerbound(types.PhaseStatus, types.ProtocolVersions.MINECRAFT_26_2, 0x00); ok {
+		t.Error("expected no entry for unregistered phase")
 	}
 }
 
