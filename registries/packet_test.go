@@ -17,13 +17,25 @@ func decodeFake(ms *streams.MinecraftStream) (types.ServerboundPacket, error) {
 	return &fakeServerboundPacket{}, nil
 }
 
+func handleFake(client types.Client, packet types.ServerboundPacket) error {
+	return nil
+}
+
 func TestRegisterAndGetServerbound(t *testing.T) {
 	r := NewPacketRegistry()
-	r.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, decodeFake)
+	r.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, decodeFake, handleFake)
 
-	decoder := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00)
-	if decoder == nil {
-		t.Fatal("expected registered decoder, got nil")
+	entry := r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00)
+	if entry == nil {
+		t.Fatal("expected registered entry, got nil")
+	}
+
+	if entry.Decoder == nil {
+		t.Error("expected registered decoder, got nil")
+	}
+
+	if entry.Handler == nil {
+		t.Error("expected registered handler, got nil")
 	}
 
 	if r.GetServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x01) != nil {
