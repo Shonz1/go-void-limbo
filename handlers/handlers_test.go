@@ -90,6 +90,22 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleLoginAcknowledgedServerboundPacketEntersConfiguration(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin}
+
+	if err := HandleLoginAcknowledgedServerboundPacket(client, &login.LoginAcknowledgedServerboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client.Phase() != types.PhaseConfiguration {
+		t.Errorf("expected phase %d, got %d", types.PhaseConfiguration, client.Phase())
+	}
+
+	if len(client.written) != 0 {
+		t.Errorf("expected no written packets, got %d", len(client.written))
+	}
+}
+
 func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	client := &fakeClient{}
 
@@ -98,6 +114,10 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	}
 
 	if err := HandleLoginStartServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
+		t.Error("expected an error for a mismatched packet type")
+	}
+
+	if err := HandleLoginAcknowledgedServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
 		t.Error("expected an error for a mismatched packet type")
 	}
 }
