@@ -17,8 +17,11 @@ type fakeClient struct {
 	// writePhases records the phase the client was in as each packet was
 	// written, since that phase is what the real client resolves a clientbound
 	// packet id from.
-	writePhases []types.Phase
+	writePhases     []types.Phase
+	registryPackets []types.ClientboundPacket
 }
+
+func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
 
 func (c *fakeClient) ProtocolVersion() types.ProtocolVersion { return c.protocolVersion }
 
@@ -98,7 +101,11 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 }
 
 func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin}
+	registries := []types.ClientboundPacket{
+		clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:dimension_type", []byte{0x01}),
+		clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:worldgen/biome", []byte{0x02}),
+	}
+	client := &fakeClient{phase: types.PhaseLogin, registryPackets: registries}
 
 	if err := HandleLoginAcknowledgedServerboundPacket(client, &login.LoginAcknowledgedServerboundPacket{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -108,18 +115,29 @@ func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testin
 		t.Errorf("expected phase %d, got %d", types.PhaseConfiguration, client.Phase())
 	}
 
-	if len(client.written) != 1 {
-		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	if len(client.written) != len(registries)+1 {
+		t.Fatalf("expected %d written packets, got %d", len(registries)+1, len(client.written))
 	}
 
-	if _, ok := client.written[0].(*clientboundConfiguration.FinishConfigurationClientboundPacket); !ok {
-		t.Errorf("expected *configuration.FinishConfigurationClientboundPacket, got %T", client.written[0])
+	// The client cannot resolve anything the play phase refers to by id until
+	// the registries arrive, so they have to precede finish configuration.
+	for i, want := range registries {
+		if client.written[i] != want {
+			t.Errorf("packet %d = %v, want %v", i, client.written[i], want)
+		}
 	}
 
-	// Writing before the phase moves would resolve the packet id in the login
-	// phase, where finish configuration is not registered.
-	if client.writePhases[0] != types.PhaseConfiguration {
-		t.Errorf("expected the packet to be written in phase %d, got %d", types.PhaseConfiguration, client.writePhases[0])
+	last := client.written[len(client.written)-1]
+	if _, ok := last.(*clientboundConfiguration.FinishConfigurationClientboundPacket); !ok {
+		t.Errorf("expected *configuration.FinishConfigurationClientboundPacket, got %T", last)
+	}
+
+	// Writing before the phase moves would resolve the packet ids in the login
+	// phase, where neither packet is registered.
+	for i, phase := range client.writePhases {
+		if phase != types.PhaseConfiguration {
+			t.Errorf("expected packet %d to be written in phase %d, got %d", i, types.PhaseConfiguration, phase)
+		}
 	}
 }
 

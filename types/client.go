@@ -7,6 +7,11 @@ type Client interface {
 	Phase() Phase
 	SetPhase(phase Phase)
 	WritePacket(packet ClientboundPacket) error
+
+	// RegistryPackets returns the configuration-phase registry packets for this
+	// client's protocol version. The slice is shared across connections and must
+	// not be modified.
+	RegistryPackets() []ClientboundPacket
 }
 
 // PacketHandler reacts to a decoded serverbound packet.
