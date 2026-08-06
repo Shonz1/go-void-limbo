@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 type ReadWriter interface {
@@ -143,6 +145,23 @@ func (s *MinecraftStream) WriteLong(value int64) error {
 	return s.WriteBytes(bytes)
 }
 
+func (s *MinecraftStream) ReadBoolean() (bool, error) {
+	value, err := s.ReadByte()
+	if err != nil {
+		return false, err
+	}
+
+	return value != 0, nil
+}
+
+func (s *MinecraftStream) WriteBoolean(value bool) error {
+	if value {
+		return s.WriteByte(1)
+	}
+
+	return s.WriteByte(0)
+}
+
 func (s *MinecraftStream) ReadUuid() (string, error) {
 	long1, err := s.ReadLong()
 	if err != nil {
@@ -160,4 +179,19 @@ func (s *MinecraftStream) ReadUuid() (string, error) {
 
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
+}
+
+// WriteUuid writes a hyphenated UUID string as the two big-endian longs the
+// protocol expects.
+func (s *MinecraftStream) WriteUuid(value string) error {
+	buf, err := hex.DecodeString(strings.ReplaceAll(value, "-", ""))
+	if err != nil {
+		return fmt.Errorf("invalid uuid %q: %w", value, err)
+	}
+
+	if len(buf) != 16 {
+		return fmt.Errorf("invalid uuid %q: expected 16 bytes, got %d", value, len(buf))
+	}
+
+	return s.WriteBytes(buf)
 }

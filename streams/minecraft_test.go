@@ -138,3 +138,57 @@ func TestReadUuid(t *testing.T) {
 		t.Errorf("ReadUuid mismatch: got %q, want %q", got, want)
 	}
 }
+
+func TestWriteUuid(t *testing.T) {
+	buf := new(bytes.Buffer)
+	s := NewMinecraftStreamFromBuffer(buf)
+
+	if err := s.WriteUuid("01020304-0506-0708-090a-0b0c0d0e0f10"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	want := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+	}
+	if got := buf.Bytes(); !bytes.Equal(got, want) {
+		t.Errorf("WriteUuid wrote %v, want %v", got, want)
+	}
+}
+
+func TestWriteUuidRejectsMalformedInput(t *testing.T) {
+	cases := []string{"", "not-a-uuid", "0102030405060708090a0b0c0d0e0f", "zzzzzzzz-0506-0708-090a-0b0c0d0e0f10"}
+
+	for _, v := range cases {
+		s := NewMinecraftStreamFromBuffer(new(bytes.Buffer))
+		if err := s.WriteUuid(v); err == nil {
+			t.Errorf("WriteUuid(%q) error = nil, want an error", v)
+		}
+	}
+}
+
+func TestBooleanRoundTrip(t *testing.T) {
+	for _, v := range []bool{true, false} {
+		buf := new(bytes.Buffer)
+		s := NewMinecraftStreamFromBuffer(buf)
+
+		if err := s.WriteBoolean(v); err != nil {
+			t.Fatalf("WriteBoolean(%v): %v", v, err)
+		}
+		if err := s.Flush(); err != nil {
+			t.Fatalf("Flush: %v", err)
+		}
+
+		s2 := NewMinecraftStreamFromBuffer(buf)
+		got, err := s2.ReadBoolean()
+		if err != nil {
+			t.Fatalf("ReadBoolean after WriteBoolean(%v): %v", v, err)
+		}
+		if got != v {
+			t.Errorf("Boolean round-trip mismatch: wrote %v, got %v", v, got)
+		}
+	}
+}

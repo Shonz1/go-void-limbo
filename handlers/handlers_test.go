@@ -51,9 +51,9 @@ func TestHandleHandshakeServerboundPacket(t *testing.T) {
 	}
 }
 
-func TestHandleLoginStartServerboundPacketWritesDisconnect(t *testing.T) {
-	client := &fakeClient{}
-	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000000"}
+func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin}
+	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
 
 	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -63,8 +63,30 @@ func TestHandleLoginStartServerboundPacketWritesDisconnect(t *testing.T) {
 		t.Fatalf("expected 1 written packet, got %d", len(client.written))
 	}
 
-	if _, ok := client.written[0].(*clientboundLogin.DisconnectClientboundPacket); !ok {
-		t.Errorf("expected *login.DisconnectClientboundPacket, got %T", client.written[0])
+	loginSuccess, ok := client.written[0].(*clientboundLogin.LoginSuccessClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *login.LoginSuccessClientboundPacket, got %T", client.written[0])
+	}
+
+	if loginSuccess.Profile.Username != packet.Name {
+		t.Errorf("expected username %q, got %q", packet.Name, loginSuccess.Profile.Username)
+	}
+
+	if loginSuccess.Profile.Uuid != packet.Uuid {
+		t.Errorf("expected uuid %q, got %q", packet.Uuid, loginSuccess.Profile.Uuid)
+	}
+
+	if loginSuccess.SessionId == "" {
+		t.Error("expected a generated session id, got an empty string")
+	}
+
+	if loginSuccess.SessionId == loginSuccess.Profile.Uuid {
+		t.Error("expected the session id to differ from the profile uuid")
+	}
+
+	// The client stays in the login phase until it acknowledges the success packet.
+	if client.Phase() != types.PhaseLogin {
+		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
 	}
 }
 
