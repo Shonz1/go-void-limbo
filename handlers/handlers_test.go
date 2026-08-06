@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
+	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
 	"go-void-limbo/types"
@@ -12,6 +14,10 @@ type fakeClient struct {
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
 	written         []types.ClientboundPacket
+	// writePhases records the phase the client was in as each packet was
+	// written, since that phase is what the real client resolves a clientbound
+	// packet id from.
+	writePhases []types.Phase
 }
 
 func (c *fakeClient) ProtocolVersion() types.ProtocolVersion { return c.protocolVersion }
@@ -26,6 +32,7 @@ func (c *fakeClient) SetPhase(phase types.Phase) { c.phase = phase }
 
 func (c *fakeClient) WritePacket(packet types.ClientboundPacket) error {
 	c.written = append(c.written, packet)
+	c.writePhases = append(c.writePhases, c.phase)
 	return nil
 }
 
@@ -90,7 +97,7 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 	}
 }
 
-func TestHandleLoginAcknowledgedServerboundPacketEntersConfiguration(t *testing.T) {
+func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testing.T) {
 	client := &fakeClient{phase: types.PhaseLogin}
 
 	if err := HandleLoginAcknowledgedServerboundPacket(client, &login.LoginAcknowledgedServerboundPacket{}); err != nil {
@@ -99,6 +106,32 @@ func TestHandleLoginAcknowledgedServerboundPacketEntersConfiguration(t *testing.
 
 	if client.Phase() != types.PhaseConfiguration {
 		t.Errorf("expected phase %d, got %d", types.PhaseConfiguration, client.Phase())
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	if _, ok := client.written[0].(*clientboundConfiguration.FinishConfigurationClientboundPacket); !ok {
+		t.Errorf("expected *configuration.FinishConfigurationClientboundPacket, got %T", client.written[0])
+	}
+
+	// Writing before the phase moves would resolve the packet id in the login
+	// phase, where finish configuration is not registered.
+	if client.writePhases[0] != types.PhaseConfiguration {
+		t.Errorf("expected the packet to be written in phase %d, got %d", types.PhaseConfiguration, client.writePhases[0])
+	}
+}
+
+func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseConfiguration}
+
+	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client.Phase() != types.PhasePlay {
+		t.Errorf("expected phase %d, got %d", types.PhasePlay, client.Phase())
 	}
 
 	if len(client.written) != 0 {
@@ -118,6 +151,10 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	}
 
 	if err := HandleLoginAcknowledgedServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
+		t.Error("expected an error for a mismatched packet type")
+	}
+
+	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
 		t.Error("expected an error for a mismatched packet type")
 	}
 }
