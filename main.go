@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go-void-limbo/gamedata"
 	"go-void-limbo/handlers"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
@@ -40,6 +41,11 @@ type MinecraftClient struct {
 	conn            net.Conn
 	stream          *streams.MinecraftStream
 	packetRegistry  *registries.PacketRegistry
+	gameRegistries  *gamedata.Provider
+}
+
+func (c *MinecraftClient) RegistryPackets() []types.ClientboundPacket {
+	return c.gameRegistries.PacketsFor(c.protocolVersion)
 }
 
 func (c *MinecraftClient) ProtocolVersion() types.ProtocolVersion {
@@ -152,6 +158,12 @@ func main() {
 
 	registerPackets(packetRegistry)
 
+	gameRegistries, err := gamedata.NewDefaultProvider()
+	if err != nil {
+		slog.Error("failed to encode game registries", "err", err)
+		return
+	}
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		slog.Error("failed to start server", "err", err)
@@ -169,7 +181,7 @@ func main() {
 			continue
 		}
 
-		go handleConnection(conn, packetRegistry)
+		go handleConnection(conn, packetRegistry, gameRegistries)
 	}
 }
 
@@ -181,16 +193,18 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x02)
+	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
+	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x0D)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.FinishConfigurationClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
 }
 
-func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry) {
+func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry, gameRegistries *gamedata.Provider) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("new client connected", "addr", remoteAddr)
 
-	mc := &MinecraftClient{protocolVersion: types.ProtocolVersions.ZERO, phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry}
+	mc := &MinecraftClient{protocolVersion: types.ProtocolVersions.ZERO, phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry, gameRegistries: gameRegistries}
 
 	for {
 		packet, handler, err := mc.ReadPacket()

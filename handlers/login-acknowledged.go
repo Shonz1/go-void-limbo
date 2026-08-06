@@ -18,8 +18,16 @@ func HandleLoginAcknowledgedServerboundPacket(client types.Client, packet types.
 	// registered for the configuration phase.
 	client.SetPhase(types.PhaseConfiguration)
 
-	// The limbo has nothing to configure, so the configuration phase is finished
-	// as soon as it starts.
+	// The client assembles its registries from these packets and needs them
+	// before it can make sense of anything the play phase refers to by id, so
+	// they go out before it is told configuration is over.
+	for _, registry := range client.RegistryPackets() {
+		if err := client.WritePacket(registry); err != nil {
+			return err
+		}
+	}
+
+	// The limbo has nothing left to configure once the registries are sent.
 	finishConfiguration := clientboundConfiguration.FinishConfigurationClientboundPacket{}
 
 	return client.WritePacket(&finishConfiguration)
