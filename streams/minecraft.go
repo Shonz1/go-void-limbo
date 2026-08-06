@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 )
@@ -130,6 +131,21 @@ func (s *MinecraftStream) WriteShort(value int16) error {
 	return s.WriteBytes(bytes)
 }
 
+func (s *MinecraftStream) ReadInt() (int32, error) {
+	bytes, err := s.ReadBytes(4)
+	if err != nil {
+		return 0, err
+	}
+
+	return int32(binary.BigEndian.Uint32(bytes)), nil
+}
+
+func (s *MinecraftStream) WriteInt(value int32) error {
+	bytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(bytes, uint32(value))
+	return s.WriteBytes(bytes)
+}
+
 func (s *MinecraftStream) ReadLong() (int64, error) {
 	bytes, err := s.ReadBytes(8)
 	if err != nil {
@@ -143,6 +159,32 @@ func (s *MinecraftStream) WriteLong(value int64) error {
 	bytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(bytes, uint64(value))
 	return s.WriteBytes(bytes)
+}
+
+func (s *MinecraftStream) ReadFloat() (float32, error) {
+	bits, err := s.ReadInt()
+	if err != nil {
+		return 0, err
+	}
+
+	return math.Float32frombits(uint32(bits)), nil
+}
+
+func (s *MinecraftStream) WriteFloat(value float32) error {
+	return s.WriteInt(int32(math.Float32bits(value)))
+}
+
+func (s *MinecraftStream) ReadDouble() (float64, error) {
+	bits, err := s.ReadLong()
+	if err != nil {
+		return 0, err
+	}
+
+	return math.Float64frombits(uint64(bits)), nil
+}
+
+func (s *MinecraftStream) WriteDouble(value float64) error {
+	return s.WriteLong(int64(math.Float64bits(value)))
 }
 
 func (s *MinecraftStream) ReadBoolean() (bool, error) {
