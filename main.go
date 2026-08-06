@@ -135,7 +135,14 @@ func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
 		return err
 	}
 
-	return c.stream.Flush()
+	err = c.stream.Flush()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("packet sent", "packet", packet)
+
+	return nil
 }
 
 func main() {

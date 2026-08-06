@@ -9,5 +9,6 @@ type ServerboundPacket interface {
 }
 
 type ClientboundPacket interface {
+	String() string
 	Encode(ms *streams.MinecraftStream) error
 }
