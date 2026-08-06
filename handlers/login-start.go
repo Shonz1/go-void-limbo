@@ -8,12 +8,22 @@ import (
 )
 
 func HandleLoginStartServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
-	_, ok := packet.(*login.LoginStartServerboundPacket)
+	loginStart, ok := packet.(*login.LoginStartServerboundPacket)
 	if !ok {
 		return fmt.Errorf("expected *login.LoginStartServerboundPacket, got %T", packet)
 	}
 
-	disconnect := clientboundLogin.DisconnectClientboundPacket{Reason: `{"text": "TODO"}`}
+	sessionId, err := types.NewRandomUuid()
+	if err != nil {
+		return fmt.Errorf("failed to generate session id: %w", err)
+	}
 
-	return client.WritePacket(&disconnect)
+	// The limbo does not authenticate, so the profile is taken at face value from
+	// the client and carries no skin properties.
+	loginSuccess := clientboundLogin.LoginSuccessClientboundPacket{
+		Profile:   types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name},
+		SessionId: sessionId,
+	}
+
+	return client.WritePacket(&loginSuccess)
 }
