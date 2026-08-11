@@ -173,6 +173,13 @@ type MinecraftClient struct {
 	phase           types.Phase
 	profile         types.GameProfile
 
+	// forwardedLogin is the account a proxy vouched for in the handshake, and
+	// forwarded says whether one arrived at all. Nothing is configured about
+	// this: a connection carries a forwarded login or it does not, and only an
+	// unencrypted server looks.
+	forwarded      bool
+	forwardedLogin types.ForwardedLogin
+
 	// verifyToken is the token an encryption request went out with and has not
 	// been answered yet, and sharedSecret is what the connection ended up
 	// encrypted with. The secret outlives the packet that carried it because the
@@ -238,6 +245,23 @@ func (c *MinecraftClient) EnableCompression(threshold int32) error {
 // with it whether its login is checked with Mojang.
 func (c *MinecraftClient) EncryptionEnabled() bool {
 	return c.encryptionEnabled
+}
+
+// SetForwardedLogin records the account a proxy vouched for in the handshake.
+func (c *MinecraftClient) SetForwardedLogin(forwarded types.ForwardedLogin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.forwarded = true
+	c.forwardedLogin = forwarded
+}
+
+// ForwardedLogin returns what the proxy vouched for, and whether anything did.
+func (c *MinecraftClient) ForwardedLogin() (types.ForwardedLogin, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.forwardedLogin, c.forwarded
 }
 
 // BeginEncryption generates the verify token this connection's encryption
@@ -650,8 +674,9 @@ type server struct {
 	sessionServer  sessionServer
 
 	// encryptionEnabled is what every connection this server accepts is handed,
-	// and it decides whether a login is encrypted and checked with Mojang or
-	// taken at the client's word.
+	// and it decides what a login is worth: checked with Mojang behind a cipher
+	// of this server's own, or taken on the word of whoever is on the connection
+	// -- the proxy that forwarded it, or the client itself.
 	encryptionEnabled bool
 }
 
@@ -680,8 +705,11 @@ func main() {
 	encryptionEnabled := encryptionSetting()
 	if !encryptionEnabled {
 		// The one thing this costs is the only thing anyone would want back, so
-		// it is said out loud rather than left to be discovered.
-		slog.Warn("encryption is disabled, logins are taken at the client's word and are not checked with Mojang")
+		// it is said out loud rather than left to be discovered. A login here is
+		// taken on the word of whoever is on the connection, which is the proxy's
+		// when one forwarded it and the client's when none did, so the port
+		// should be one only what the operator trusts can reach.
+		slog.Warn("encryption is disabled, logins are taken on the word of whoever connects and are not checked with Mojang")
 	}
 
 	srv := &server{

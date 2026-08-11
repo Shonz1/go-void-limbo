@@ -70,6 +70,8 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 	// anywhere but play.
 	client.SetPhase(types.PhasePlay)
 
+	_, forwarded := client.ForwardedLogin()
+
 	login := clientboundPlay.LoginClientboundPacket{
 		EntityId:   playerEntityId,
 		Dimensions: []string{overworldDimension},
@@ -79,17 +81,19 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		ViewDistance:       viewDistance,
 		SimulationDistance: simulationDistance,
 		ShowDeathScreen:    true,
-		// Whether the client was let in on Mojang's word rather than on its own,
-		// which is whether the connection was encrypted, since an unencrypted
-		// login is one nobody was asked about.
+		// Whether the client was let in on Mojang's word rather than on its own.
+		// Either the connection was encrypted and this end asked, or a proxy
+		// asked before forwarding the answer; a login that is neither is one
+		// nobody was ever asked about.
 		//
 		// The player list draws a head beside a name only for a server that says
 		// yes, because a server that takes a client's word for who it is is a
 		// server where the name and the skin beside it prove nothing. Saying so
 		// is the only way the heads appear: the signed textures in the player
-		// list entry are not enough on their own. A server that is not asking
-		// Mojang has no textures to put there anyway, and says no.
-		OnlineMode: client.EncryptionEnabled(),
+		// list entry are not enough on their own. A server that is neither
+		// asking Mojang nor being told has no textures to put there anyway, and
+		// says no.
+		OnlineMode: client.EncryptionEnabled() || forwarded,
 		SpawnInfo: clientboundPlay.SpawnInfo{
 			DimensionTypeId: overworldDimensionTypeId,
 			Dimension:       overworldDimension,

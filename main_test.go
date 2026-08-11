@@ -1121,6 +1121,138 @@ func TestEncryptionSetting(t *testing.T) {
 	}
 }
 
+// forwardedHandshakeAddress is what a proxy puts in the handshake in place of
+// the address it was reached at: the player's own address, the account it
+// authenticated, and the textures the session server gave it for that account.
+const forwardedHandshakeAddress = "limbo.example\x00203.0.113.7\x00069a79f444e94726a5befca90e38aaf5\x00" +
+	`[{"name":"textures","value":"a base64 blob","signature":"a signature"}]`
+
+// The same login as the one taken at the client's word, on the same server,
+// with a proxy in front of it: nothing is configured differently, and the
+// handshake is the whole of the difference. It carries the account, the login
+// start carries the name, and the two packets that finish the login welcome the
+// player as who the proxy said they were, without a word to Mojang.
+func TestALoginBehindAProxyIsTheAccountTheProxyForwarded(t *testing.T) {
+	sessionServer := &fakeSessionServer{}
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	srv := &server{packetRegistry: packetRegistry, keyPair: testKeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
+
+	conn, client := net.Pipe()
+	defer client.Close()
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	go srv.handleConnection(conn)
+
+	peer := &loginPeer{t: t, conn: client}
+
+	handshake := new(bytes.Buffer)
+	handshakeStream := streams.NewMinecraftStreamFromBuffer(handshake)
+
+	for _, write := range []func() error{
+		func() error { return handshakeStream.WriteVarInt(0x00) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.ProtocolVersions.MINECRAFT_26_2.ID)) },
+		func() error { return handshakeStream.WriteString(forwardedHandshakeAddress) },
+		func() error { return handshakeStream.WriteShort(25565) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseLogin)) },
+		handshakeStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the handshake: %v", err)
+		}
+	}
+
+	peer.writePacket(handshake.Bytes())
+
+	loginStart := new(bytes.Buffer)
+	loginStartStream := streams.NewMinecraftStreamFromBuffer(loginStart)
+
+	for _, write := range []func() error{
+		func() error { return loginStartStream.WriteVarInt(0x00) },
+		func() error { return loginStartStream.WriteString("Notch") },
+		// The uuid the proxy picked to send here, which is not the one it
+		// forwarded and not the one the login is finished with.
+		func() error { return loginStartStream.WriteUuid("00000000-0000-0000-0000-000000000001") },
+		loginStartStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the login start: %v", err)
+		}
+	}
+
+	peer.writePacket(loginStart.Bytes())
+
+	// Set compression rather than an encryption request: the account was settled
+	// by the handshake, so the login went straight to its end.
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	if uuid != "069a79f4-44e9-4726-a5be-fca90e38aaf5" {
+		t.Errorf("uuid = %q, want the account the proxy forwarded", uuid)
+	}
+
+	username, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the username: %v", err)
+	}
+
+	// The handshake carries no name, so this is the one place it comes from.
+	if username != "Notch" {
+		t.Errorf("username = %q, want the name the login start carried %q", username, "Notch")
+	}
+
+	properties, err := loginSuccess.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the property count: %v", err)
+	}
+
+	// The textures the proxy forwarded are signed by Mojang, and are what every
+	// client draws the skin from.
+	if properties != 1 {
+		t.Fatalf("carried %d properties, want the textures the proxy forwarded", properties)
+	}
+
+	name, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the property name: %v", err)
+	}
+
+	if name != "textures" {
+		t.Errorf("property = %q, want the forwarded textures", name)
+	}
+
+	// The proxy asked Mojang on the connection it holds with the player, and
+	// this end has no secret to ask about even if it wanted to.
+	if len(sessionServer.usernames) != 0 {
+		t.Errorf("asked the session server about %v, want a login the proxy already settled left alone", sessionServer.usernames)
+	}
+}
+
 func TestBeginEncryptionOffersTheServerKeyAndANewToken(t *testing.T) {
 	client, _ := newLoginClient(t, &fakeSessionServer{})
 

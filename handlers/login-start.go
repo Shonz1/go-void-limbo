@@ -7,6 +7,29 @@ import (
 	"go-void-limbo/types"
 )
 
+// unauthenticatedProfile is who a client logging in on an unencrypted
+// connection is taken to be, under the name it logged in with.
+//
+// A proxy that forwarded the login answered this already: it holds the
+// connection with the player, asked Mojang there, and wrote the account it got
+// back into the handshake. That is the account, textures and all, since nothing
+// this end could ask would add to it and there is no player on the other side of
+// this connection to ask.
+//
+// With no proxy in front of it, the client's own word is all there is. The uuid
+// is then derived from the name rather than taken from what the client sent, so
+// a name is worth the same account on every connection, and the skin nobody
+// signed for is the one the client does without.
+func unauthenticatedProfile(client types.Client, username string) types.GameProfile {
+	if forwarded, ok := client.ForwardedLogin(); ok {
+		// The name is the one in this packet, which the proxy filled in from the
+		// same profile and is the only place it sends it.
+		return types.GameProfile{Uuid: forwarded.Uuid, Username: username, Properties: forwarded.Properties}
+	}
+
+	return types.GameProfile{Uuid: types.OfflineUuid(username), Username: username}
+}
+
 func HandleLoginStartServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	loginStart, ok := packet.(*login.LoginStartServerboundPacket)
 	if !ok {
@@ -20,18 +43,12 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 	client.SetProfile(types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name})
 
 	// A connection that is not encrypted is a connection that cannot be
-	// authenticated, since the session server is asked about a login by a hash
-	// over the secret encrypting it. So the login is finished here and on the
-	// client's word alone: no encryption request goes out, and the client keeps
-	// reading in the clear because none did.
-	//
-	// The uuid is derived from the name rather than taken from what the client
-	// sent, so a name is worth the same account on every connection, and the
-	// skin nobody signed for is the one the client does without.
+	// authenticated here, since the session server is asked about a login by a
+	// hash over the secret encrypting it. So the login is finished on somebody's
+	// word: no encryption request goes out, and the client keeps reading in the
+	// clear because none did.
 	if !client.EncryptionEnabled() {
-		profile := types.GameProfile{Uuid: types.OfflineUuid(loginStart.Name), Username: loginStart.Name}
-
-		return completeLogin(client, profile)
+		return completeLogin(client, unauthenticatedProfile(client, loginStart.Name))
 	}
 
 	publicKey, verifyToken, err := client.BeginEncryption()

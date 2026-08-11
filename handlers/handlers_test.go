@@ -44,6 +44,12 @@ type fakeClient struct {
 	// login say so.
 	encryptionEnabled bool
 
+	// forwarded and forwardedLogin are what the handshake left behind. The zero
+	// value is a connection no proxy forwarded, which is every connection to a
+	// server nothing is pointed at.
+	forwarded      bool
+	forwardedLogin types.ForwardedLogin
+
 	// publicKey and verifyToken are what the real client hands back to put in an
 	// encryption request, and beginErr is a connection that could not produce
 	// them.
@@ -110,6 +116,15 @@ func (c *fakeClient) ConfirmKeepAlive(id int64) error {
 
 func (c *fakeClient) EncryptionEnabled() bool { return c.encryptionEnabled }
 
+func (c *fakeClient) SetForwardedLogin(forwarded types.ForwardedLogin) {
+	c.forwarded = true
+	c.forwardedLogin = forwarded
+}
+
+func (c *fakeClient) ForwardedLogin() (types.ForwardedLogin, bool) {
+	return c.forwardedLogin, c.forwarded
+}
+
 func (c *fakeClient) BeginEncryption() ([]byte, []byte, error) {
 	if c.beginErr != nil {
 		return nil, nil, c.beginErr
@@ -158,6 +173,111 @@ func TestHandleHandshakeServerboundPacket(t *testing.T) {
 		t.Errorf("expected protocol version %d, got %d", types.ProtocolVersions.MINECRAFT_26_2.ID, client.ProtocolVersion().ID)
 	}
 
+	if client.Phase() != types.PhaseLogin {
+		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
+	}
+}
+
+// forwardedAddress is the handshake address a proxy sends: the address it was
+// reached at, and then the login it is forwarding, joined by null bytes.
+const forwardedAddress = "limbo.example\x00203.0.113.7\x00069a79f444e94726a5befca90e38aaf5\x00" +
+	`[{"name":"textures","value":"a base64 blob","signature":"a signature"}]`
+
+func TestHandleHandshakeServerboundPacketKeepsTheLoginTheProxyForwarded(t *testing.T) {
+	client := &fakeClient{}
+	packet := &handshake.HandshakeServerboundPacket{
+		ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+		ServerAddress:   forwardedAddress,
+		ServerPort:      25565,
+		Intent:          int32(types.PhaseLogin),
+	}
+
+	if err := HandleHandshakeServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the handshake carries it, and the login it belongs to arrives in the
+	// packet after, so a handshake it is not taken from is a login that has to
+	// fall back to the name the client typed.
+	forwarded, ok := client.ForwardedLogin()
+	if !ok {
+		t.Fatal("kept no forwarded login, want the one the handshake carried")
+	}
+
+	if forwarded.Uuid != "069a79f4-44e9-4726-a5be-fca90e38aaf5" {
+		t.Errorf("uuid = %q, want the account the proxy vouched for", forwarded.Uuid)
+	}
+
+	if len(forwarded.Properties) != 1 {
+		t.Errorf("kept %d properties, want the textures the proxy forwarded", len(forwarded.Properties))
+	}
+}
+
+func TestHandleHandshakeServerboundPacketKeepsNothingFromAPlainAddress(t *testing.T) {
+	client := &fakeClient{}
+
+	// What a client that connected here itself sends: the address it was told to
+	// connect to, with nothing appended to it and no account in it.
+	packet := &handshake.HandshakeServerboundPacket{
+		ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+		ServerAddress:   "limbo.example",
+		Intent:          int32(types.PhaseLogin),
+	}
+
+	if err := HandleHandshakeServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := client.ForwardedLogin(); ok {
+		t.Error("kept a forwarded login, want an address nobody wrote a login into read as an address")
+	}
+}
+
+// A handshake that carries an account is only worth reading on a connection
+// whose login was going to be taken on somebody's word regardless. A server
+// that asks Mojang does not look, since believing the fields would be believing
+// whoever wrote them, and that is the one way left to get past the question.
+func TestHandleHandshakeServerboundPacketIgnoresAForwardedAddressOnAnEncryptedServer(t *testing.T) {
+	client := &fakeClient{encryptionEnabled: true}
+	packet := &handshake.HandshakeServerboundPacket{
+		ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+		ServerAddress:   forwardedAddress,
+		Intent:          int32(types.PhaseLogin),
+	}
+
+	if err := HandleHandshakeServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := client.ForwardedLogin(); ok {
+		t.Error("kept a forwarded login, want an account nobody here vouched for ignored")
+	}
+}
+
+func TestHandleHandshakeServerboundPacketReportsAForwardedLoginItCannotRead(t *testing.T) {
+	client := &fakeClient{}
+
+	// An address with a proxy's separators in it and no account this end can
+	// make out. Something wrote a login here, and reading past it silently is
+	// how a player ends up as somebody else.
+	packet := &handshake.HandshakeServerboundPacket{
+		ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+		ServerAddress:   "limbo.example\x00203.0.113.7\x00not a uuid",
+		Intent:          int32(types.PhaseLogin),
+	}
+
+	if err := HandleHandshakeServerboundPacket(client, packet); err == nil {
+		t.Error("error = nil, want a forwarded login that could not be read reported")
+	}
+
+	// The login start behind it falls back to the client's own word for want of
+	// this, so a half-read handshake must not leave anything for it to find.
+	if _, ok := client.ForwardedLogin(); ok {
+		t.Error("kept a forwarded login, want nothing from a handshake that could not be read")
+	}
+
+	// The protocol version and the phase are what the packet says regardless:
+	// they are the client's own, and the fields behind them are the proxy's.
 	if client.Phase() != types.PhaseLogin {
 		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
 	}
@@ -302,6 +422,115 @@ func TestHandleLoginStartServerboundPacketFinishesALoginWithoutEncryption(t *tes
 	// packet.
 	if client.Phase() != types.PhaseLogin {
 		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
+	}
+}
+
+func TestHandleLoginStartServerboundPacketFinishesTheLoginTheProxyForwarded(t *testing.T) {
+	signature := "a signature"
+	forwarded := types.ForwardedLogin{
+		Address:    "203.0.113.7",
+		Uuid:       "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+		Properties: []types.ProfileProperty{{Name: "textures", Value: "a base64 blob", Signature: &signature}},
+	}
+
+	client := &fakeClient{phase: types.PhaseLogin, forwarded: true, forwardedLogin: forwarded}
+
+	// The uuid the packet carries is the proxy's own choosing and is not the one
+	// the login is finished with; the name is, because the proxy sends it here
+	// and nowhere else.
+	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
+
+	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The proxy holds the connection with the player and asked Mojang on it
+	// already. There is nobody on this connection to ask, and no secret to ask
+	// about.
+	for _, written := range client.written {
+		if _, ok := written.(*clientboundLogin.EncryptionRequestClientboundPacket); ok {
+			t.Fatal("asked for encryption, want a login the proxy already settled")
+		}
+	}
+
+	if client.authenticateCalls != 0 {
+		t.Errorf("asked the session server %d times, want a login the proxy already asked about left alone", client.authenticateCalls)
+	}
+
+	if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
+		t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
+	}
+
+	if client.compressionAfter != 0 {
+		t.Errorf("enabled compression after %d packets, want it announced before any reply", client.compressionAfter)
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	loginSuccess, ok := client.written[0].(*clientboundLogin.LoginSuccessClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *login.LoginSuccessClientboundPacket, got %T", client.written[0])
+	}
+
+	want := types.GameProfile{Uuid: forwarded.Uuid, Username: packet.Name, Properties: forwarded.Properties}
+
+	// The account is the one the proxy authenticated, down to the textures,
+	// which are the only way anyone is shown a skin.
+	if loginSuccess.Profile.String() != want.String() {
+		t.Errorf("login success profile = %s, want the forwarded %s", loginSuccess.Profile, want)
+	}
+
+	if client.Profile().String() != want.String() {
+		t.Errorf("kept profile = %s, want the forwarded %s", client.Profile(), want)
+	}
+
+	if loginSuccess.SessionId == "" {
+		t.Error("expected a generated session id, got an empty string")
+	}
+
+	// The client stays in the login phase until it acknowledges the success
+	// packet.
+	if client.Phase() != types.PhaseLogin {
+		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
+	}
+}
+
+// A handshake and the login start behind it, on a server that asks Mojang.
+// Writing a proxy's account into the address is what anyone wanting past that
+// question would try, and it buys nothing: the account is never read, and the
+// login is held to the same exchange as any other.
+func TestAForwardedAddressCannotStandInForTheMojangCheck(t *testing.T) {
+	client := &fakeClient{encryptionEnabled: true, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
+
+	handshakePacket := &handshake.HandshakeServerboundPacket{
+		ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+		ServerAddress:   forwardedAddress,
+		Intent:          int32(types.PhaseLogin),
+	}
+
+	if err := HandleHandshakeServerboundPacket(client, handshakePacket); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	// An encryption request, which is a login that has not been settled by
+	// anything the client sent, rather than the success packet the forwarded
+	// account was written there to earn.
+	if _, ok := client.written[0].(*clientboundLogin.EncryptionRequestClientboundPacket); !ok {
+		t.Fatalf("expected *login.EncryptionRequestClientboundPacket, got %T", client.written[0])
+	}
+
+	if client.Profile().Uuid == "069a79f4-44e9-4726-a5be-fca90e38aaf5" {
+		t.Error("took the account out of the address, want it left to Mojang to answer")
 	}
 }
 
@@ -585,21 +814,37 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 // asking is a server telling the player list to draw heads it cannot stand
 // behind.
 func TestHandleAcknowledgeFinishConfigurationServerboundPacketTellsTheClientWhatItsLoginWasWorth(t *testing.T) {
-	for _, encryptionEnabled := range []bool{true, false} {
-		client := &fakeClient{phase: types.PhaseConfiguration, encryptionEnabled: encryptionEnabled}
+	tests := []struct {
+		name       string
+		encryption bool
+		forwarded  bool
+		want       bool
+	}{
+		{name: "encrypted", encryption: true, want: true},
+		// A proxy asked Mojang on the connection it holds with the player, and
+		// forwarded the signed textures it got back, so the heads the player
+		// list draws are ones this server can stand behind.
+		{name: "forwarded", forwarded: true, want: true},
+		{name: "neither", want: false},
+	}
 
-		if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
-			t.Fatalf("encryption enabled %t: unexpected error: %v", encryptionEnabled, err)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeClient{phase: types.PhaseConfiguration, encryptionEnabled: test.encryption, forwarded: test.forwarded}
 
-		login, ok := client.written[0].(*clientboundPlay.LoginClientboundPacket)
-		if !ok {
-			t.Fatalf("encryption enabled %t: expected *play.LoginClientboundPacket first, got %T", encryptionEnabled, client.written[0])
-		}
+			if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		if login.OnlineMode != encryptionEnabled {
-			t.Errorf("encryption enabled %t: online mode = %t, want the client told what its login was worth", encryptionEnabled, login.OnlineMode)
-		}
+			login, ok := client.written[0].(*clientboundPlay.LoginClientboundPacket)
+			if !ok {
+				t.Fatalf("expected *play.LoginClientboundPacket first, got %T", client.written[0])
+			}
+
+			if login.OnlineMode != test.want {
+				t.Errorf("online mode = %t, want the client told what its login was worth %t", login.OnlineMode, test.want)
+			}
+		})
 	}
 }
 
