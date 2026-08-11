@@ -26,6 +26,14 @@ import (
 // ends hash it all the same.
 const serverId = ""
 
+// maxPrePlayPacketSize is the largest frame a connection that has not reached
+// the play phase may claim. The biggest thing a client legitimately sends
+// before then is a login plugin response carrying a signed forwarding payload,
+// a few kilobytes, so 32KB leaves room many times over -- without letting a
+// connection that has not even logged in reserve the protocol's full two
+// megabytes a frame.
+const maxPrePlayPacketSize = 32767
+
 // SessionServer is the side of a login this server does not hold: the service
 // that knows which accounts really logged in and what they look like.
 type SessionServer interface {
@@ -520,7 +528,18 @@ func (c *Client) SetProfile(profile types.GameProfile) {
 // body is then carried up to the latest version before it is decoded, since
 // that is the only version a decoder exists for.
 func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, error) {
-	body, err := c.stream.ReadFrame()
+	// The frame length and the size a compressed body claims to inflate to are
+	// both the client's word, allocated for before a byte behind them is read.
+	// Nothing legitimate comes near the protocol maximum before play, so a
+	// connection that has not got that far is not taken at two megabytes of it.
+	phase := c.Phase()
+
+	maxSize := int32(streams.MaxPacketSize)
+	if phase != types.PhasePlay {
+		maxSize = maxPrePlayPacketSize
+	}
+
+	body, err := c.stream.ReadFrame(maxSize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -528,20 +547,17 @@ func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, err
 	// A body that cannot be inflated is still a body that was read in full, so
 	// the frames after it start where they should.
 	if threshold, enabled := c.compression(); enabled {
-		body, err = streams.DecompressBody(body, threshold)
+		body, err = streams.DecompressBody(body, threshold, maxSize)
 		if err != nil {
 			return nil, nil, &packetError{err: err}
 		}
 	}
 
-	bodyStream := streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(body))
-
-	packetId, err := bodyStream.ReadVarInt()
+	packetId, idSize, err := streams.ReadVarIntFrom(body)
 	if err != nil {
 		return nil, nil, &packetError{err: err}
 	}
 
-	phase := c.Phase()
 	protocolVersion := c.ProtocolVersion()
 
 	packetType, ok := c.packetRegistry.GetServerboundType(phase, protocolVersion, packetId)
@@ -554,12 +570,9 @@ func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, err
 		return nil, nil, &packetError{err: fmt.Errorf("no decoder for packet id %d", packetId)}
 	}
 
-	payload, err := bodyStream.ReadRest()
-	if err != nil {
-		return nil, nil, &packetError{err: err}
-	}
-
-	payload, err = c.packetRegistry.UpgradeBody(phase, packetType, protocolVersion, payload)
+	// The body is whole and in memory, so the payload is the body past the id
+	// rather than anything read back out of it.
+	payload, err := c.packetRegistry.UpgradeBody(phase, packetType, protocolVersion, body[idSize:])
 	if err != nil {
 		return nil, nil, &packetError{err: err}
 	}
@@ -618,20 +631,8 @@ func (c *Client) writePacket(packet types.ClientboundPacket) error {
 
 	// The id goes in front of the body it was resolved for, at the version the
 	// client reads both at.
-	buf := new(bytes.Buffer)
-	tempStream := streams.NewMinecraftStreamFromBuffer(buf)
-
-	err = tempStream.WriteVarInt(packetId)
-	if err != nil {
-		return err
-	}
-
-	err = tempStream.Flush()
-	if err != nil {
-		return err
-	}
-
-	body := append(buf.Bytes(), payload...)
+	body := streams.AppendVarInt(make([]byte, 0, 5+len(payload)), packetId)
+	body = append(body, payload...)
 
 	if c.compressionEnabled {
 		body, err = streams.CompressBody(body, c.compressionThreshold)

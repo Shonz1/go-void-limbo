@@ -6,13 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
+
+// compressors and decompressors are reused across packets and connections. A
+// fresh deflater carries its hash tables and window -- most of a megabyte --
+// and a fresh inflater tens of kilobytes, which would otherwise be allocated
+// again for every body that travels compressed.
+var compressors = sync.Pool{
+	New: func() any { return zlib.NewWriter(nil) },
+}
+
+var decompressors sync.Pool
 
 // Compress deflates a packet body. Once a connection has been told a
 // compression threshold, every body at or above it travels this way.
 func Compress(data []byte) ([]byte, error) {
 	buf := new(bytes.Buffer)
-	writer := zlib.NewWriter(buf)
+
+	writer := compressors.Get().(*zlib.Writer)
+	defer compressors.Put(writer)
+
+	writer.Reset(buf)
 
 	if _, err := writer.Write(data); err != nil {
 		writer.Close()
@@ -21,7 +36,8 @@ func Compress(data []byte) ([]byte, error) {
 	}
 
 	// Close is what writes the trailing checksum, so a body is only whole once
-	// it has been called.
+	// it has been called. The writer stays reusable: Reset is what readies it
+	// for the next body, closed or not.
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
@@ -41,12 +57,15 @@ func Decompress(data []byte, size int32) ([]byte, error) {
 		return nil, fmt.Errorf("invalid uncompressed size: %d", size)
 	}
 
-	reader, err := zlib.NewReader(bytes.NewReader(data))
+	reader, err := newDecompressor(data)
 	if err != nil {
 		return nil, err
 	}
 
-	defer reader.Close()
+	defer func() {
+		reader.Close()
+		decompressors.Put(reader)
+	}()
 
 	buf := make([]byte, size)
 	if _, err := io.ReadFull(reader, buf); err != nil {
@@ -65,4 +84,24 @@ func Decompress(data []byte, size int32) ([]byte, error) {
 	}
 
 	return buf, nil
+}
+
+// newDecompressor puts a pooled inflater on data, or builds the pool's first
+// one. Both paths read the zlib header, so both can refuse data that does not
+// start with one. A reader whose header was refused still goes back in the
+// pool: the next Reset starts it over.
+func newDecompressor(data []byte) (io.ReadCloser, error) {
+	pooled := decompressors.Get()
+	if pooled == nil {
+		return zlib.NewReader(bytes.NewReader(data))
+	}
+
+	reader := pooled.(io.ReadCloser)
+	if err := reader.(zlib.Resetter).Reset(bytes.NewReader(data), nil); err != nil {
+		decompressors.Put(reader)
+
+		return nil, err
+	}
+
+	return reader, nil
 }
