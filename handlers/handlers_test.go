@@ -253,6 +253,37 @@ func TestHandleHandshakeServerboundPacket(t *testing.T) {
 	}
 }
 
+// Two phases are a handshake's to ask for. The rest are ones a connection
+// reaches by getting through the phase before, so a handshake that names one is
+// refused rather than obeyed, and the connection is left where it started.
+func TestHandleHandshakeServerboundPacketRefusesAnIntentThatIsNotAPingOrALogin(t *testing.T) {
+	// Play, the two phases either side of what a handshake may name, and the
+	// numbers that arrive as play once an intent has been narrowed to a byte.
+	for _, intent := range []int32{
+		int32(types.PhaseHandshake),
+		int32(types.PhaseConfiguration),
+		int32(types.PhasePlay),
+		int32(types.PhasePlay) + 256,
+		int32(types.PhasePlay) + 512,
+	} {
+		client := &fakeClient{}
+		packet := &handshake.HandshakeServerboundPacket{
+			ProtocolVersion: int32(types.ProtocolVersions.MINECRAFT_26_2.ID),
+			ServerAddress:   "localhost",
+			ServerPort:      25565,
+			Intent:          intent,
+		}
+
+		if err := HandleHandshakeServerboundPacket(client, packet); err == nil {
+			t.Errorf("intent %d: error = nil, want an intent a handshake may not name refused", intent)
+		}
+
+		if client.Phase() != types.PhaseHandshake {
+			t.Errorf("intent %d: phase = %d, want the connection left in the handshake phase %d", intent, client.Phase(), types.PhaseHandshake)
+		}
+	}
+}
+
 // forwardedAddress is the handshake address a proxy sends: the address it was
 // reached at, and then the login it is forwarding, joined by null bytes.
 const forwardedAddress = "limbo.example\x00203.0.113.7\x00069a79f444e94726a5befca90e38aaf5\x00" +
@@ -817,6 +848,10 @@ func TestHandleLoginPluginResponseServerboundPacketTakesTheClientsWordWhenNoProx
 // A second answer to the one question. The first was given up on, so there is
 // nothing outstanding for this to answer, and the connection says so rather than
 // letting a login be settled twice.
+//
+// It is let go rather than left where it is. Nothing about this connection is
+// going to be settled now, and the login phase has no keep alive to notice a
+// connection nobody is going to say anything else to.
 func TestHandleLoginPluginResponseServerboundPacketReportsASecondAnswerToAGivenUpRequest(t *testing.T) {
 	client := &fakeClient{
 		phase:                types.PhaseLogin,
@@ -830,8 +865,16 @@ func TestHandleLoginPluginResponseServerboundPacketReportsASecondAnswerToAGivenU
 		t.Fatal("error = nil, want the connection's rejection passed back")
 	}
 
-	if len(client.written) != 0 {
-		t.Errorf("wrote %d packets, want nothing said back", len(client.written))
+	if len(client.written) != 1 {
+		t.Fatalf("wrote %d packets, want the connection let go", len(client.written))
+	}
+
+	if _, ok := client.written[0].(*clientboundLogin.DisconnectClientboundPacket); !ok {
+		t.Fatalf("expected *login.DisconnectClientboundPacket, got %T", client.written[0])
+	}
+
+	if len(client.compressionThresholds) != 0 {
+		t.Error("finished the login, want an answer to nothing let go")
 	}
 }
 

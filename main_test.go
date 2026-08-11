@@ -52,6 +52,7 @@ func newTestClientOn(phase types.Phase, protocolVersion types.ProtocolVersion) (
 		phase:           phase,
 		stream:          streams.NewMinecraftStreamFromBuffer(buf),
 		packetRegistry:  packetRegistry,
+		status:          new(serverStatus),
 	}, buf
 }
 
@@ -109,6 +110,7 @@ func newLoginClient(t *testing.T, sessionServer sessionServer) (*MinecraftClient
 		packetRegistry:    packetRegistry,
 		keyPair:           testKeyPair(),
 		sessionServer:     sessionServer,
+		status:            new(serverStatus),
 		encryptionEnabled: true,
 	}, client
 }
@@ -446,6 +448,7 @@ func TestKeepAliveLoopDropsAClientThatNeverAnswers(t *testing.T) {
 		conn:            server,
 		stream:          streams.NewMinecraftStreamFromNetConn(server),
 		packetRegistry:  packetRegistry,
+		status:          new(serverStatus),
 	}
 
 	done := make(chan struct{})
@@ -2146,6 +2149,7 @@ func TestKeepAliveLoopStopsWithTheConnection(t *testing.T) {
 		conn:            server,
 		stream:          streams.NewMinecraftStreamFromNetConn(server),
 		packetRegistry:  packetRegistry,
+		status:          new(serverStatus),
 	}
 
 	done := make(chan struct{})
@@ -2369,7 +2373,26 @@ func statusServer(t *testing.T, description string, protocolId types.ProtocolId)
 	packetRegistry := registries.NewPacketRegistry()
 	registerPackets(packetRegistry)
 
-	srv := &server{packetRegistry: packetRegistry, description: description}
+	return connect(t, newStatusServer(t, description), protocolId, int32(types.PhaseStatus))
+}
+
+// newStatusServer is a server with nothing behind it but what a ping is answered
+// from, which is all the status phase ever reaches for.
+func newStatusServer(t *testing.T, description string) *server {
+	t.Helper()
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	return &server{packetRegistry: packetRegistry, status: serverStatus{description: description}}
+}
+
+// connect opens one connection to srv and sends the handshake that opens it,
+// naming the version the client speaks and the phase it is asking to be put
+// into. The intent is the raw number rather than a phase, since what a handshake
+// may ask for is the thing being tested.
+func connect(t *testing.T, srv *server, protocolId types.ProtocolId, intent int32) *loginPeer {
+	t.Helper()
 
 	conn, client := net.Pipe()
 	t.Cleanup(func() { client.Close() })
@@ -2390,7 +2413,7 @@ func statusServer(t *testing.T, description string, protocolId types.ProtocolId)
 		func() error { return handshakeStream.WriteVarInt(int32(protocolId)) },
 		func() error { return handshakeStream.WriteString("limbo.example") },
 		func() error { return handshakeStream.WriteShort(25565) },
-		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseStatus)) },
+		func() error { return handshakeStream.WriteVarInt(intent) },
 		handshakeStream.Flush,
 	} {
 		if err := write(); err != nil {
@@ -2566,12 +2589,12 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 // The count a ping reports is the clients in the play phase, which is the one
 // thing this server knows about more than one connection at a time.
 func TestServerStatusCountsTheClientsInPlay(t *testing.T) {
-	srv := &server{description: "A void limbo"}
+	srv := &server{status: serverStatus{description: "A void limbo"}}
 
 	// Two connections to the one server: the one that joins, and the one that
 	// only came to ask.
-	joining := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, players: &srv.players}
-	pinging := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, players: &srv.players, description: srv.description}
+	joining := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, status: &srv.status}
+	pinging := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, status: &srv.status}
 
 	players := func() types.ServerPlayers {
 		t.Helper()
@@ -2618,6 +2641,33 @@ func TestServerStatusCountsTheClientsInPlay(t *testing.T) {
 
 	if got, want := players(), (types.ServerPlayers{Online: 0, Max: 1}); got != want {
 		t.Errorf("players = %+v, want %+v after a connection that never joined ended", got, want)
+	}
+}
+
+// A handshake names the phase it wants to be put into, and the phases are
+// numbered, so play is one of the numbers a client could name. A connection that
+// names it has logged in to nothing and is not a player, and the ping that
+// follows on another connection is where that shows.
+func TestAHandshakeCannotPutAConnectionStraightIntoPlay(t *testing.T) {
+	srv := newStatusServer(t, "A void limbo")
+
+	// The phases a connection is only supposed to reach by getting through the
+	// one before, and the numbers that arrive as play once an intent has been
+	// narrowed to a byte.
+	for _, intent := range []int32{
+		int32(types.PhaseHandshake),
+		int32(types.PhaseConfiguration),
+		int32(types.PhasePlay),
+		int32(types.PhasePlay) + 256,
+		int32(types.PhasePlay) + 512,
+	} {
+		connect(t, srv, types.ProtocolVersions.MINECRAFT_26_2.ID, intent)
+	}
+
+	pinging := connect(t, srv, types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseStatus))
+
+	if got, want := askStatus(t, pinging).Players, (types.ServerPlayers{Online: 0, Max: 1}); got != want {
+		t.Errorf("players = %+v, want %+v: a handshake is not a login", got, want)
 	}
 }
 
