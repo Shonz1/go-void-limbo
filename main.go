@@ -61,6 +61,19 @@ func logPacket(message string, packet any) {
 // window; fifteen seconds is what a vanilla server uses and is half of it.
 const keepAliveInterval = 15 * time.Second
 
+// readTimeout is how long a connection has to send its next packet in before it
+// is given up on, and is the thirty seconds both ends already treat as a dead
+// connection.
+//
+// Keep alives are what keep a joined client inside it without the player doing
+// anything, which is why this has to be longer than the interval they go out on.
+// The phases before them have no keep alive and nothing else that ends a quiet
+// connection, so for a handshake, a status ping and a login this is the whole of
+// it: a peer that opens a socket and sends nothing holds a goroutine, a ticker
+// and the buffers behind them for exactly this long rather than for as long as
+// the process runs.
+const readTimeout = 2 * keepAliveInterval
+
 // errKeepAliveTimeout is what a client that let a keep alive go unanswered for
 // a whole interval leaves behind. Nothing on that connection is worth waiting
 // for any longer, since the client either stopped reading or stopped existing.
@@ -158,28 +171,51 @@ type playerCount struct {
 
 // join counts a client that has just reached the play phase, leave stops
 // counting one whose connection has ended, and online is what a ping reports.
-//
-// A nil count is one nothing is counted in, which is what a connection with no
-// server behind it has: the number belongs to the server, and there is none here
-// to hold one.
 func (p *playerCount) join() {
-	if p != nil {
-		p.count.Add(1)
-	}
+	p.count.Add(1)
 }
 
 func (p *playerCount) leave() {
-	if p != nil {
-		p.count.Add(-1)
-	}
+	p.count.Add(-1)
 }
 
 func (p *playerCount) online() int32 {
-	if p == nil {
-		return 0
-	}
-
 	return int32(p.count.Load())
+}
+
+// serverStatus is what a server list ping is answered from: what the operator
+// set the server to say about itself, and the count every connection joins and
+// leaves.
+//
+// All of it belongs to the server rather than to any one connection, so there is
+// one of these per server and a connection holds a pointer to it. That is what
+// keeps a field added here from being copied onto every connection the server
+// accepts.
+type serverStatus struct {
+	description string
+	players     playerCount
+}
+
+// status assembles what a ping arriving on a connection speaking version is
+// answered with. The version is the only part of the answer the connection has
+// any say in, which is why it is the only thing passed in.
+func (s *serverStatus) status(version types.ProtocolVersion) types.ServerStatus {
+	online := s.players.online()
+
+	return types.ServerStatus{
+		Version: statusVersion(version),
+		Players: types.ServerPlayers{
+			Online: online,
+
+			// A limbo turns nobody away, and the protocol has no way of saying
+			// so: the field is a number, and a client draws a server as full when
+			// the two are equal. One more than however many are on is the closest
+			// this can come to the truth, and it is a truth about this server
+			// rather than a number an operator was asked to invent.
+			Max: online + 1,
+		},
+		Description: types.TextComponent{Text: s.description},
+	}
 }
 
 type MinecraftClient struct {
@@ -188,12 +224,11 @@ type MinecraftClient struct {
 	packetRegistry *registries.PacketRegistry
 	gameRegistries *gamedata.Provider
 
-	// description is what a ping describes this server as, and players is the
-	// count every connection on this server shares. A ping is answered before
-	// anything about the connection has been settled, so both are handed over
-	// when it is accepted and neither changes afterwards.
-	description string
-	players     *playerCount
+	// status is what a ping on this connection is answered from, and is the one
+	// its server keeps rather than a copy: a ping asks about the server, and
+	// nothing in it belongs to the connection it arrived on. The pointer is
+	// handed over when the connection is accepted and never changes.
+	status *serverStatus
 
 	// keyPair and sessionServer are shared by every connection: one key is
 	// generated for the process, and one client talks to Mojang for all of them.
@@ -373,12 +408,8 @@ func (c *MinecraftClient) CompleteModernForwarding(messageId int32, payload []by
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.pendingForwardingMessageId == 0 {
-		return types.ForwardedLogin{}, errors.New("no forwarding request is waiting on an answer")
-	}
-
-	if messageId != c.pendingForwardingMessageId {
-		return types.ForwardedLogin{}, fmt.Errorf("forwarding payload %d answers the wrong request, expected %d", messageId, c.pendingForwardingMessageId)
+	if err := c.checkPendingForwardingRequest(messageId); err != nil {
+		return types.ForwardedLogin{}, err
 	}
 
 	forwarded, err := auth.ParseModernForwarding(c.forwardingSecret, payload)
@@ -409,6 +440,30 @@ func (c *MinecraftClient) DeclineModernForwarding(messageId int32) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if err := c.checkPendingForwardingRequest(messageId); err != nil {
+		return err
+	}
+
+	c.pendingForwardingMessageId = 0
+
+	return nil
+}
+
+// checkPendingForwardingRequest reports whether messageId answers the forwarding
+// request this connection is actually waiting on, which is what makes an answer
+// a reply to something this end asked rather than something a client
+// volunteered.
+//
+// It is the one question both ways of answering the request have to ask, so it
+// is asked in one place: an answer that carried a login and an answer that
+// carried none are told apart by what they settle, not by what makes them an
+// answer. Clearing the request is left to the caller, because the two clear it
+// at different moments -- a payload only once it has been read, so that a
+// signature this end could not verify leaves the question still open.
+//
+// The lock is held by the caller, which took it to decide what the answer was
+// worth in the first place.
+func (c *MinecraftClient) checkPendingForwardingRequest(messageId int32) error {
 	if c.pendingForwardingMessageId == 0 {
 		return errors.New("no forwarding request is waiting on an answer")
 	}
@@ -416,8 +471,6 @@ func (c *MinecraftClient) DeclineModernForwarding(messageId int32) error {
 	if messageId != c.pendingForwardingMessageId {
 		return fmt.Errorf("forwarding payload %d answers the wrong request, expected %d", messageId, c.pendingForwardingMessageId)
 	}
-
-	c.pendingForwardingMessageId = 0
 
 	return nil
 }
@@ -542,7 +595,7 @@ func (c *MinecraftClient) SetPhase(phase types.Phase) {
 	defer c.mu.Unlock()
 
 	if phase == types.PhasePlay && c.phase != types.PhasePlay {
-		c.players.join()
+		c.status.players.join()
 	}
 
 	c.phase = phase
@@ -559,7 +612,7 @@ func (c *MinecraftClient) leavePlay() {
 	defer c.mu.Unlock()
 
 	if c.phase == types.PhasePlay {
-		c.players.leave()
+		c.status.players.leave()
 	}
 }
 
@@ -571,32 +624,28 @@ func (c *MinecraftClient) leavePlay() {
 // protocol zero, and is told the latest instead. That is the answer it came for:
 // it has no use for a version it cannot join at, only for something to draw
 // beside the fact that it cannot.
+//
+// Being on the chain is not the same as having a name to be drawn under, so the
+// name is taken only if there is one. A version with none would otherwise panic
+// here, which on the one handler a connection reaches without logging in would
+// take the process with it.
 func statusVersion(version types.ProtocolVersion) types.ServerVersion {
-	if !types.IsSupportedProtocolVersion(version) {
+	if !types.IsSupportedProtocolVersion(version) || len(version.Names) == 0 {
 		version = types.LatestProtocolVersion
 	}
 
-	return types.ServerVersion{Name: version.Names[0], Protocol: version.ID}
+	name := ""
+	if len(version.Names) > 0 {
+		name = version.Names[0]
+	}
+
+	return types.ServerVersion{Name: name, Protocol: version.ID}
 }
 
-// ServerStatus assembles what a ping on this connection is answered with.
+// ServerStatus assembles what a ping on this connection is answered with, which
+// is the server's own status read at the version this connection speaks.
 func (c *MinecraftClient) ServerStatus() types.ServerStatus {
-	online := c.players.online()
-
-	return types.ServerStatus{
-		Version: statusVersion(c.ProtocolVersion()),
-		Players: types.ServerPlayers{
-			Online: online,
-
-			// A limbo turns nobody away, and the protocol has no way of saying
-			// so: the field is a number, and a client draws a server as full when
-			// the two are equal. One more than however many are on is the closest
-			// this can come to the truth, and it is a truth about this server
-			// rather than a number an operator was asked to invent.
-			Max: online + 1,
-		},
-		Description: types.TextComponent{Text: c.description},
-	}
+	return c.status.status(c.ProtocolVersion())
 }
 
 func (c *MinecraftClient) Profile() types.GameProfile {
@@ -890,7 +939,9 @@ func (c *MinecraftClient) ConfirmKeepAlive(id int64) error {
 // Only configuration and play have a keep alive packet, so only they get one.
 // The phases before them need none: a handshake, a status ping and a login are
 // exchanges the client drives from one packet to the next, and a client that
-// stops driving one has stopped connecting rather than gone quiet.
+// stops driving one has stopped connecting rather than gone quiet. What ends one
+// that stopped is readTimeout, which every phase is under, rather than anything
+// asked of the client here.
 func (c *MinecraftClient) sendKeepAlive() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -942,12 +993,9 @@ type server struct {
 	keyPair        *auth.KeyPair
 	sessionServer  sessionServer
 
-	// description is what a ping describes this server as, and players is the
-	// count every connection joins and leaves. They are the whole of what the
-	// status phase answers with, and the only state this server keeps about more
-	// than one connection at a time.
-	description string
-	players     playerCount
+	// status is the whole of what the status phase answers with, and the only
+	// state this server keeps about more than one connection at a time.
+	status serverStatus
 
 	// encryptionEnabled is what every connection this server accepts is handed,
 	// and it decides what a login is worth: checked with Mojang behind a cipher
@@ -1000,6 +1048,17 @@ func main() {
 	forwardingSecret := forwardingSecretSetting(*forwardingSecretFlag)
 	if len(forwardingSecret) > 0 {
 		slog.Info("a forwarding secret is configured, a login signed with it is taken from the proxy that signed it and is not checked with Mojang here")
+
+		// A secret used to force encryption off and refuse every login that was
+		// not signed, so an operator who set both got what the secret alone
+		// meant. It no longer does: a login nobody signed for now falls through
+		// to the setting below, and with that setting off there is nothing left
+		// to check it against. Said on its own because the pair is the one
+		// configuration where the secret stops being worth what it looks worth,
+		// and nothing about a connection says which of the two let it in.
+		if !encryptionEnabled {
+			slog.Warn("a forwarding secret is configured with encryption disabled, so a connection that answers the forwarding request with nothing is logged in under whatever name it asked for; the port should be one only the proxy can reach")
+		}
 	}
 
 	if !encryptionEnabled {
@@ -1016,7 +1075,7 @@ func main() {
 		gameRegistries:    gameRegistries,
 		keyPair:           keyPair,
 		sessionServer:     auth.NewSessionServer(),
-		description:       descriptionSetting(),
+		status:            serverStatus{description: descriptionSetting()},
 		encryptionEnabled: encryptionEnabled,
 		forwardingSecret:  forwardingSecret,
 	}
@@ -1057,8 +1116,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		gameRegistries:    s.gameRegistries,
 		keyPair:           s.keyPair,
 		sessionServer:     s.sessionServer,
-		description:       s.description,
-		players:           &s.players,
+		status:            &s.status,
 		encryptionEnabled: s.encryptionEnabled,
 		forwardingSecret:  s.forwardingSecret,
 	}
@@ -1077,6 +1135,15 @@ func (s *server) handleConnection(conn net.Conn) {
 	go mc.keepAliveLoop(done, keepAliveInterval)
 
 	for {
+		// Refreshed for every packet rather than set once, so the window is one
+		// of silence rather than a cap on how long a connection may live. A
+		// joined client refreshes it by answering keep alives; one that has not
+		// got that far refreshes it by getting on with the exchange it opened.
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			slog.Error("failed to set the read deadline", "addr", remoteAddr, "err", err)
+			return
+		}
+
 		packet, handler, err := mc.ReadPacket()
 		if err != nil {
 			// A packet the server could not make sense of is one packet lost,
@@ -1089,10 +1156,10 @@ func (s *server) handleConnection(conn net.Conn) {
 				continue
 			}
 
-			// A client that left, and a connection this server closed on a keep
-			// alive that went unanswered, are both connections already
-			// accounted for.
-			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			// A client that left, a connection this server closed on a keep
+			// alive that went unanswered, and one that went quiet long enough to
+			// run out its read window are all connections already accounted for.
+			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) && !errors.Is(err, os.ErrDeadlineExceeded) {
 				slog.Error("connection lost", "addr", remoteAddr, "err", err)
 			}
 

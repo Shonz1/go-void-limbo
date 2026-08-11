@@ -73,13 +73,22 @@ func loginWithoutTheProxy(client types.Client, messageId int32) error {
 	// The request has been answered, even though the answer carried nothing, and
 	// a connection with nothing outstanding is one a payload arriving later
 	// cannot settle a second time.
+	//
+	// An answer to a request nothing is waiting on is let go rather than carried
+	// on with. It is a second answer to the one question this server asked, and
+	// the login it would settle has been settled already.
 	if err := client.DeclineModernForwarding(messageId); err != nil {
-		return fmt.Errorf("failed to give up on the forwarded login: %w", err)
+		return refuseForwarding(client, fmt.Errorf("failed to give up on the forwarded login: %w", err))
 	}
+
+	// Read once: it is the name the whole of the rest of this is settled under,
+	// and the log and the profile saying different names is the one way this
+	// could be wrong about who was let in.
+	username := client.Profile().Username
 
 	// Said once per connection that came to the port itself, which on a server
 	// behind a proxy is the thing an operator wants to know about.
-	slog.Info("no proxy forwarded this login", "channel", auth.ModernForwardingChannel, "username", client.Profile().Username)
+	slog.Info("no proxy forwarded this login", "channel", auth.ModernForwardingChannel, "username", username)
 
 	if client.EncryptionEnabled() {
 		return askForEncryption(client)
@@ -88,7 +97,7 @@ func loginWithoutTheProxy(client types.Client, messageId int32) error {
 	// The name the client logged in under, which is all there is: no proxy
 	// answered for it, and an unencrypted connection is one nobody else can be
 	// asked about either.
-	return completeLogin(client, offlineProfile(client.Profile().Username))
+	return completeLogin(client, offlineProfile(username))
 }
 
 // refuseForwarding tells a connection why it is being let go, and reports what

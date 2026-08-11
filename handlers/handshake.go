@@ -14,6 +14,21 @@ func HandleHandshakeServerboundPacket(client types.Client, packet types.Serverbo
 		return fmt.Errorf("expected *handshake.HandshakeServerboundPacket, got %T", packet)
 	}
 
+	// A handshake names the phase it wants to be put into, and the phases are
+	// numbered, so the number a client sends is a number it chose. Two of them
+	// are a handshake's to name: a ping and a login. The rest are phases a
+	// connection is meant to arrive in by getting through the one before, and
+	// play is among them -- a connection put straight into it is counted among
+	// the players a ping reports without a login having been attempted, and is
+	// read for packets that only a client that logged in could have sent.
+	//
+	// So the number is checked before it is a phase rather than after. Reading it
+	// as one first would narrow it to a byte, which is what makes 4, 260 and 516
+	// the same request.
+	if p.Intent != int32(types.PhaseStatus) && p.Intent != int32(types.PhaseLogin) {
+		return fmt.Errorf("a handshake asked for intent %d, which is neither a status ping nor a login", p.Intent)
+	}
+
 	intent := types.Phase(p.Intent)
 
 	client.SetProtocolVersion(types.GetProtocolVersionById(types.ProtocolId(p.ProtocolVersion)))
