@@ -12,11 +12,18 @@ import (
 // versions, so a chain of shared bases becomes harder to read than the
 // duplication it saves.
 func NewDefaultProvider() (*Provider, error) {
-	return NewProvider(Set{
-		MinProtocol: types.ProtocolVersions.MINECRAFT_26_2.ID,
-		Registries:  registriesMinecraft26_2(),
-		Tags:        tagsMinecraft26_2(),
-	})
+	return NewProvider(
+		Set{
+			MinProtocol: types.ProtocolVersions.MINECRAFT_26_1.ID,
+			Registries:  registriesMinecraft26_1(),
+			Tags:        tagsMinecraft26_1(),
+		},
+		Set{
+			MinProtocol: types.ProtocolVersions.MINECRAFT_26_2.ID,
+			Registries:  registriesMinecraft26_2(),
+			Tags:        tagsMinecraft26_2(),
+		},
+	)
 }
 
 // registriesMinecraft26_2 is every registry the client is sent, which is all 29

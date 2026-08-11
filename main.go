@@ -7,15 +7,8 @@ import (
 	"fmt"
 	"go-void-limbo/auth"
 	"go-void-limbo/gamedata"
-	"go-void-limbo/handlers"
 	clientboundCommon "go-void-limbo/packets/clientbound/common"
-	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
-	clientboundPlay "go-void-limbo/packets/clientbound/play"
-	serverboundCommon "go-void-limbo/packets/serverbound/common"
-	"go-void-limbo/packets/serverbound/configuration"
-	"go-void-limbo/packets/serverbound/handshake"
-	"go-void-limbo/packets/serverbound/login"
 	serverboundPlay "go-void-limbo/packets/serverbound/play"
 	"go-void-limbo/registries"
 	"go-void-limbo/streams"
@@ -371,6 +364,10 @@ func (c *MinecraftClient) SetProfile(profile types.GameProfile) {
 // from the connection in full before decoding, so an unknown packet id or a failed
 // decode cannot desynchronize subsequent reads. Those two are reported as a
 // *packetError; anything else is the connection itself failing.
+//
+// The id says which packet arrived on the version the client speaks, and the
+// body is then carried up to the latest version before it is decoded, since
+// that is the only version a decoder exists for.
 func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHandler, error) {
 	length, err := c.stream.ReadVarInt()
 	if err != nil {
@@ -402,12 +399,30 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 		return nil, nil, &packetError{err: err}
 	}
 
-	entry, ok := c.packetRegistry.GetServerbound(c.Phase(), c.ProtocolVersion(), packetId)
-	if !ok || entry.Decoder == nil {
+	phase := c.Phase()
+	protocolVersion := c.ProtocolVersion()
+
+	packetType, ok := c.packetRegistry.GetServerboundType(phase, protocolVersion, packetId)
+	if !ok {
 		return nil, nil, &packetError{err: fmt.Errorf("unknown packet id: %d", packetId)}
 	}
 
-	packet, err := entry.Decoder(bodyStream)
+	entry, ok := c.packetRegistry.GetServerbound(phase, packetType)
+	if !ok || entry.Decoder == nil {
+		return nil, nil, &packetError{err: fmt.Errorf("no decoder for packet id %d", packetId)}
+	}
+
+	payload, err := bodyStream.ReadRest()
+	if err != nil {
+		return nil, nil, &packetError{err: err}
+	}
+
+	payload, err = c.packetRegistry.UpgradeBody(phase, packetType, protocolVersion, payload)
+	if err != nil {
+		return nil, nil, &packetError{err: err}
+	}
+
+	packet, err := entry.Decoder(streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(payload)))
 	if err != nil {
 		return nil, nil, &packetError{err: fmt.Errorf("failed to decode packet: %w", err)}
 	}
@@ -431,20 +446,40 @@ func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 		return errors.New("packet is nil")
 	}
 
-	packetId := c.packetRegistry.GetClientboundId(c.phase, reflect.TypeOf(packet).Elem(), c.protocolVersion)
+	packetType := reflect.TypeOf(packet).Elem()
+
+	packetId := c.packetRegistry.GetClientboundId(c.phase, packetType, c.protocolVersion)
 	if packetId == -1 {
 		return errors.New("unknown packet id")
 	}
 
-	buf := new(bytes.Buffer)
-	tempStream := streams.NewMinecraftStreamFromBuffer(buf)
+	// The packet encodes itself at the latest version, which is the only one it
+	// knows how to be, and is then carried back down to the version the client
+	// speaks.
+	payloadBuf := new(bytes.Buffer)
+	payloadStream := streams.NewMinecraftStreamFromBuffer(payloadBuf)
 
-	err := tempStream.WriteVarInt(packetId)
+	err := packet.Encode(payloadStream)
 	if err != nil {
 		return err
 	}
 
-	err = packet.Encode(tempStream)
+	err = payloadStream.Flush()
+	if err != nil {
+		return err
+	}
+
+	payload, err := c.packetRegistry.DowngradeBody(c.phase, packetType, c.protocolVersion, payloadBuf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	// The id goes in front of the body it was resolved for, at the version the
+	// client reads both at.
+	buf := new(bytes.Buffer)
+	tempStream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	err = tempStream.WriteVarInt(packetId)
 	if err != nil {
 		return err
 	}
@@ -454,7 +489,7 @@ func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 		return err
 	}
 
-	body := buf.Bytes()
+	body := append(buf.Bytes(), payload...)
 
 	if c.compressionEnabled {
 		body, err = compressBody(body, c.compressionThreshold)
@@ -630,44 +665,6 @@ func main() {
 
 		go srv.handleConnection(conn)
 	}
-}
-
-func registerPackets(packetRegistry *registries.PacketRegistry) {
-	packetRegistry.RegisterServerbound(types.PhaseHandshake, types.ProtocolVersions.ZERO, 0x00, handshake.DecodeHandshakeServerboundPacket, handlers.HandleHandshakeServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, login.DecodeLoginStartServerboundPacket, handlers.HandleLoginStartServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x01, login.DecodeEncryptionResponseServerboundPacket, handlers.HandleEncryptionResponseServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x03, login.DecodeLoginAcknowledgedServerboundPacket, handlers.HandleLoginAcknowledgedServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x03, configuration.DecodeAcknowledgeFinishConfigurationServerboundPacket, handlers.HandleAcknowledgeFinishConfigurationServerboundPacket)
-
-	// The same keep alive in both phases that have one, under the id each phase
-	// gives it.
-	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x04, serverboundCommon.DecodeKeepAliveServerboundPacket, handlers.HandleKeepAliveServerboundPacket)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1C, serverboundCommon.DecodeKeepAliveServerboundPacket, handlers.HandleKeepAliveServerboundPacket)
-
-	// What a joined client sends on its own. None of it needs a reaction from a
-	// limbo, but a packet with no decoder is one the read loop can only report
-	// as an unknown id, and the client sends these every tick.
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x00, serverboundPlay.DecodeAcceptTeleportationServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x0D, serverboundPlay.DecodeClientTickEndServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1E, serverboundPlay.DecodeMovePlayerPositionServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1F, serverboundPlay.DecodeMovePlayerPositionRotationServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x20, serverboundPlay.DecodeMovePlayerRotationServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x21, serverboundPlay.DecodeMovePlayerStatusServerboundPacket, nil)
-	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x2C, serverboundPlay.DecodePlayerLoadedServerboundPacket, nil)
-
-	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
-	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.EncryptionRequestClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x01)
-	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x02)
-	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.SetCompressionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
-	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
-	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x0D)
-	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.FinishConfigurationClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
-	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x04)
-	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x2C)
-	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x26)
-	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x31)
-	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x46)
-	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x48)
 }
 
 func (s *server) handleConnection(conn net.Conn) {

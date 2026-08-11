@@ -14,6 +14,7 @@ import (
 	clientboundCommon "go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
+	clientboundPlay "go-void-limbo/packets/clientbound/play"
 	serverboundCommon "go-void-limbo/packets/serverbound/common"
 	"go-void-limbo/registries"
 	"go-void-limbo/streams"
@@ -30,13 +31,20 @@ import (
 // packet ids come from the real registration, so a keep alive written here is
 // framed exactly as one written to a connection.
 func newTestClient(phase types.Phase) (*MinecraftClient, *bytes.Buffer) {
+	return newTestClientOn(phase, types.ProtocolVersions.MINECRAFT_26_2)
+}
+
+// newTestClientOn is newTestClient for the tests that care which version the
+// client is on, which are the ones about what the transformers do to a packet
+// on its way past.
+func newTestClientOn(phase types.Phase, protocolVersion types.ProtocolVersion) (*MinecraftClient, *bytes.Buffer) {
 	packetRegistry := registries.NewPacketRegistry()
 	registerPackets(packetRegistry)
 
 	buf := new(bytes.Buffer)
 
 	return &MinecraftClient{
-		protocolVersion: types.ProtocolVersions.MINECRAFT_26_2,
+		protocolVersion: protocolVersion,
 		phase:           phase,
 		stream:          streams.NewMinecraftStreamFromBuffer(buf),
 		packetRegistry:  packetRegistry,
@@ -1183,5 +1191,193 @@ func TestKeepAliveLoopStopsWithTheConnection(t *testing.T) {
 	case <-stopped:
 	case <-time.After(5 * time.Second):
 		t.Error("the keep alive loop is still running after the connection ended")
+	}
+}
+
+// idAndBody splits one packet written to an uncompressed connection into the id
+// in front of it and the body behind it. The two come from different places: the
+// id is resolved at the version the client speaks, and the body is what the
+// transformers left behind on their way down to it.
+func idAndBody(t *testing.T, written []byte) (types.PacketId, []byte) {
+	t.Helper()
+
+	length, read, err := streams.ReadVarIntFrom(written)
+	if err != nil {
+		t.Fatalf("reading the packet length: %v", err)
+	}
+
+	body := written[read:]
+	if int(length) != len(body) {
+		t.Fatalf("length says %d bytes, frame carries %d", length, len(body))
+	}
+
+	packetId, read, err := streams.ReadVarIntFrom(body)
+	if err != nil {
+		t.Fatalf("reading the packet id: %v", err)
+	}
+
+	return packetId, body[read:]
+}
+
+// A join is the packet the two versions disagree about, so what a 26.1 client is
+// sent has to be what a 26.2 client is sent with the online mode flag taken back
+// out of it.
+func TestWritePacketCarriesTheBodyDownToTheClientVersion(t *testing.T) {
+	join := func() *clientboundPlay.LoginClientboundPacket {
+		return &clientboundPlay.LoginClientboundPacket{
+			EntityId:           1,
+			Dimensions:         []string{"minecraft:overworld"},
+			ViewDistance:       2,
+			SimulationDistance: 2,
+			ShowDeathScreen:    true,
+			OnlineMode:         true,
+			SpawnInfo: clientboundPlay.SpawnInfo{
+				Dimension:        "minecraft:overworld",
+				GameMode:         clientboundPlay.GameModeSpectator,
+				PreviousGameMode: clientboundPlay.GameModeNone,
+			},
+		}
+	}
+
+	latest, latestBuf := newTestClient(types.PhasePlay)
+	if err := latest.WritePacket(join()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	older, olderBuf := newTestClientOn(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_1)
+	if err := older.WritePacket(join()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	latestId, latestBody := idAndBody(t, latestBuf.Bytes())
+	olderId, olderBody := idAndBody(t, olderBuf.Bytes())
+
+	// Both versions number the join the same, so the id is not what changes.
+	if latestId != 0x31 || olderId != 0x31 {
+		t.Errorf("join went out as %#02x to 26.2 and %#02x to 26.1, want %#02x to both", latestId, olderId, 0x31)
+	}
+
+	if len(olderBody) != len(latestBody)-1 {
+		t.Fatalf("26.1 body is %d bytes and 26.2's is %d, want exactly one fewer", len(olderBody), len(latestBody))
+	}
+
+	// The flag is the second to last byte, and enforces secure chat behind it is
+	// what a 26.1 client reads in its place.
+	want := append(append([]byte{}, latestBody[:len(latestBody)-2]...), latestBody[len(latestBody)-1])
+	if !bytes.Equal(olderBody, want) {
+		t.Errorf("26.1 body is\n%v\nwant\n%v", olderBody, want)
+	}
+}
+
+// A packet neither version changed goes out to both untouched, which is all of
+// them but the join.
+func TestWritePacketLeavesAPacketNeitherVersionChanged(t *testing.T) {
+	latest, latestBuf := newTestClient(types.PhaseConfiguration)
+	if err := latest.WritePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: 7}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	older, olderBuf := newTestClientOn(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_1)
+	if err := older.WritePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: 7}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Equal(latestBuf.Bytes(), olderBuf.Bytes()) {
+		t.Errorf("26.1 was sent\n% x\nand 26.2\n% x", olderBuf.Bytes(), latestBuf.Bytes())
+	}
+}
+
+// What a 26.1 client sends is resolved through 26.1's id table and decoded by
+// the one decoder the packet has, which belongs to 26.2.
+func TestReadPacketResolvesIdsAtTheClientVersion(t *testing.T) {
+	client, buf := newTestClientOn(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_1)
+
+	body := new(bytes.Buffer)
+	bodyStream := streams.NewMinecraftStreamFromBuffer(body)
+
+	// The id play gives the keep alive, which is the same on both versions.
+	if err := bodyStream.WriteVarInt(0x1C); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := bodyStream.WriteLong(99); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := bodyStream.Flush(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	frame := streams.NewMinecraftStreamFromBuffer(buf)
+	if err := frame.WriteVarInt(int32(body.Len())); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := frame.WriteBytes(body.Bytes()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := frame.Flush(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	packet, handler, err := client.ReadPacket()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	keepAlive, ok := packet.(*serverboundCommon.KeepAliveServerboundPacket)
+	if !ok {
+		t.Fatalf("expected a keep alive, got %T", packet)
+	}
+
+	if keepAlive.Id != 99 {
+		t.Errorf("expected id 99, got %d", keepAlive.Id)
+	}
+
+	if handler == nil {
+		t.Error("expected the keep alive handler, got nil")
+	}
+}
+
+// A 26.1 client has no field for the session id 26.2 appended to the login
+// success packet, and reads a packet longer than it expects as a connection to
+// drop. It is the one packet of the login phase the two versions disagree about.
+func TestWritePacketDropsTheSessionIdForAnOlderClient(t *testing.T) {
+	signature := "signed"
+
+	loginSuccess := func() *clientboundLogin.LoginSuccessClientboundPacket {
+		return &clientboundLogin.LoginSuccessClientboundPacket{
+			Profile: types.GameProfile{
+				Uuid:       "01020304-0506-0708-090a-0b0c0d0e0f10",
+				Username:   "Steve",
+				Properties: []types.ProfileProperty{{Name: "textures", Value: "skin", Signature: &signature}},
+			},
+			SessionId: "11121314-1516-1718-191a-1b1c1d1e1f20",
+		}
+	}
+
+	latest, latestBuf := newTestClient(types.PhaseLogin)
+	if err := latest.WritePacket(loginSuccess()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	older, olderBuf := newTestClientOn(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_1)
+	if err := older.WritePacket(loginSuccess()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	latestId, latestBody := idAndBody(t, latestBuf.Bytes())
+	olderId, olderBody := idAndBody(t, olderBuf.Bytes())
+
+	if latestId != 0x02 || olderId != 0x02 {
+		t.Errorf("login success went out as %#02x to 26.2 and %#02x to 26.1, want %#02x to both", latestId, olderId, 0x02)
+	}
+
+	// The session id is a uuid on the end and nothing else moved, so what 26.1
+	// is sent is what 26.2 is sent without its last sixteen bytes.
+	want := latestBody[:len(latestBody)-16]
+	if !bytes.Equal(olderBody, want) {
+		t.Errorf("26.1 body is\n%v\nwant\n%v", olderBody, want)
 	}
 }

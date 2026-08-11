@@ -6,6 +6,7 @@ import (
 	"go-void-limbo/packets/clientbound/configuration"
 	"go-void-limbo/streams"
 	"go-void-limbo/types"
+	"strings"
 	"testing"
 )
 
@@ -306,5 +307,180 @@ func TestDefaultProviderEntriesRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// What 26.2 adds is what 26.1 must not be sent. A registry it has never heard
+// of is not one it skips, and an entry naming something it does not have fails
+// to parse and takes its whole registry with it.
+func TestRegistriesFor26_1LeaveOutWhat26_2Added(t *testing.T) {
+	registries := map[string]map[string]bool{}
+	for _, registry := range registriesMinecraft26_1() {
+		names := make(map[string]bool, len(registry.Entries))
+		for _, entry := range registry.Entries {
+			names[entry.Name] = true
+		}
+
+		registries[registry.Name] = names
+	}
+
+	if _, ok := registries["minecraft:sulfur_cube_archetype"]; ok {
+		t.Error("26.1 is sent minecraft:sulfur_cube_archetype, which it does not synchronize")
+	}
+
+	// bounce names minecraft:music_disc.bounce, a sound event 26.1 has no entry
+	// for, which is what a 26.1 client reported as a jukebox song it could not
+	// parse.
+	if registries["minecraft:jukebox_song"]["minecraft:bounce"] {
+		t.Error("26.1 is sent the bounce jukebox song, which names a sound it does not have")
+	}
+
+	if registries["minecraft:damage_type"]["minecraft:sulfur_cube_hot"] {
+		t.Error("26.1 is sent the sulfur_cube_hot damage type, which 26.2 added")
+	}
+
+	// The registries themselves are still all there: leaving out an entry is not
+	// leaving out the registry it belonged to.
+	if len(registries["minecraft:jukebox_song"]) == 0 || len(registries["minecraft:damage_type"]) == 0 {
+		t.Error("26.1 was sent an empty jukebox_song or damage_type")
+	}
+}
+
+// 26.2 rewrote the entity predicates inside eleven enchantments. An entry in the
+// new shape is one 26.1 reads as a predicate with no type constraint at best, so
+// the 26.1 content has to come from 26.1's own data rather than from 26.2's.
+func TestEnchantmentsFor26_1UseTheOlderPredicateShape(t *testing.T) {
+	rendered := func(registries []Registry) string {
+		for _, registry := range registries {
+			if registry.Name != "minecraft:enchantment" {
+				continue
+			}
+
+			var sb strings.Builder
+			for _, entry := range registry.Entries {
+				sb.WriteString(entry.Data.String())
+			}
+
+			return sb.String()
+		}
+
+		return ""
+	}
+
+	older := rendered(registriesMinecraft26_1())
+	newer := rendered(registriesMinecraft26_2())
+
+	if older == "" || newer == "" {
+		t.Fatal("no enchantment registry in one of the sets")
+	}
+
+	if strings.Contains(older, "minecraft:entity_type") {
+		t.Error("26.1 enchantments carry 26.2's namespaced entity predicate keys")
+	}
+
+	if !strings.Contains(newer, "minecraft:entity_type") {
+		t.Error("26.2 enchantments no longer carry the namespaced keys they were generated with")
+	}
+}
+
+// The provider picks the set by version, so each one has to get its own.
+func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
+	provider, err := NewDefaultProvider()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
+	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
+
+	if len(older) == 0 {
+		t.Fatal("26.1 was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	if len(older) >= len(newer) {
+		t.Errorf("26.1 was sent %d packets and 26.2 %d, want fewer for 26.1", len(older), len(newer))
+	}
+}
+
+// 26.1 reads infiniburn as the name of a block tag and 26.2 as a set of blocks.
+// Sending 26.2's empty list to a 26.1 client is a dimension type it cannot
+// decode, which is the whole registry rejected.
+func TestDimensionTypeFor26_1NamesTheInfiniburnTag(t *testing.T) {
+	var dimensionType nbt.Compound
+
+	for _, registry := range registriesMinecraft26_1() {
+		if registry.Name != "minecraft:dimension_type" {
+			continue
+		}
+
+		if len(registry.Entries) != 1 {
+			t.Fatalf("expected one dimension type, got %d", len(registry.Entries))
+		}
+
+		compound, ok := registry.Entries[0].Data.(nbt.Compound)
+		if !ok {
+			t.Fatalf("expected a compound, got %T", registry.Entries[0].Data)
+		}
+
+		dimensionType = compound
+	}
+
+	if dimensionType == nil {
+		t.Fatal("26.1 is sent no dimension type at all")
+	}
+
+	infiniburn, ok := dimensionType["infiniburn"].(nbt.String)
+	if !ok {
+		t.Fatalf("26.1 infiniburn is %T, want a tag name", dimensionType["infiniburn"])
+	}
+
+	if infiniburn != "#minecraft:infiniburn_overworld" {
+		t.Errorf("26.1 infiniburn is %q, want the block tag the client's own overworld names", infiniburn)
+	}
+
+	// 26.2 keeps the set form, and the two must not have been crossed over.
+	if _, ok := overworldDimensionType["infiniburn"].(nbt.List); !ok {
+		t.Errorf("26.2 infiniburn is %T, want a set of blocks", overworldDimensionType["infiniburn"])
+	}
+}
+
+// A tag the client asks for and was never sent throws rather than defaulting to
+// empty, so each version is sent the tag names its own jar declares. 26.2
+// renamed one block tag, which is the case that would otherwise go missing.
+func TestTagsFor26_1DeclareTheNamesThatVersionAsksFor(t *testing.T) {
+	names := func(sets []TagSet, registry string) map[string]bool {
+		for _, set := range sets {
+			if set.Registry != registry {
+				continue
+			}
+
+			out := make(map[string]bool, len(set.Tags))
+			for _, tag := range set.Tags {
+				out[tag.Name] = true
+			}
+
+			return out
+		}
+
+		return nil
+	}
+
+	older := names(tagsMinecraft26_1(), "minecraft:block")
+	newer := names(tagsMinecraft26_2(), "minecraft:block")
+
+	if older == nil || newer == nil {
+		t.Fatal("no block tags in one of the sets")
+	}
+
+	if !older["minecraft:concrete_powder"] {
+		t.Error("26.1 is not sent minecraft:concrete_powder, which it asks for")
+	}
+
+	if newer["minecraft:concrete_powder"] {
+		t.Error("26.2 is sent minecraft:concrete_powder, which it renamed")
+	}
+
+	if !newer["minecraft:concrete_powders"] {
+		t.Error("26.2 is not sent minecraft:concrete_powders, which it asks for")
 	}
 }

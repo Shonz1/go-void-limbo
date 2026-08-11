@@ -138,6 +138,16 @@ func (s *MinecraftStream) WriteBytes(b []byte) error {
 	return err
 }
 
+// ReadRest reads everything left in the stream.
+//
+// It is for the packet transformers, which are handed a body that has already
+// been read from the connection in full and usually have one field of it to
+// change and the remainder to copy across untouched. A stream sitting on a
+// connection has no end to read to, so this is only for the buffer backed ones.
+func (s *MinecraftStream) ReadRest() ([]byte, error) {
+	return io.ReadAll(s.stream)
+}
+
 // ReadByteArray reads a var int length and then that many bytes. The length
 // arrives from the other end, and the buffer for it is allocated before a single
 // byte of it has been read, so max is what the caller knows the field can hold:
