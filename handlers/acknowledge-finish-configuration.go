@@ -79,6 +79,13 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		ViewDistance:       viewDistance,
 		SimulationDistance: simulationDistance,
 		ShowDeathScreen:    true,
+		// Whether the client was let in on Mojang's word rather than on its own.
+		// The player list draws a head beside a name only for a server that says
+		// yes, because a server that takes a client's word for who it is is a
+		// server where the name and the skin beside it prove nothing. This one
+		// asks Mojang, and saying so here is the only way the heads appear: the
+		// signed textures in the player list entry are not enough on their own.
+		OnlineMode: true,
 		SpawnInfo: clientboundPlay.SpawnInfo{
 			DimensionTypeId: overworldDimensionTypeId,
 			Dimension:       overworldDimension,
@@ -114,11 +121,12 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 	// reads its own name, skin and game mode from, and which it has none of
 	// until it is told. Only one player exists here, so the entry is its own.
 	//
-	// The five actions left out are the five whose values would be the ones a
+	// The four actions left out are the four whose values would be the ones a
 	// new entry already holds: no chat session, no display name of its own, no
-	// measured latency, no place of its own in the list order, and a hat.
+	// measured latency, and no place of its own in the list order.
 	playerInfo := clientboundPlay.PlayerInfoUpdateClientboundPacket{
-		Actions: clientboundPlay.PlayerInfoAddPlayer | clientboundPlay.PlayerInfoUpdateGameMode | clientboundPlay.PlayerInfoUpdateListed,
+		Actions: clientboundPlay.PlayerInfoAddPlayer | clientboundPlay.PlayerInfoUpdateGameMode |
+			clientboundPlay.PlayerInfoUpdateListed | clientboundPlay.PlayerInfoUpdateHat,
 		Entries: []clientboundPlay.PlayerInfoEntry{
 			{
 				Profile:  client.Profile(),
@@ -127,6 +135,16 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 				// does not draw, and a player that cannot see itself on the
 				// list is the one thing about a limbo a player checks.
 				Listed: true,
+				// A new entry holds no hat, and the head the player list draws
+				// is the skin's two head layers over each other. Leaving this
+				// out draws the base layer alone, which for a skin that carries
+				// its hair on the second one is a head that looks missing.
+				//
+				// This is true rather than what the player asked for because
+				// what they asked for arrives in a client information packet
+				// this server does not read, and a hat is what all but a few
+				// players have on.
+				ShowHat: true,
 			},
 		},
 	}
