@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -30,6 +31,29 @@ const address = ":25565"
 
 // maxPacketSize is the largest packet body the protocol allows (2^21 - 1 bytes).
 const maxPacketSize = 2097151
+
+// packetLogBlacklist holds the packet types that are never logged, in either
+// direction. A joined client sends some of these on every tick, and at that rate
+// they bury everything else the log has to say.
+var packetLogBlacklist = map[reflect.Type]bool{
+	reflect.TypeOf(serverboundPlay.ClientTickEndServerboundPacket{}): true,
+}
+
+// logPacket records a packet crossing the connection, unless its type is
+// blacklisted. Every connection carries the same traffic, so this is detail one
+// asks for rather than detail one is told.
+func logPacket(message string, packet any) {
+	packetType := reflect.TypeOf(packet)
+	if packetType != nil && packetType.Kind() == reflect.Pointer {
+		packetType = packetType.Elem()
+	}
+
+	if packetType != nil && packetLogBlacklist[packetType] {
+		return
+	}
+
+	slog.Debug(message, "packet", packet)
+}
 
 // keepAliveInterval is how often a keep alive goes out, and equally how long an
 // unanswered one has before the connection is given up on.
@@ -173,7 +197,7 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 		return nil, nil, &packetError{err: fmt.Errorf("failed to decode packet: %w", err)}
 	}
 
-	slog.Info("packet received", "packet", packet)
+	logPacket("packet received", packet)
 
 	return packet, entry.Handler, nil
 }
@@ -230,9 +254,30 @@ func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 		return err
 	}
 
-	slog.Info("packet sent", "packet", packet)
+	logPacket("packet sent", packet)
 
 	return nil
+}
+
+// configureLogging sets the level the default logger keeps, read from LOG_LEVEL
+// as one of DEBUG, INFO, WARN or ERROR. Packet traffic is logged at DEBUG, so it
+// is silent until asked for.
+func configureLogging() {
+	level := slog.LevelInfo
+	unrecognized := ""
+
+	if raw, ok := os.LookupEnv("LOG_LEVEL"); ok {
+		if err := level.UnmarshalText([]byte(raw)); err != nil {
+			level = slog.LevelInfo
+			unrecognized = raw
+		}
+	}
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
+	if unrecognized != "" {
+		slog.Warn("unrecognized LOG_LEVEL, falling back to INFO", "value", unrecognized)
+  }
 }
 
 // ConfirmKeepAlive records the client's answer to the keep alive the server is
@@ -304,6 +349,8 @@ func (c *MinecraftClient) keepAliveLoop(done <-chan struct{}, interval time.Dura
 }
 
 func main() {
+	configureLogging()
+
 	packetRegistry := registries.NewPacketRegistry()
 
 	registerPackets(packetRegistry)
