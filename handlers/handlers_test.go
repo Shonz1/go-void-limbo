@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
 	clientboundPlay "go-void-limbo/packets/clientbound/play"
+	"go-void-limbo/packets/serverbound/common"
 	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
@@ -22,6 +24,11 @@ type fakeClient struct {
 	// packet id from.
 	writePhases     []types.Phase
 	registryPackets []types.ClientboundPacket
+
+	// confirmedKeepAlives records the ids answered, and keepAliveErr is what the
+	// real client would report for an answer that matches nothing.
+	confirmedKeepAlives []int64
+	keepAliveErr        error
 }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
@@ -44,6 +51,11 @@ func (c *fakeClient) WritePacket(packet types.ClientboundPacket) error {
 	c.written = append(c.written, packet)
 	c.writePhases = append(c.writePhases, c.phase)
 	return nil
+}
+
+func (c *fakeClient) ConfirmKeepAlive(id int64) error {
+	c.confirmedKeepAlives = append(c.confirmedKeepAlives, id)
+	return c.keepAliveErr
 }
 
 func TestHandleHandshakeServerboundPacket(t *testing.T) {
@@ -255,6 +267,35 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 	}
 }
 
+func TestHandleKeepAliveServerboundPacketConfirmsTheIdItCarries(t *testing.T) {
+	// The same packet arrives in both phases that have one, and means the same
+	// thing in both.
+	for _, phase := range []types.Phase{types.PhaseConfiguration, types.PhasePlay} {
+		client := &fakeClient{phase: phase}
+
+		if err := HandleKeepAliveServerboundPacket(client, &common.KeepAliveServerboundPacket{Id: 1234}); err != nil {
+			t.Fatalf("phase %d: unexpected error: %v", phase, err)
+		}
+
+		if !slices.Equal(client.confirmedKeepAlives, []int64{1234}) {
+			t.Errorf("phase %d: confirmed %v, want the id the packet carried", phase, client.confirmedKeepAlives)
+		}
+
+		// The server asks and the client answers, so an answer needs no answer.
+		if len(client.written) != 0 {
+			t.Errorf("phase %d: wrote %d packets, want none", phase, len(client.written))
+		}
+	}
+}
+
+func TestHandleKeepAliveServerboundPacketReportsAnAnswerToNothing(t *testing.T) {
+	client := &fakeClient{phase: types.PhasePlay, keepAliveErr: errors.New("answers nothing that was sent")}
+
+	if err := HandleKeepAliveServerboundPacket(client, &common.KeepAliveServerboundPacket{Id: 1}); err == nil {
+		t.Error("error = nil, want the client's rejection passed back")
+	}
+}
+
 func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	client := &fakeClient{}
 
@@ -271,6 +312,10 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	}
 
 	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
+		t.Error("expected an error for a mismatched packet type")
+	}
+
+	if err := HandleKeepAliveServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
 		t.Error("expected an error for a mismatched packet type")
 	}
 }
