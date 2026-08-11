@@ -1,7 +1,6 @@
 package streams
 
 import (
-	"bytes"
 	"fmt"
 )
 
@@ -10,15 +9,19 @@ import (
 const MaxPacketSize = 2097151
 
 // ReadFrame reads one length-prefixed frame off the stream and returns the
-// body inside it. The body is read in full even when it is about to be refused
-// further up, so the frame after it starts where it should.
-func (s *MinecraftStream) ReadFrame() ([]byte, error) {
+// body inside it. The length arrives from the other end, and the body is
+// allocated before a byte of it has been read, so max is what the caller knows
+// a frame can hold, up to the MaxPacketSize the protocol itself allows:
+// anything longer is refused rather than reserved for. A body small enough to
+// be read is read in full even when it is about to be refused further up, so
+// the frame after it starts where it should.
+func (s *MinecraftStream) ReadFrame(max int32) ([]byte, error) {
 	length, err := s.ReadVarInt()
 	if err != nil {
 		return nil, err
 	}
 
-	if length < 1 || length > MaxPacketSize {
+	if length < 1 || length > max {
 		return nil, fmt.Errorf("invalid packet length: %d", length)
 	}
 
@@ -58,25 +61,18 @@ func CompressBody(body []byte, threshold int32) ([]byte, error) {
 		payload = compressed
 	}
 
-	buf := new(bytes.Buffer)
-	stream := NewMinecraftStreamFromBuffer(buf)
+	framed := AppendVarInt(make([]byte, 0, 5+len(payload)), size)
 
-	if err := stream.WriteVarInt(size); err != nil {
-		return nil, err
-	}
-
-	if err := stream.Flush(); err != nil {
-		return nil, err
-	}
-
-	return append(buf.Bytes(), payload...), nil
+	return append(framed, payload...), nil
 }
 
 // DecompressBody undoes CompressBody on a body that arrived from a client that
 // was told the same threshold. A size the client had no business compressing at
 // is refused: a body it should have sent in full is one this end cannot tell
-// from a frame that lost its place.
-func DecompressBody(body []byte, threshold int32) ([]byte, error) {
+// from a frame that lost its place. The size is also the client's word on how
+// much memory inflating is worth, so max bounds it the same way it bounds the
+// frame the body arrived in.
+func DecompressBody(body []byte, threshold int32, max int32) ([]byte, error) {
 	size, read, err := ReadVarIntFrom(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data length: %w", err)
@@ -88,7 +84,7 @@ func DecompressBody(body []byte, threshold int32) ([]byte, error) {
 		return payload, nil
 	}
 
-	if size < threshold || size > MaxPacketSize {
+	if size < threshold || size > max {
 		return nil, fmt.Errorf("invalid data length: %d", size)
 	}
 

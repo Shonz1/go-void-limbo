@@ -530,6 +530,49 @@ func TestReadPacketReportsABodyItCannotInflate(t *testing.T) {
 	}
 }
 
+// A connection that has not reached play may not claim the protocol's full
+// frame size: nothing legitimate before then comes anywhere near it, so the
+// length is refused before a body that big is allocated for. The same frame is
+// taken at its word in play.
+func TestReadPacketCapsWhatAPrePlayFrameMayClaim(t *testing.T) {
+	body := make([]byte, maxPrePlayPacketSize+1)
+	body[0] = 0x7F
+
+	tests := []struct {
+		name   string
+		phase  types.Phase
+		capped bool
+	}{
+		{name: "capped before play", phase: types.PhaseLogin, capped: true},
+		{name: "at the protocol maximum in play", phase: types.PhasePlay, capped: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, buf := newTestClient(test.phase)
+			buf.Write(testutil.Frame(t, body))
+
+			_, _, err := client.ReadPacket()
+
+			var packetErr *packetError
+			if test.capped {
+				if err == nil || errors.As(err, &packetErr) {
+					t.Fatalf("error = %v, want the connection refused on the length alone", err)
+				}
+
+				return
+			}
+
+			// The frame was read in full: what fails is the unknown id inside
+			// it, which is the read loop carrying on rather than the
+			// connection ending.
+			if !errors.As(err, &packetErr) {
+				t.Fatalf("error = %v, want a packet error about the id inside the frame", err)
+			}
+		})
+	}
+}
+
 // A connection on a server that holds a secret asks its question once, and takes
 // one answer to it. A second payload arrives too late to name anybody else.
 func TestModernForwardingIsAnsweredOnce(t *testing.T) {

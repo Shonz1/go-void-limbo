@@ -39,24 +39,44 @@ type MinecraftStream struct {
 	reader *bufio.Reader
 
 	encrypted bool
+
+	// readScratch and writeScratch back the fixed-size primitives, so a short
+	// or a long is not an allocation of its own. They can live on the stream
+	// because each half has one user: reads happen on the read loop, and
+	// writes under the client's lock.
+	readScratch  [8]byte
+	writeScratch [8]byte
 }
 
 func NewMinecraftStream(stream ReadWriter) *MinecraftStream {
 	return &MinecraftStream{stream: stream}
 }
 
+// connBufferSize is how much buffering sits on each half of a connection. The
+// traffic a limbo carries is a few dozen bytes a packet, so the bufio default
+// of 4KB would be idle memory on every connection; anything bigger than the
+// buffer passes straight through to the connection either way.
+const connBufferSize = 512
+
 func NewMinecraftStreamFromNetConn(conn net.Conn) *MinecraftStream {
-	reader := bufio.NewReader(conn)
+	reader := bufio.NewReaderSize(conn, connBufferSize)
 
 	return &MinecraftStream{
-		stream: bufio.NewReadWriter(reader, bufio.NewWriter(conn)),
+		stream: bufio.NewReadWriter(reader, bufio.NewWriterSize(conn, connBufferSize)),
 		conn:   conn,
 		reader: reader,
 	}
 }
 
+// bufferReadWriter is a bytes.Buffer as a ReadWriter. The buffer is already
+// in memory, so there is nothing to buffer on top of it and nothing for Flush
+// to do.
+type bufferReadWriter struct{ *bytes.Buffer }
+
+func (bufferReadWriter) Flush() error { return nil }
+
 func NewMinecraftStreamFromBuffer(buf *bytes.Buffer) *MinecraftStream {
-	return NewMinecraftStream(bufio.NewReadWriter(bufio.NewReader(buf), bufio.NewWriter(buf)))
+	return NewMinecraftStream(bufferReadWriter{buf})
 }
 
 func (s *MinecraftStream) Flush() error {
@@ -109,8 +129,8 @@ func (s *MinecraftStream) EnableEncryption(secret []byte) error {
 	buffered := make([]byte, len(pending))
 	decrypter.XORKeyStream(buffered, pending)
 
-	reader := bufio.NewReader(io.MultiReader(bytes.NewReader(buffered), cipher.StreamReader{S: decrypter, R: s.conn}))
-	writer := bufio.NewWriter(cipher.StreamWriter{S: newCfb8(block, secret, false), W: s.conn})
+	reader := bufio.NewReaderSize(io.MultiReader(bytes.NewReader(buffered), cipher.StreamReader{S: decrypter, R: s.conn}), connBufferSize)
+	writer := bufio.NewWriterSize(cipher.StreamWriter{S: newCfb8(block, secret, false), W: s.conn}, connBufferSize)
 
 	s.reader = reader
 	s.stream = bufio.NewReadWriter(reader, writer)
@@ -209,6 +229,20 @@ func readVarInt(reader io.ByteReader) (int32, int, error) {
 	return 0, size, errors.New("VarInt too big")
 }
 
+// AppendVarInt appends value in the var int encoding to dst and returns the
+// extended slice, for the callers that are building a byte slice rather than
+// writing to a stream. A var int is at most five bytes, so a caller that wants
+// one allocation can reserve that much.
+func AppendVarInt(dst []byte, value int32) []byte {
+	uvalue := uint32(value)
+	for (uvalue & ^uint32(0x7F)) != 0 {
+		dst = append(dst, byte((uvalue&0x7F)|0x80))
+		uvalue >>= 7
+	}
+
+	return append(dst, byte(uvalue))
+}
+
 func (s *MinecraftStream) WriteVarInt(value int32) error {
 	uvalue := uint32(value)
 	for (uvalue & ^uint32(0x7F)) != 0 {
@@ -247,48 +281,45 @@ func (s *MinecraftStream) WriteString(value string) error {
 }
 
 func (s *MinecraftStream) ReadShort() (int16, error) {
-	bytes, err := s.ReadBytes(2)
-	if err != nil {
+	buf := s.readScratch[:2]
+	if _, err := io.ReadFull(s.stream, buf); err != nil {
 		return 0, err
 	}
 
-	return int16(binary.BigEndian.Uint16(bytes)), nil
+	return int16(binary.BigEndian.Uint16(buf)), nil
 }
 
 func (s *MinecraftStream) WriteShort(value int16) error {
-	bytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(bytes, uint16(value))
-	return s.WriteBytes(bytes)
+	binary.BigEndian.PutUint16(s.writeScratch[:2], uint16(value))
+	return s.WriteBytes(s.writeScratch[:2])
 }
 
 func (s *MinecraftStream) ReadInt() (int32, error) {
-	bytes, err := s.ReadBytes(4)
-	if err != nil {
+	buf := s.readScratch[:4]
+	if _, err := io.ReadFull(s.stream, buf); err != nil {
 		return 0, err
 	}
 
-	return int32(binary.BigEndian.Uint32(bytes)), nil
+	return int32(binary.BigEndian.Uint32(buf)), nil
 }
 
 func (s *MinecraftStream) WriteInt(value int32) error {
-	bytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(bytes, uint32(value))
-	return s.WriteBytes(bytes)
+	binary.BigEndian.PutUint32(s.writeScratch[:4], uint32(value))
+	return s.WriteBytes(s.writeScratch[:4])
 }
 
 func (s *MinecraftStream) ReadLong() (int64, error) {
-	bytes, err := s.ReadBytes(8)
-	if err != nil {
+	buf := s.readScratch[:8]
+	if _, err := io.ReadFull(s.stream, buf); err != nil {
 		return 0, err
 	}
 
-	return int64(binary.BigEndian.Uint64(bytes)), nil
+	return int64(binary.BigEndian.Uint64(buf)), nil
 }
 
 func (s *MinecraftStream) WriteLong(value int64) error {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, uint64(value))
-	return s.WriteBytes(bytes)
+	binary.BigEndian.PutUint64(s.writeScratch[:8], uint64(value))
+	return s.WriteBytes(s.writeScratch[:8])
 }
 
 func (s *MinecraftStream) ReadFloat() (float32, error) {
