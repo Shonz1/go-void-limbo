@@ -431,6 +431,12 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 		t.Errorf("previous game mode = %s, want none", login.SpawnInfo.PreviousGameMode)
 	}
 
+	// Every login here is one Mojang vouched for, and a client told otherwise
+	// draws no head beside any name in the player list.
+	if !login.OnlineMode {
+		t.Error("online mode = false, want the client told its login was authenticated")
+	}
+
 	position, ok := client.written[1].(*clientboundPlay.PlayerPositionClientboundPacket)
 	if !ok {
 		t.Fatalf("expected *play.PlayerPositionClientboundPacket second, got %T", client.written[1])
@@ -473,6 +479,12 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 	// leave it in one mode holding a list entry that says another.
 	if playerInfo.Actions&clientboundPlay.PlayerInfoUpdateGameMode == 0 || entry.GameMode != login.SpawnInfo.GameMode {
 		t.Errorf("player list game mode = %s, want the login packet's %s", entry.GameMode, login.SpawnInfo.GameMode)
+	}
+
+	// A new entry holds no hat, so an entry that does not say otherwise draws
+	// the head as its base skin layer alone.
+	if playerInfo.Actions&clientboundPlay.PlayerInfoUpdateHat == 0 || !entry.ShowHat {
+		t.Errorf("actions = %s show hat = %t, want the hat shown", playerInfo.Actions, entry.ShowHat)
 	}
 
 	// The client sits on its loading screen until this arrives, so it has to be
