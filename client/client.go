@@ -1,7 +1,8 @@
 // Package client holds one accepted connection: the state a login moves
-// through, the framing the connection is on, and the read and keep alive loops
-// that drive it. Everything server-wide reaches it through the Config it is
-// built with.
+// through, the framing the connection is on, and the read loop that drives it.
+// Keep alives are sent into it from outside, on the server's sweep over every
+// connection it holds. Everything server-wide reaches it through the Config it
+// is built with.
 package client
 
 import (
@@ -150,6 +151,19 @@ type Client struct {
 	// yet, or zero when the server is not waiting on one.
 	pendingKeepAlive int64
 
+	// readScratch backs the frame body the read loop is consuming, reused from
+	// one packet to the next so a client streaming position updates is not a
+	// stream of allocations. Only the read loop touches it, and nothing decoded
+	// from a body keeps a byte of it: every field a decoder returns is a copy.
+	readScratch []byte
+
+	// decodeReader and decodeStream are the one stream every packet of this
+	// connection is decoded through, pointed at each new body in turn rather
+	// than built around every one. Only the read loop touches them, and they
+	// are made on first use so a client built field by field works too.
+	decodeReader *bytes.Reader
+	decodeStream *streams.MinecraftStream
+
 	// compressionEnabled says whether the client has been told a compression
 	// threshold, which is what puts a data length in front of every packet body
 	// in both directions. compressionThreshold is the size at or above which a
@@ -180,6 +194,18 @@ func New(conn net.Conn, cfg Config) *Client {
 		encryptionEnabled: cfg.EncryptionEnabled,
 		forwardingSecret:  cfg.ForwardingSecret,
 	}
+}
+
+// Close ends the connection, which is what ends the read loop driving it and
+// everything the loop's return tears down behind it.
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+// RemoteAddr names the other end of the connection, for whoever has something
+// to log about it.
+func (c *Client) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
 }
 
 // compression reports the threshold packets are deflated at, and whether the
@@ -539,7 +565,7 @@ func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, err
 		maxSize = maxPrePlayPacketSize
 	}
 
-	body, err := c.stream.ReadFrame(maxSize)
+	body, err := c.stream.ReadFrameInto(&c.readScratch, maxSize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -577,7 +603,14 @@ func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, err
 		return nil, nil, &packetError{err: err}
 	}
 
-	packet, err := entry.Decoder(streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(payload)))
+	if c.decodeReader == nil {
+		c.decodeReader = bytes.NewReader(nil)
+		c.decodeStream = streams.NewMinecraftStreamFromBytesReader(c.decodeReader)
+	}
+
+	c.decodeReader.Reset(payload)
+
+	packet, err := entry.Decoder(c.decodeStream)
 	if err != nil {
 		return nil, nil, &packetError{err: fmt.Errorf("failed to decode packet: %w", err)}
 	}

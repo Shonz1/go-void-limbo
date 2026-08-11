@@ -2,6 +2,7 @@ package streams
 
 import (
 	"fmt"
+	"io"
 )
 
 // MaxPacketSize is the largest packet body the protocol allows (2^21 - 1
@@ -26,6 +27,41 @@ func (s *MinecraftStream) ReadFrame(max int32) ([]byte, error) {
 	}
 
 	return s.ReadBytes(length)
+}
+
+// frameScratchLimit is the biggest frame body the scratch a connection reuses
+// may grow to hold. The traffic a limbo carries is tens of bytes a packet, so
+// anything bigger is rare and gets a buffer of its own rather than pinning its
+// size to the connection for good.
+const frameScratchLimit = 4096
+
+// ReadFrameInto is ReadFrame for a caller with one frame in flight at a time:
+// the body lands in scratch, which grows to the biggest ordinary frame the
+// connection has seen and is then reused for every one after it, so a steady
+// stream of packets is not a steady stream of allocations. The returned body
+// aliases scratch and is only good until the next call.
+func (s *MinecraftStream) ReadFrameInto(scratch *[]byte, max int32) ([]byte, error) {
+	length, err := s.ReadVarInt()
+	if err != nil {
+		return nil, err
+	}
+
+	if length < 1 || length > max {
+		return nil, fmt.Errorf("invalid packet length: %d", length)
+	}
+
+	if length > frameScratchLimit {
+		return s.ReadBytes(length)
+	}
+
+	if cap(*scratch) < int(length) {
+		*scratch = make([]byte, length)
+	}
+
+	buf := (*scratch)[:length]
+	_, err = io.ReadFull(s.stream, buf)
+
+	return buf, err
 }
 
 // WriteFrame writes body as one length-prefixed frame and flushes it, which is

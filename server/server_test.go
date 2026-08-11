@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"slices"
 	"testing"
@@ -897,6 +899,51 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 				t.Errorf("statusVersion(%d) = %+v, want %+v", test.version.ID, got, test.want)
 			}
 		})
+	}
+}
+
+// The sweep is what turns an unanswered keep alive into a closed connection,
+// and closing is what ends the read loop on the other side of it. The clients
+// the sweep visits are the registered ones, so the test registers its client
+// the way handleConnection registers every real one.
+func TestTheKeepAliveSweepDropsAClientThatNeverAnswers(t *testing.T) {
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry()}
+
+	conn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	c := client.New(conn, client.Config{PacketRegistry: srv.packetRegistry, Status: &srv.status})
+	c.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_26_2)
+	c.SetPhase(types.PhasePlay)
+
+	srv.addClient(c)
+	defer srv.removeClient(c)
+
+	stop := make(chan struct{})
+	defer close(stop)
+
+	// A tick short enough to keep the test quick. What it stands in for is the
+	// fifteen seconds a real crowd gets.
+	go srv.sweepKeepAlives(stop, 10*time.Millisecond)
+
+	if err := clientConn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The whole keep alive as the play phase frames it: a length, the packet id
+	// and the eight bytes of the id it asks the answer to carry back.
+	frame := make([]byte, 10)
+	if _, err := io.ReadFull(clientConn, frame); err != nil {
+		t.Fatalf("reading the keep alive: %v", err)
+	}
+
+	if frame[1] != 0x2C {
+		t.Fatalf("packet id = %#02x, want the play phase's keep alive %#02x", frame[1], 0x2C)
+	}
+
+	// Nothing is sent back, so the next sweep finds the keep alive unanswered.
+	if _, err := clientConn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Errorf("error = %v, want the connection closed", err)
 	}
 }
 

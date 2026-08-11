@@ -6,6 +6,8 @@ package server
 import (
 	"log/slog"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/Shonz1/go-void-limbo/auth"
 	"github.com/Shonz1/go-void-limbo/client"
@@ -46,9 +48,14 @@ type Server struct {
 	keyPair        *auth.KeyPair
 	sessionServer  client.SessionServer
 
-	// status is the whole of what the status phase answers with, and the only
-	// state this server keeps about more than one connection at a time.
+	// status is the whole of what the status phase answers with.
 	status status
+
+	// clients, under clientsMu, is every connection currently being served,
+	// held so the keep alive sweep can reach them all from one goroutine. The
+	// map is made on first use, so a server built field by field works too.
+	clientsMu sync.Mutex
+	clients   map[*client.Client]struct{}
 
 	encryptionEnabled bool
 	forwardingSecret  []byte
@@ -79,6 +86,15 @@ func (s *Server) ListenAndServe(address string) error {
 
 	slog.Info("TCP server is running", "address", address)
 
+	// One clock serves every connection its keep alives. A ticker and a
+	// goroutine per connection would each wake the scheduler once per interval,
+	// and across thousands of mostly idle connections that waking is most of
+	// what serving them costs.
+	stopSweep := make(chan struct{})
+	defer close(stopSweep)
+
+	go s.sweepKeepAlives(stopSweep, client.KeepAliveInterval)
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -95,7 +111,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	slog.Info("new client connected", "addr", conn.RemoteAddr().String())
 
-	client.New(conn, client.Config{
+	c := client.New(conn, client.Config{
 		PacketRegistry:    s.packetRegistry,
 		GameData:          s.gameRegistries,
 		KeyPair:           s.keyPair,
@@ -103,5 +119,66 @@ func (s *Server) handleConnection(conn net.Conn) {
 		Status:            &s.status,
 		EncryptionEnabled: s.encryptionEnabled,
 		ForwardingSecret:  s.forwardingSecret,
-	}).Run()
+	})
+
+	// Registered for as long as the read loop runs, which is what the keep
+	// alive sweep reaches it by.
+	s.addClient(c)
+	defer s.removeClient(c)
+
+	c.Run()
+}
+
+// sweepKeepAlives sends every connection its keep alives on the one shared
+// clock until stop is closed. A connection that cannot take one, or let the
+// last go unanswered, is closed, which is what ends its read loop.
+func (s *Server) sweepKeepAlives(stop <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			for _, c := range s.snapshotClients() {
+				if err := c.SendKeepAlive(); err != nil {
+					slog.Error("dropping connection", "addr", c.RemoteAddr(), "err", err)
+					c.Close()
+				}
+			}
+		}
+	}
+}
+
+// snapshotClients copies the registry out from under its lock, so the sweep
+// writes to connections without holding up the connections coming and going.
+func (s *Server) snapshotClients() []*client.Client {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	clients := make([]*client.Client, 0, len(s.clients))
+	for c := range s.clients {
+		clients = append(clients, c)
+	}
+
+	return clients
+}
+
+func (s *Server) addClient(c *client.Client) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	if s.clients == nil {
+		s.clients = make(map[*client.Client]struct{})
+	}
+
+	s.clients[c] = struct{}{}
+}
+
+func (s *Server) removeClient(c *client.Client) {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+
+	delete(s.clients, c)
 }

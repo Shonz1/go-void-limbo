@@ -69,9 +69,15 @@ func newTestClient(phase types.Phase) (*Client, *bytes.Buffer) {
 func newTestClientOn(phase types.Phase, protocolVersion types.ProtocolVersion) (*Client, *bytes.Buffer) {
 	buf := new(bytes.Buffer)
 
+	// The conn is a pipe nothing reads: writes land in the buffer above, and
+	// the conn is only there for the deadlines a keep alive sets around its
+	// write.
+	conn, _ := net.Pipe()
+
 	return &Client{
 		protocolVersion: protocolVersion,
 		phase:           phase,
+		conn:            conn,
 		stream:          streams.NewMinecraftStreamFromBuffer(buf),
 		packetRegistry:  protocol.NewDefaultRegistry(),
 		status:          new(fakeStatus),
@@ -150,7 +156,7 @@ func TestSendKeepAliveUsesThePacketIdOfThePhaseItIsSentIn(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			client, buf := newTestClient(test.phase)
 
-			if err := client.sendKeepAlive(); err != nil {
+			if err := client.SendKeepAlive(); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -176,7 +182,7 @@ func TestSendKeepAliveSendsNothingInPhasesWithoutOne(t *testing.T) {
 	for _, phase := range []types.Phase{types.PhaseHandshake, types.PhaseLogin} {
 		client, buf := newTestClient(phase)
 
-		if err := client.sendKeepAlive(); err != nil {
+		if err := client.SendKeepAlive(); err != nil {
 			t.Fatalf("phase %d: unexpected error: %v", phase, err)
 		}
 
@@ -195,13 +201,13 @@ func TestSendKeepAliveSendsNothingInPhasesWithoutOne(t *testing.T) {
 func TestSendKeepAliveReportsOneThatWentUnanswered(t *testing.T) {
 	client, _ := newTestClient(types.PhasePlay)
 
-	if err := client.sendKeepAlive(); err != nil {
+	if err := client.SendKeepAlive(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// A whole interval later with no answer. Asking again would leave a client
 	// that stopped reading alive on a connection nothing can reach it through.
-	if err := client.sendKeepAlive(); !errors.Is(err, errKeepAliveTimeout) {
+	if err := client.SendKeepAlive(); !errors.Is(err, errKeepAliveTimeout) {
 		t.Errorf("error = %v, want %v", err, errKeepAliveTimeout)
 	}
 }
@@ -209,7 +215,7 @@ func TestSendKeepAliveReportsOneThatWentUnanswered(t *testing.T) {
 func TestConfirmKeepAlive(t *testing.T) {
 	client, buf := newTestClient(types.PhasePlay)
 
-	if err := client.sendKeepAlive(); err != nil {
+	if err := client.SendKeepAlive(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -241,83 +247,11 @@ func TestConfirmKeepAlive(t *testing.T) {
 	// An answered keep alive is what lets the next one go out.
 	buf.Reset()
 
-	if err := client.sendKeepAlive(); err != nil {
+	if err := client.SendKeepAlive(); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
 	keepAliveIdIn(t, buf.Bytes(), 0x2C)
-}
-
-// The loop is what turns an unanswered keep alive into a closed connection, and
-// closing is what ends the read loop on the other side of it.
-func TestKeepAliveLoopDropsAClientThatNeverAnswers(t *testing.T) {
-	server, client := net.Pipe()
-	defer client.Close()
-
-	mc := &Client{
-		protocolVersion: types.ProtocolVersions.MINECRAFT_26_2,
-		phase:           types.PhasePlay,
-		conn:            server,
-		stream:          streams.NewMinecraftStreamFromNetConn(server),
-		packetRegistry:  protocol.NewDefaultRegistry(),
-		status:          new(fakeStatus),
-	}
-
-	done := make(chan struct{})
-	defer close(done)
-
-	// A tick short enough to keep the test quick. What it stands in for is the
-	// fifteen seconds a real connection gets.
-	go mc.keepAliveLoop(done, 10*time.Millisecond)
-
-	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	frame := make([]byte, 10)
-	if _, err := io.ReadFull(client, frame); err != nil {
-		t.Fatalf("reading the keep alive: %v", err)
-	}
-
-	keepAliveIdIn(t, frame, 0x2C)
-
-	// Nothing is sent back, so the next tick finds the keep alive unanswered.
-	if _, err := client.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
-		t.Errorf("error = %v, want the connection closed", err)
-	}
-}
-
-func TestKeepAliveLoopStopsWithTheConnection(t *testing.T) {
-	server, client := net.Pipe()
-	defer client.Close()
-	defer server.Close()
-
-	mc := &Client{
-		protocolVersion: types.ProtocolVersions.MINECRAFT_26_2,
-		phase:           types.PhasePlay,
-		conn:            server,
-		stream:          streams.NewMinecraftStreamFromNetConn(server),
-		packetRegistry:  protocol.NewDefaultRegistry(),
-		status:          new(fakeStatus),
-	}
-
-	done := make(chan struct{})
-	stopped := make(chan struct{})
-
-	go func() {
-		mc.keepAliveLoop(done, time.Hour)
-		close(stopped)
-	}()
-
-	// The read loop closes done when the connection ends, and a keep alive
-	// goroutine left running would outlive every connection the server takes.
-	close(done)
-
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Error("the keep alive loop is still running after the connection ended")
-	}
 }
 
 func TestEnableCompressionAnnouncesTheThresholdInThePlainFraming(t *testing.T) {

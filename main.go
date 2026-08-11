@@ -11,8 +11,6 @@ import (
 	"github.com/Shonz1/go-void-limbo/server"
 )
 
-const address = ":25565"
-
 // forwardingSecretFlag is the secret on the command line, which is the one place
 // an operator can put it that does not outlive the process.
 var forwardingSecretFlag = flag.String("forwarding-secret", "", "the secret a modern proxy signs the logins it forwards with, taken from FORWARDING_SECRET when this is empty")
@@ -81,7 +79,7 @@ func main() {
 		ForwardingSecret:  forwardingSecret,
 	})
 
-	if err := srv.ListenAndServe(address); err != nil {
+	if err := srv.ListenAndServe(config.Address()); err != nil {
 		slog.Error("failed to start server", "err", err)
 	}
 }

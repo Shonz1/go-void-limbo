@@ -79,6 +79,28 @@ func NewMinecraftStreamFromBuffer(buf *bytes.Buffer) *MinecraftStream {
 	return NewMinecraftStream(bufferReadWriter{buf})
 }
 
+// errReadOnlyStream is what writing to a stream built over a bytes.Reader
+// earns: the reader is a window onto somebody else's bytes, and nothing about
+// it can take any.
+var errReadOnlyStream = errors.New("the stream only reads")
+
+// readerReadWriter is a bytes.Reader as a ReadWriter, for the decode path,
+// which only ever reads. Refusing writes rather than hiding them keeps a
+// decoder that reaches for one from failing silently.
+type readerReadWriter struct{ *bytes.Reader }
+
+func (readerReadWriter) Write([]byte) (int, error) { return 0, errReadOnlyStream }
+func (readerReadWriter) WriteByte(byte) error      { return errReadOnlyStream }
+func (readerReadWriter) Flush() error              { return nil }
+
+// NewMinecraftStreamFromBytesReader builds a stream over a reader the caller
+// keeps hold of, which is what lets one stream decode every packet of a
+// connection: the caller Resets the reader to each new body rather than
+// building a buffer and a stream around every one.
+func NewMinecraftStreamFromBytesReader(r *bytes.Reader) *MinecraftStream {
+	return NewMinecraftStream(readerReadWriter{r})
+}
+
 func (s *MinecraftStream) Flush() error {
 	return s.stream.Flush()
 }

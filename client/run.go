@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,13 +16,15 @@ import (
 	"github.com/Shonz1/go-void-limbo/types"
 )
 
-// keepAliveInterval is how often a keep alive goes out, and equally how long an
-// unanswered one has before the connection is given up on.
+// KeepAliveInterval is how often a keep alive goes out, and equally how long an
+// unanswered one has before the connection is given up on. It is exported
+// because the sends come from the server's sweep rather than from anything the
+// connection runs for itself, and the sweep needs the clock they go out on.
 //
 // Both ends drop a connection they have read nothing from for thirty seconds,
 // so the interval has to leave room for an answer to come back inside that
 // window; fifteen seconds is what a vanilla server uses and is half of it.
-const keepAliveInterval = 15 * time.Second
+const KeepAliveInterval = 15 * time.Second
 
 // readTimeout is how long a connection has to send its next packet in before it
 // is given up on, and is the thirty seconds both ends already treat as a dead
@@ -31,10 +34,16 @@ const keepAliveInterval = 15 * time.Second
 // anything, which is why this has to be longer than the interval they go out on.
 // The phases before them have no keep alive and nothing else that ends a quiet
 // connection, so for a handshake, a status ping and a login this is the whole of
-// it: a peer that opens a socket and sends nothing holds a goroutine, a ticker
-// and the buffers behind them for exactly this long rather than for as long as
-// the process runs.
-const readTimeout = 2 * keepAliveInterval
+// it: a peer that opens a socket and sends nothing holds a goroutine and the
+// buffers behind it for exactly this long rather than for as long as the
+// process runs.
+const readTimeout = 2 * KeepAliveInterval
+
+// keepAliveWriteTimeout bounds the one write the keep alive sweep performs on a
+// connection. The sweep visits every connection from one goroutine, so a peer
+// that stopped draining its side must cost it a bounded wait rather than hold
+// every other client's keep alives behind it.
+const keepAliveWriteTimeout = 5 * time.Second
 
 // errKeepAliveTimeout is what a client that let a keep alive go unanswered for
 // a whole interval leaves behind. Nothing on that connection is worth waiting
@@ -64,6 +73,13 @@ var packetLogBlacklist = map[reflect.Type]bool{
 // blacklisted. Every connection carries the same traffic, so this is detail one
 // asks for rather than detail one is told.
 func logPacket(message string, packet any) {
+	// Nobody listening means nothing to say, decided before reflecting over the
+	// packet: the question is asked for every packet every connection carries,
+	// and slog would only ask it after the type work is already done.
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		return
+	}
+
 	packetType := reflect.TypeOf(packet)
 	if packetType != nil && packetType.Kind() == reflect.Pointer {
 		packetType = packetType.Elem()
@@ -95,8 +111,12 @@ func (c *Client) ConfirmKeepAlive(id int64) error {
 	return nil
 }
 
-// sendKeepAlive asks the client to prove it is still there, unless the last ask
-// is still unanswered, which is errKeepAliveTimeout.
+// SendKeepAlive asks the client to prove it is still there, unless the last ask
+// is still unanswered, which is errKeepAliveTimeout. It is called on the
+// server's sweep over every connection rather than on a clock of this
+// connection's own: a ticker and a goroutine per connection wake the scheduler
+// once per connection per interval, which across a large crowd costs more than
+// the sends themselves.
 //
 // Only configuration and play have a keep alive packet, so only they get one.
 // The phases before them need none: a handshake, a status ping and a login are
@@ -104,8 +124,15 @@ func (c *Client) ConfirmKeepAlive(id int64) error {
 // stops driving one has stopped connecting rather than gone quiet. What ends one
 // that stopped is readTimeout, which every phase is under, rather than anything
 // asked of the client here.
-func (c *Client) sendKeepAlive() error {
-	c.mu.Lock()
+func (c *Client) SendKeepAlive() error {
+	// The sweep serves every connection from one goroutine, so a lock somebody
+	// is holding -- a handler mid-write on the connection's own read loop -- is
+	// skipped rather than waited on. The next sweep will find it free, and a
+	// keep alive one interval late still sits inside the window the other end
+	// allows before it hangs up.
+	if !c.mu.TryLock() {
+		return nil
+	}
 	defer c.mu.Unlock()
 
 	if c.phase != types.PhaseConfiguration && c.phase != types.PhasePlay {
@@ -116,6 +143,14 @@ func (c *Client) sendKeepAlive() error {
 		return errKeepAliveTimeout
 	}
 
+	// Bounded for the sweep's sake, and cleared afterwards because the deadline
+	// belongs to the connection rather than to this packet: left set, it would
+	// time out some unrelated write minutes later.
+	if err := c.conn.SetWriteDeadline(time.Now().Add(keepAliveWriteTimeout)); err != nil {
+		return err
+	}
+	defer c.conn.SetWriteDeadline(time.Time{})
+
 	// Any id the answer can be matched against works. The clock is what vanilla
 	// uses, and it never repeats a value inside a connection.
 	id := time.Now().UnixMilli()
@@ -124,32 +159,12 @@ func (c *Client) sendKeepAlive() error {
 	return c.writePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: id})
 }
 
-// keepAliveLoop sends a keep alive every interval until done is closed, and
-// closes the connection when one is not answered or cannot be sent. Closing is
-// what ends the read loop, which is what closes done.
-func (c *Client) keepAliveLoop(done <-chan struct{}, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			if err := c.sendKeepAlive(); err != nil {
-				slog.Error("dropping connection", "addr", c.conn.RemoteAddr(), "err", err)
-				c.conn.Close()
-
-				return
-			}
-		}
-	}
-}
-
-// Run drives the connection until it ends: keep alives go out on a clock of
-// their own, and everything the client sends is read, decoded and handled here.
-// It returns once the connection is done for any reason, with the player count
-// no longer including this client.
+// Run drives the connection until it ends: everything the client sends is
+// read, decoded and handled here. Keep alives are not this loop's to send --
+// they go out on the server's sweep over every connection it holds -- but the
+// answers to them come back through it like any other packet. It returns once
+// the connection is done for any reason, with the player count no longer
+// including this client.
 func (c *Client) Run() {
 	remoteAddr := c.conn.RemoteAddr().String()
 
@@ -157,23 +172,26 @@ func (c *Client) Run() {
 	// that never joined was never counted.
 	defer c.leavePlay()
 
-	// A limbo has nothing to say to a client that has arrived, and thirty
-	// seconds of having nothing to say is what both ends treat as a dead
-	// connection. Keep alives are the something, and they go out on a clock of
-	// their own rather than in reaction to what the client sends.
-	done := make(chan struct{})
-	defer close(done)
-
-	go c.keepAliveLoop(done, keepAliveInterval)
+	// The deadline is a window of silence rather than a cap on how long a
+	// connection may live, so it moves with every packet. A joined client moves
+	// it by answering keep alives; one that has not got that far moves it by
+	// getting on with the exchange it opened.
+	var deadline time.Time
 
 	for {
-		// Refreshed for every packet rather than set once, so the window is one
-		// of silence rather than a cap on how long a connection may live. A
-		// joined client refreshes it by answering keep alives; one that has not
-		// got that far refreshes it by getting on with the exchange it opened.
-		if err := c.conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
-			slog.Error("failed to set the read deadline", "addr", remoteAddr, "err", err)
-			return
+		// Moved forward only once it has drifted a second behind, rather than
+		// for every packet: each reset is a runtime timer modification, and at
+		// hundreds of packets a second per connection those modifications are
+		// what a profile of serving a crowd is full of. The window a quiet
+		// connection actually gets runs up to a second short of readTimeout,
+		// which against thirty seconds is noise.
+		if now := time.Now(); deadline.Sub(now) < readTimeout-time.Second {
+			deadline = now.Add(readTimeout)
+
+			if err := c.conn.SetReadDeadline(deadline); err != nil {
+				slog.Error("failed to set the read deadline", "addr", remoteAddr, "err", err)
+				return
+			}
 		}
 
 		packet, handler, err := c.ReadPacket()
