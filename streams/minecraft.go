@@ -3,6 +3,8 @@ package streams
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -23,6 +25,20 @@ type ReadWriter interface {
 
 type MinecraftStream struct {
 	stream ReadWriter
+
+	// conn is the connection the buffering sits on, for the streams that have
+	// one. Encryption goes underneath the buffering rather than above it, so
+	// turning it on means building the buffering again on top of the cipher,
+	// which is only possible while the connection itself is still at hand.
+	conn io.ReadWriter
+
+	// reader is the read half of stream, kept apart from it because what it
+	// pulled off the connection ahead of the cipher being turned on is
+	// ciphertext it read as plain, and only the reader itself can say how much
+	// of that there is.
+	reader *bufio.Reader
+
+	encrypted bool
 }
 
 func NewMinecraftStream(stream ReadWriter) *MinecraftStream {
@@ -30,7 +46,13 @@ func NewMinecraftStream(stream ReadWriter) *MinecraftStream {
 }
 
 func NewMinecraftStreamFromNetConn(conn net.Conn) *MinecraftStream {
-	return NewMinecraftStream(bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn)))
+	reader := bufio.NewReader(conn)
+
+	return &MinecraftStream{
+		stream: bufio.NewReadWriter(reader, bufio.NewWriter(conn)),
+		conn:   conn,
+		reader: reader,
+	}
 }
 
 func NewMinecraftStreamFromBuffer(buf *bytes.Buffer) *MinecraftStream {
@@ -39,6 +61,62 @@ func NewMinecraftStreamFromBuffer(buf *bytes.Buffer) *MinecraftStream {
 
 func (s *MinecraftStream) Flush() error {
 	return s.stream.Flush()
+}
+
+// EnableEncryption puts every byte the connection carries from here on, in both
+// directions, under AES keyed by the shared secret the client sent. The secret
+// is its own initialization vector, which is what the protocol asks for and what
+// makes the two directions symmetric.
+//
+// The cipher goes underneath the buffering, so that everything above it goes on
+// reading and writing plaintext. What the buffered reader had already pulled off
+// the connection is the one thing that does not fit that: those bytes were read
+// as plain and are ciphertext, so they are decrypted here and put back in front
+// of the connection. A client has nothing to send between its encryption
+// response and the reply to it, so there is rarely anything there, but a frame
+// lost to a read that came a moment early is a connection that never recovers.
+func (s *MinecraftStream) EnableEncryption(secret []byte) error {
+	if s.conn == nil {
+		return errors.New("the stream is not on a connection")
+	}
+
+	if s.encrypted {
+		return errors.New("encryption is already enabled")
+	}
+
+	block, err := aes.NewCipher(secret)
+	if err != nil {
+		return fmt.Errorf("invalid shared secret: %w", err)
+	}
+
+	if len(secret) != block.BlockSize() {
+		return fmt.Errorf("shared secret is %d bytes, which is not the %d byte initialization vector the cipher needs", len(secret), block.BlockSize())
+	}
+
+	// Anything still waiting to be written was meant to travel plain, and
+	// flushing it after the swap would send it through the cipher instead.
+	if err := s.stream.Flush(); err != nil {
+		return err
+	}
+
+	pending, err := s.reader.Peek(s.reader.Buffered())
+	if err != nil {
+		return err
+	}
+
+	decrypter := newCfb8(block, secret, true)
+
+	buffered := make([]byte, len(pending))
+	decrypter.XORKeyStream(buffered, pending)
+
+	reader := bufio.NewReader(io.MultiReader(bytes.NewReader(buffered), cipher.StreamReader{S: decrypter, R: s.conn}))
+	writer := bufio.NewWriter(cipher.StreamWriter{S: newCfb8(block, secret, false), W: s.conn})
+
+	s.reader = reader
+	s.stream = bufio.NewReadWriter(reader, writer)
+	s.encrypted = true
+
+	return nil
 }
 
 func (s *MinecraftStream) ReadByte() (byte, error) {
@@ -58,6 +136,32 @@ func (s *MinecraftStream) ReadBytes(size int32) ([]byte, error) {
 func (s *MinecraftStream) WriteBytes(b []byte) error {
 	_, err := s.stream.Write(b)
 	return err
+}
+
+// ReadByteArray reads a var int length and then that many bytes. The length
+// arrives from the other end, and the buffer for it is allocated before a single
+// byte of it has been read, so max is what the caller knows the field can hold:
+// anything longer is refused rather than reserved for.
+func (s *MinecraftStream) ReadByteArray(max int32) ([]byte, error) {
+	length, err := s.ReadVarInt()
+	if err != nil {
+		return nil, err
+	}
+
+	if length < 0 || length > max {
+		return nil, fmt.Errorf("invalid byte array length: %d", length)
+	}
+
+	return s.ReadBytes(length)
+}
+
+// WriteByteArray writes a var int length followed by the bytes themselves.
+func (s *MinecraftStream) WriteByteArray(b []byte) error {
+	if err := s.WriteVarInt(int32(len(b))); err != nil {
+		return err
+	}
+
+	return s.WriteBytes(b)
 }
 
 func (s *MinecraftStream) ReadVarInt() (int32, error) {

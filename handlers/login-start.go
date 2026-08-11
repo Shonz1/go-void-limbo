@@ -7,43 +7,35 @@ import (
 	"go-void-limbo/types"
 )
 
-// compressionThreshold is the body size at or above which packets are deflated.
-// It is what a vanilla server uses, and it sits above everything a limbo sends
-// on a tick and below the registries and tags it sends once, which are the only
-// packets here big enough for deflating to save more than it costs.
-const compressionThreshold = 256
-
 func HandleLoginStartServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	loginStart, ok := packet.(*login.LoginStartServerboundPacket)
 	if !ok {
 		return fmt.Errorf("expected *login.LoginStartServerboundPacket, got %T", packet)
 	}
 
-	sessionId, err := types.NewRandomUuid()
+	// What the client says about itself, which is worth nothing until Mojang
+	// confirms it and is replaced wholesale when Mojang does. It is kept because
+	// the session server is asked about the client by the name it logged in
+	// under, and no later packet carries one.
+	client.SetProfile(types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name})
+
+	publicKey, verifyToken, err := client.BeginEncryption()
 	if err != nil {
-		return fmt.Errorf("failed to generate session id: %w", err)
+		return fmt.Errorf("failed to begin encryption: %w", err)
 	}
 
-	// The limbo does not authenticate, so the profile is taken at face value from
-	// the client and carries no skin properties.
-	profile := types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name}
+	// Nothing else goes out with this. The client answers an encryption request
+	// with the secret and then encrypts everything after it, so a packet sent
+	// alongside is one that arrives in a framing the client has already stopped
+	// reading for. Compression is announced later, once the cipher is on.
+	encryptionRequest := clientboundLogin.EncryptionRequestClientboundPacket{
+		PublicKey:   publicKey,
+		VerifyToken: verifyToken,
 
-	// The play phase has to tell the client who it is, and this is the only
-	// packet that says so.
-	client.SetProfile(profile)
-
-	// Compression is announced here because login start is the first packet a
-	// client sends that expects a reply, and the threshold has to reach it
-	// before anything worth compressing does. The registries that follow in the
-	// configuration phase are the bulk of what this connection will ever send.
-	if err := client.EnableCompression(compressionThreshold); err != nil {
-		return fmt.Errorf("failed to enable compression: %w", err)
+		// A limbo that took the client's word for who it is would be a limbo
+		// anyone can enter under anyone's name.
+		ShouldAuthenticate: true,
 	}
 
-	loginSuccess := clientboundLogin.LoginSuccessClientboundPacket{
-		Profile:   profile,
-		SessionId: sessionId,
-	}
-
-	return client.WritePacket(&loginSuccess)
+	return client.WritePacket(&encryptionRequest)
 }

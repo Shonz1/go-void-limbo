@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
@@ -37,6 +38,31 @@ type fakeClient struct {
 	compressionThresholds []int32
 	compressionAfter      int
 	compressionErr        error
+
+	// publicKey and verifyToken are what the real client hands back to put in an
+	// encryption request, and beginErr is a connection that could not produce
+	// them.
+	publicKey   []byte
+	verifyToken []byte
+	beginErr    error
+
+	// completedSecrets and completedTokens record the two fields of every
+	// encryption response that got as far as the connection, and encryptedAfter
+	// how many packets had been written by then. Everything the client sends
+	// after its response is encrypted, so a reply written before the cipher is
+	// on is a reply it cannot read.
+	completedSecrets [][]byte
+	completedTokens  [][]byte
+	encryptedAfter   int
+	completeErr      error
+
+	// authenticated is the profile the session server would answer with, and
+	// authenticateErr a client it has no record of. authenticateAfter is how
+	// many packets had been written when it was asked.
+	authenticated     types.GameProfile
+	authenticateCalls int
+	authenticateAfter int
+	authenticateErr   error
 }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
@@ -77,6 +103,37 @@ func (c *fakeClient) ConfirmKeepAlive(id int64) error {
 	return c.keepAliveErr
 }
 
+func (c *fakeClient) BeginEncryption() ([]byte, []byte, error) {
+	if c.beginErr != nil {
+		return nil, nil, c.beginErr
+	}
+
+	return c.publicKey, c.verifyToken, nil
+}
+
+func (c *fakeClient) CompleteEncryption(sharedSecret, verifyToken []byte) error {
+	if c.completeErr != nil {
+		return c.completeErr
+	}
+
+	c.completedSecrets = append(c.completedSecrets, sharedSecret)
+	c.completedTokens = append(c.completedTokens, verifyToken)
+	c.encryptedAfter = len(c.written)
+
+	return nil
+}
+
+func (c *fakeClient) Authenticate() (types.GameProfile, error) {
+	c.authenticateCalls++
+	c.authenticateAfter = len(c.written)
+
+	if c.authenticateErr != nil {
+		return types.GameProfile{}, c.authenticateErr
+	}
+
+	return c.authenticated, nil
+}
+
 func TestHandleHandshakeServerboundPacket(t *testing.T) {
 	client := &fakeClient{}
 	packet := &handshake.HandshakeServerboundPacket{
@@ -99,16 +156,122 @@ func TestHandleHandshakeServerboundPacket(t *testing.T) {
 	}
 }
 
-func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin}
+func TestHandleLoginStartServerboundPacketAsksForEncryption(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
 	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
 
 	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// The client encrypts everything it sends after answering this, so a second
+	// packet sent alongside it is one that arrives in a framing the client has
+	// already stopped reading for.
 	if len(client.written) != 1 {
 		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	request, ok := client.written[0].(*clientboundLogin.EncryptionRequestClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *login.EncryptionRequestClientboundPacket, got %T", client.written[0])
+	}
+
+	if !bytes.Equal(request.PublicKey, client.publicKey) {
+		t.Errorf("public key = % x, want the server's % x", request.PublicKey, client.publicKey)
+	}
+
+	// A token the client cannot send back leaves nothing to check its answer
+	// against.
+	if !bytes.Equal(request.VerifyToken, client.verifyToken) {
+		t.Errorf("verify token = % x, want the one the connection is waiting on % x", request.VerifyToken, client.verifyToken)
+	}
+
+	// A client that is not asked to authenticate never tells Mojang it joined,
+	// and the session server then has no record of a login this end is about to
+	// ask it about.
+	if !request.ShouldAuthenticate {
+		t.Error("should authenticate = false, want the client to tell Mojang it joined")
+	}
+
+	// Compression is announced on the far side of the cipher, so nothing is
+	// framed for a threshold the client has not been told yet.
+	if len(client.compressionThresholds) != 0 {
+		t.Errorf("enabled compression at %v, want it left until the connection is encrypted", client.compressionThresholds)
+	}
+
+	// The client stays in the login phase until it acknowledges the success packet.
+	if client.Phase() != types.PhaseLogin {
+		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
+	}
+
+	// Nothing else on the connection carries the name the client logged in
+	// under, and the session server is asked about it by that name.
+	if client.Profile().Username != packet.Name || client.Profile().Uuid != packet.Uuid {
+		t.Errorf("kept profile %s, want the one the client logged in with", client.Profile())
+	}
+}
+
+func TestHandleLoginStartServerboundPacketReportsAFailureToBeginEncryption(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin, beginErr: errors.New("no verify token")}
+
+	// A request sent without a token to check the answer against is a login that
+	// cannot be finished, so it is not sent.
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err == nil {
+		t.Error("error = nil, want the failure to begin encryption passed back")
+	}
+
+	if len(client.written) != 0 {
+		t.Errorf("wrote %d packets, want none after encryption could not be begun", len(client.written))
+	}
+}
+
+func TestHandleEncryptionResponseServerboundPacketAuthenticatesAndWritesLoginSuccess(t *testing.T) {
+	claimed := types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "notch"}
+	signature := "a signature"
+	authenticated := types.GameProfile{
+		Uuid:       "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+		Username:   "Notch",
+		Properties: []types.ProfileProperty{{Name: "textures", Value: "a skin", Signature: &signature}},
+	}
+
+	client := &fakeClient{phase: types.PhaseLogin, profile: claimed, authenticated: authenticated}
+	packet := &login.EncryptionResponseServerboundPacket{SharedSecret: []byte("an encrypted secret"), VerifyToken: []byte("an encrypted token")}
+
+	if err := HandleEncryptionResponseServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.completedSecrets) != 1 || !bytes.Equal(client.completedSecrets[0], packet.SharedSecret) || !bytes.Equal(client.completedTokens[0], packet.VerifyToken) {
+		t.Fatalf("completed encryption with %q and %q, want the two fields the response carried", client.completedSecrets, client.completedTokens)
+	}
+
+	// The client turned its own cipher on the moment it sent this, so anything
+	// written before this end catches up is a packet it reads as noise.
+	if client.encryptedAfter != 0 {
+		t.Errorf("encrypted the connection after %d packets, want it encrypted before any reply", client.encryptedAfter)
+	}
+
+	if client.authenticateCalls != 1 {
+		t.Fatalf("asked the session server %d times, want once", client.authenticateCalls)
+	}
+
+	// A login that is only checked after the client has been welcomed in is a
+	// login that was not checked.
+	if client.authenticateAfter != 0 {
+		t.Errorf("authenticated after %d packets, want it settled before any reply", client.authenticateAfter)
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	// The threshold has to reach the client before anything framed for it does.
+	if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
+		t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
+	}
+
+	if client.compressionAfter != 0 {
+		t.Errorf("enabled compression after %d packets, want it announced before any reply", client.compressionAfter)
 	}
 
 	loginSuccess, ok := client.written[0].(*clientboundLogin.LoginSuccessClientboundPacket)
@@ -116,12 +279,15 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 		t.Fatalf("expected *login.LoginSuccessClientboundPacket, got %T", client.written[0])
 	}
 
-	if loginSuccess.Profile.Username != packet.Name {
-		t.Errorf("expected username %q, got %q", packet.Name, loginSuccess.Profile.Username)
+	// What the client claimed about itself is worth nothing next to what Mojang
+	// answered, down to the case of the name and the textures that give it a
+	// skin.
+	if loginSuccess.Profile.String() != authenticated.String() {
+		t.Errorf("login success profile = %s, want the authenticated %s", loginSuccess.Profile, authenticated)
 	}
 
-	if loginSuccess.Profile.Uuid != packet.Uuid {
-		t.Errorf("expected uuid %q, got %q", packet.Uuid, loginSuccess.Profile.Uuid)
+	if client.Profile().String() != authenticated.String() {
+		t.Errorf("kept profile = %s, want the authenticated %s", client.Profile(), authenticated)
 	}
 
 	if loginSuccess.SessionId == "" {
@@ -131,48 +297,51 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 	if loginSuccess.SessionId == loginSuccess.Profile.Uuid {
 		t.Error("expected the session id to differ from the profile uuid")
 	}
+}
 
-	// The client stays in the login phase until it acknowledges the success packet.
-	if client.Phase() != types.PhaseLogin {
-		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
+func TestHandleEncryptionResponseServerboundPacketDisconnectsAClientMojangDoesNotVouchFor(t *testing.T) {
+	client := &fakeClient{
+		phase:           types.PhaseLogin,
+		profile:         types.GameProfile{Username: "Notch"},
+		authenticateErr: errors.New("no record of this login"),
 	}
 
-	// Nothing later in the connection asks the client who it is, so the play
-	// phase can only tell it about itself from what was kept here.
-	if client.Profile().Username != packet.Name || client.Profile().Uuid != packet.Uuid {
-		t.Errorf("kept profile %s, want the one the client logged in with", client.Profile())
+	err := HandleEncryptionResponseServerboundPacket(client, &login.EncryptionResponseServerboundPacket{})
+	if err == nil {
+		t.Fatal("error = nil, want the failed authentication reported")
+	}
+
+	// The client is sitting on a connection it has no reason to think went
+	// wrong, so it is told why it is being let go.
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	if _, ok := client.written[0].(*clientboundLogin.DisconnectClientboundPacket); !ok {
+		t.Fatalf("expected *login.DisconnectClientboundPacket, got %T", client.written[0])
+	}
+
+	// Nothing about a login that was refused should look like one that worked.
+	if len(client.compressionThresholds) != 0 {
+		t.Errorf("enabled compression at %v, want a refused login left alone", client.compressionThresholds)
 	}
 }
 
-func TestHandleLoginStartServerboundPacketEnablesCompressionBeforeItReplies(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin}
+func TestHandleEncryptionResponseServerboundPacketStopsWhereEncryptionFails(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin, completeErr: errors.New("the verify token is not the one that was sent")}
 
-	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := HandleEncryptionResponseServerboundPacket(client, &login.EncryptionResponseServerboundPacket{}); err == nil {
+		t.Error("error = nil, want the failure to encrypt passed back")
 	}
 
-	if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
-		t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
-	}
-
-	// Every packet after the threshold is framed for it, so a reply written
-	// first is one the client reads through a framing it was never told about.
-	if client.compressionAfter != 0 {
-		t.Errorf("enabled compression after %d packets, want it announced before any reply", client.compressionAfter)
-	}
-}
-
-func TestHandleLoginStartServerboundPacketReportsAFailureToCompress(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin, compressionErr: errors.New("connection lost")}
-
-	// A client that was not told the threshold cannot read anything framed for
-	// it, so a login that carries on regardless is a connection already broken.
-	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err == nil {
-		t.Error("error = nil, want the failure to announce compression passed back")
-	}
-
+	// The client is reading through a cipher this end could not turn on, so
+	// there is nothing worth writing to it, and no login worth asking about.
 	if len(client.written) != 0 {
-		t.Errorf("wrote %d packets, want none after compression could not be announced", len(client.written))
+		t.Errorf("wrote %d packets, want none once the connection cannot be encrypted", len(client.written))
+	}
+
+	if client.authenticateCalls != 0 {
+		t.Errorf("asked the session server %d times, want a login abandoned before it is asked about", client.authenticateCalls)
 	}
 }
 
@@ -367,6 +536,10 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	}
 
 	if err := HandleKeepAliveServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
+		t.Error("expected an error for a mismatched packet type")
+	}
+
+	if err := HandleEncryptionResponseServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
 		t.Error("expected an error for a mismatched packet type")
 	}
 }

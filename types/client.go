@@ -7,14 +7,37 @@ type Client interface {
 	Phase() Phase
 	SetPhase(phase Phase)
 
-	// Profile is who the client says it is, which it only says once, in the
-	// login phase. The play phase has to tell the client about itself, so the
-	// profile outlives the packet that carried it. It is the zero profile
-	// before login start has been handled.
+	// Profile is who the client is. It starts out as what the client said about
+	// itself in login start, which is worth nothing on its own, and becomes what
+	// Mojang confirmed once the login has been authenticated. Either way it
+	// outlives the packets that carried it, because the play phase has to tell
+	// the client about itself and nothing later asks.
 	Profile() GameProfile
 	SetProfile(profile GameProfile)
 
 	WritePacket(packet ClientboundPacket) error
+
+	// BeginEncryption starts the encryption handshake and returns what an
+	// encryption request has to carry: the server's public key, and a verify
+	// token the client encrypts under it and sends back. A connection can only
+	// begin it once.
+	BeginEncryption() (publicKey []byte, verifyToken []byte, err error)
+
+	// CompleteEncryption takes the two fields of an encryption response,
+	// decrypts them with the server's private key, refuses a verify token that
+	// is not the one that was sent, and puts the connection under the shared
+	// secret from there on.
+	//
+	// The client encrypts everything it sends after its response, so this has to
+	// happen before anything is written back, and a failure here leaves a
+	// connection neither end can read.
+	CompleteEncryption(sharedSecret, verifyToken []byte) error
+
+	// Authenticate asks the session server whether the client really is the
+	// account it logged in as, and returns the profile Mojang holds for it.
+	// Only an encrypted connection can be authenticated, since what the session
+	// server is asked about is a hash over the secret encrypting it.
+	Authenticate() (GameProfile, error)
 
 	// EnableCompression tells the client the body size at or above which
 	// packets are deflated, and frames everything sent afterwards that way.
