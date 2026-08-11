@@ -38,6 +38,13 @@ type MinecraftStream struct {
 	// of that there is.
 	reader *bufio.Reader
 
+	// readDecrypter and preEncrypted are what a takeover of the read half has
+	// to carry away from an encrypted connection: the cipher the bytes still on
+	// the wire are under, and whatever the swap to it decrypted that the reader
+	// has not consumed yet. Both are nil until encryption is enabled.
+	readDecrypter cipher.Stream
+	preEncrypted  *bytes.Reader
+
 	encrypted bool
 
 	// readScratch and writeScratch back the fixed-size primitives, so a short
@@ -151,14 +158,55 @@ func (s *MinecraftStream) EnableEncryption(secret []byte) error {
 	buffered := make([]byte, len(pending))
 	decrypter.XORKeyStream(buffered, pending)
 
-	reader := bufio.NewReaderSize(io.MultiReader(bytes.NewReader(buffered), cipher.StreamReader{S: decrypter, R: s.conn}), connBufferSize)
+	preEncrypted := bytes.NewReader(buffered)
+
+	reader := bufio.NewReaderSize(io.MultiReader(preEncrypted, cipher.StreamReader{S: decrypter, R: s.conn}), connBufferSize)
 	writer := bufio.NewWriterSize(cipher.StreamWriter{S: newCfb8(block, secret, false), W: s.conn}, connBufferSize)
 
 	s.reader = reader
+	s.readDecrypter = decrypter
+	s.preEncrypted = preEncrypted
 	s.stream = bufio.NewReadWriter(reader, writer)
 	s.encrypted = true
 
 	return nil
+}
+
+// TakeoverRead hands the read half of the connection to whoever will read it
+// from here on, and is for the reactor a joined connection moves to. It
+// returns every byte already pulled off the connection and not consumed --
+// decrypted, in stream order -- and the cipher the bytes still on the wire are
+// under, nil when the connection is plain. The stream's own read half is
+// drained by the handover and must not be read again.
+func (s *MinecraftStream) TakeoverRead() ([]byte, cipher.Stream, error) {
+	if s.conn == nil {
+		return nil, nil, errors.New("the stream is not on a connection")
+	}
+
+	// The reader sits in front of everything, so its bytes come first. Behind
+	// it on an encrypted connection sits whatever the swap to the cipher
+	// decrypted that the reader has not pulled through yet.
+	pending, err := s.reader.Peek(s.reader.Buffered())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	residue := append([]byte(nil), pending...)
+
+	if _, err := s.reader.Discard(len(pending)); err != nil {
+		return nil, nil, err
+	}
+
+	if s.preEncrypted != nil && s.preEncrypted.Len() > 0 {
+		rest := make([]byte, s.preEncrypted.Len())
+		if _, err := io.ReadFull(s.preEncrypted, rest); err != nil {
+			return nil, nil, err
+		}
+
+		residue = append(residue, rest...)
+	}
+
+	return residue, s.readDecrypter, nil
 }
 
 func (s *MinecraftStream) ReadByte() (byte, error) {

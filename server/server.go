@@ -57,6 +57,12 @@ type Server struct {
 	clientsMu sync.Mutex
 	clients   map[*client.Client]struct{}
 
+	// reactor serves the joined connections from one goroutine, on the
+	// platforms that give it a poller. Nil where they do not, and everything
+	// asked of it declines gracefully: joined connections then stay on
+	// goroutines of their own.
+	reactor *reactor
+
 	encryptionEnabled bool
 	forwardingSecret  []byte
 }
@@ -95,6 +101,18 @@ func (s *Server) ListenAndServe(address string) error {
 
 	go s.sweepKeepAlives(stopSweep, client.KeepAliveInterval)
 
+	// Joined connections move onto the reactor where the platform has a
+	// poller: one goroutine reading all of them beats a goroutine sleeping and
+	// waking per packet on each. Where it has none, they stay on their own
+	// goroutines, which serves fewer connections for the same money but serves
+	// them all the same.
+	if reactor, err := newReactor(s); err == nil {
+		s.reactor = reactor
+		go reactor.run()
+	} else {
+		slog.Info("joined connections stay on goroutines of their own", "err", err)
+	}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -107,8 +125,6 @@ func (s *Server) ListenAndServe(address string) error {
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
-
 	slog.Info("new client connected", "addr", conn.RemoteAddr().String())
 
 	c := client.New(conn, client.Config{
@@ -121,12 +137,26 @@ func (s *Server) handleConnection(conn net.Conn) {
 		ForwardingSecret:  s.forwardingSecret,
 	})
 
-	// Registered for as long as the read loop runs, which is what the keep
-	// alive sweep reaches it by.
+	// Registered for as long as the connection is served, which is what the
+	// keep alive sweep reaches it by. A connection the reactor took over is
+	// its to close and unregister; one it did not is still this goroutine's.
 	s.addClient(c)
-	defer s.removeClient(c)
 
-	c.Run()
+	handedOff := false
+
+	defer func() {
+		if handedOff {
+			return
+		}
+
+		s.removeClient(c)
+		conn.Close()
+	}()
+
+	c.Run(func(joined *client.Client) bool {
+		handedOff = s.reactor.take(joined, conn)
+		return handedOff
+	})
 }
 
 // sweepKeepAlives sends every connection its keep alives on the one shared
@@ -144,11 +174,23 @@ func (s *Server) sweepKeepAlives(stop <-chan struct{}, interval time.Duration) {
 			for _, c := range s.snapshotClients() {
 				if err := c.SendKeepAlive(); err != nil {
 					slog.Error("dropping connection", "addr", c.RemoteAddr(), "err", err)
-					c.Close()
+					s.disconnect(c)
 				}
 			}
 		}
 	}
+}
+
+// disconnect closes c's connection by whichever hand may close it: the
+// reactor's loop when there is one, because a descriptor it polls has to be
+// unmapped before it is closed, and directly when there is not.
+func (s *Server) disconnect(c *client.Client) {
+	if s.reactor != nil {
+		s.reactor.dropClient(c)
+		return
+	}
+
+	c.Close()
 }
 
 // snapshotClients copies the registry out from under its lock, so the sweep

@@ -846,7 +846,7 @@ func TestSetPhaseCountsTheMoveIntoPlayExactlyOnce(t *testing.T) {
 		t.Errorf("joins = %d, want a phase that did not change to count nothing", joins)
 	}
 
-	joining.leavePlay()
+	joining.LeavePlay()
 
 	if _, leaves := status.counts(); leaves != 1 {
 		t.Errorf("leaves = %d, want the ended connection counted out", leaves)
@@ -856,7 +856,7 @@ func TestSetPhaseCountsTheMoveIntoPlayExactlyOnce(t *testing.T) {
 	// Counting it out would make every ping after it report fewer players than
 	// are there.
 	pinging := &Client{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, status: status}
-	pinging.leavePlay()
+	pinging.LeavePlay()
 
 	if _, leaves := status.counts(); leaves != 1 {
 		t.Errorf("leaves = %d, want a connection that never joined to leave nothing", leaves)

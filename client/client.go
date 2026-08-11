@@ -7,6 +7,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/cipher"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -509,19 +510,30 @@ func (c *Client) SetPhase(phase types.Phase) {
 	c.phase = phase
 }
 
-// leavePlay stops counting a client whose connection has ended, if it ever got
-// as far as being counted.
+// LeavePlay stops counting a client whose connection has ended, if it ever got
+// as far as being counted. It is called by whoever saw the connection end,
+// which is the read loop for a connection that never left it and the reactor
+// for one that did.
 //
 // The phase is the whole of that question: nothing moves a connection back out
 // of play, so one that ends there is a player leaving, and one that ends
 // anywhere else never arrived.
-func (c *Client) leavePlay() {
+func (c *Client) LeavePlay() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.phase == types.PhasePlay {
 		c.status.PlayerLeft()
 	}
+}
+
+// TakeoverRead hands the read half of the connection to whoever will read it
+// from here on: everything already read and not consumed, and the cipher the
+// bytes still on the wire are under, nil when the connection is plain. The
+// client's own read loop must be done reading before this is called, and
+// nothing may read through the client again after it.
+func (c *Client) TakeoverRead() ([]byte, cipher.Stream, error) {
+	return c.stream.TakeoverRead()
 }
 
 // ServerStatus assembles what a ping on this connection is answered with, which
@@ -569,6 +581,18 @@ func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, err
 	if err != nil {
 		return nil, nil, err
 	}
+
+	return c.decodeBody(phase, maxSize, body)
+}
+
+// decodeBody turns one framed body, already off the wire in full, into the
+// packet it carries and the handler registered for it. It is the half of
+// ReadPacket both read paths share: the read loop hands it what ReadFrame
+// returned, and the reactor hands it the frames it reassembled itself. The
+// body may alias a buffer the caller reuses; nothing decoded keeps a byte of
+// it.
+func (c *Client) decodeBody(phase types.Phase, maxSize int32, body []byte) (types.ServerboundPacket, types.PacketHandler, error) {
+	var err error
 
 	// A body that cannot be inflated is still a body that was read in full, so
 	// the frames after it start where they should.
