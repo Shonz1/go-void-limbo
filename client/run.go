@@ -13,6 +13,7 @@ import (
 
 	clientboundCommon "github.com/Shonz1/go-void-limbo/packets/clientbound/common"
 	serverboundPlay "github.com/Shonz1/go-void-limbo/packets/serverbound/play"
+	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 )
 
@@ -159,18 +160,63 @@ func (c *Client) SendKeepAlive() error {
 	return c.writePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: id})
 }
 
+// HandlePlayBody is the reactor's half of a read loop: one framed body,
+// already off the wire in full, decoded and handled with the tolerance Run
+// applies -- a packet the server could not make sense of is one packet lost,
+// and anything else returned is the connection done for. The body may alias a
+// buffer the caller reuses; nothing keeps a byte of it past the return.
+//
+// Only a connection in the play phase is read this way, which is what fixes
+// the phase and the frame limit here rather than asking per packet.
+func (c *Client) HandlePlayBody(body []byte) error {
+	packet, handler, err := c.decodeBody(types.PhasePlay, streams.MaxPacketSize, body)
+	if err != nil {
+		var packetErr *packetError
+		if errors.As(err, &packetErr) {
+			slog.Error("failed to read packet", "err", err)
+			return nil
+		}
+
+		return err
+	}
+
+	if handler == nil {
+		return nil
+	}
+
+	if err := handler(c, packet); err != nil {
+		slog.Error("failed to handle packet", "packet", packet, "err", err)
+	}
+
+	return nil
+}
+
 // Run drives the connection until it ends: everything the client sends is
 // read, decoded and handled here. Keep alives are not this loop's to send --
 // they go out on the server's sweep over every connection it holds -- but the
 // answers to them come back through it like any other packet. It returns once
 // the connection is done for any reason, with the player count no longer
 // including this client.
-func (c *Client) Run() {
+//
+// handoff, when not nil, is offered the client once a handler has left it in
+// the play phase, which is the moment nothing stateful is left for this loop
+// to do. A handoff that returns true has taken the connection over -- reading,
+// closing and the leaving bookkeeping are all its from here -- and Run returns
+// without touching any of it. One that returns false is not asked again, and
+// the loop serves the connection to its end as ever.
+func (c *Client) Run(handoff func(*Client) bool) {
 	remoteAddr := c.conn.RemoteAddr().String()
 
 	// A client that joined stops being counted when its connection ends, and one
-	// that never joined was never counted.
-	defer c.leavePlay()
+	// that never joined was never counted. A connection handed off has not
+	// ended: whoever took it counts its leaving.
+	handedOff := false
+
+	defer func() {
+		if !handedOff {
+			c.LeavePlay()
+		}
+	}()
 
 	// The deadline is a window of silence rather than a cap on how long a
 	// connection may live, so it moves with every packet. A joined client moves
@@ -216,12 +262,22 @@ func (c *Client) Run() {
 			return
 		}
 
-		if handler == nil {
-			continue
+		if handler != nil {
+			if err := handler(c, packet); err != nil {
+				slog.Error("failed to handle packet", "packet", packet, "err", err)
+			}
 		}
 
-		if err := handler(c, packet); err != nil {
-			slog.Error("failed to handle packet", "packet", packet, "err", err)
+		// Only a handler moves a connection into play, so this is the one
+		// moment the offer can start being worth making, and the answer is
+		// final either way.
+		if handoff != nil && c.Phase() == types.PhasePlay {
+			if handoff(c) {
+				handedOff = true
+				return
+			}
+
+			handoff = nil
 		}
 	}
 }
