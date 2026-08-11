@@ -3,8 +3,14 @@ package main
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
+	"go-void-limbo/auth"
 	clientboundCommon "go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
@@ -14,6 +20,8 @@ import (
 	"go-void-limbo/types"
 	"io"
 	"net"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 )
@@ -33,6 +41,132 @@ func newTestClient(phase types.Phase) (*MinecraftClient, *bytes.Buffer) {
 		stream:          streams.NewMinecraftStreamFromBuffer(buf),
 		packetRegistry:  packetRegistry,
 	}, buf
+}
+
+// fakeSessionServer stands in for Mojang's, recording what it was asked.
+type fakeSessionServer struct {
+	usernames []string
+	hashes    []string
+
+	profile types.GameProfile
+	err     error
+}
+
+func (s *fakeSessionServer) HasJoined(username, serverHash string) (types.GameProfile, error) {
+	s.usernames = append(s.usernames, username)
+	s.hashes = append(s.hashes, serverHash)
+
+	return s.profile, s.err
+}
+
+// testKeyPair is generated once for the package. Generating one is the slowest
+// thing in these tests and none of them care which key they get.
+var testKeyPair = sync.OnceValue(func() *auth.KeyPair {
+	keyPair, err := auth.NewKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	return keyPair
+})
+
+// newLoginClient builds a client on one end of a connection, part way through a
+// login, with the other end of the connection returned to play the client.
+func newLoginClient(t *testing.T, sessionServer sessionServer) (*MinecraftClient, net.Conn) {
+	t.Helper()
+
+	server, client := net.Pipe()
+
+	t.Cleanup(func() {
+		server.Close()
+		client.Close()
+	})
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	return &MinecraftClient{
+		protocolVersion: types.ProtocolVersions.MINECRAFT_26_2,
+		phase:           types.PhaseLogin,
+		conn:            server,
+		stream:          streams.NewMinecraftStreamFromNetConn(server),
+		packetRegistry:  packetRegistry,
+		keyPair:         testKeyPair(),
+		sessionServer:   sessionServer,
+	}, client
+}
+
+// encryptForServer is what a client does to the two fields of its encryption
+// response: each one under the server's public key, with the padding the
+// client's cipher uses.
+func encryptForServer(t *testing.T, plaintext []byte) []byte {
+	t.Helper()
+
+	parsed, err := x509.ParsePKIXPublicKey(testKeyPair().PublicKey())
+	if err != nil {
+		t.Fatalf("reading the server key: %v", err)
+	}
+
+	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, parsed.(*rsa.PublicKey), plaintext)
+	if err != nil {
+		t.Fatalf("encrypting for the server: %v", err)
+	}
+
+	return ciphertext
+}
+
+// testCipher is the client's side of the connection cipher: AES in 8-bit cipher
+// feedback mode, keyed by the shared secret and started from it. It stands apart
+// from the server's own so that what is checked is that the two agree.
+type testCipher struct {
+	block     cipher.Block
+	register  []byte
+	keyStream []byte
+	decrypt   bool
+}
+
+func newTestCipher(t *testing.T, secret []byte, decrypt bool) *testCipher {
+	t.Helper()
+
+	block, err := aes.NewCipher(secret)
+	if err != nil {
+		t.Fatalf("keying the cipher: %v", err)
+	}
+
+	register := make([]byte, len(secret))
+	copy(register, secret)
+
+	return &testCipher{block: block, register: register, keyStream: make([]byte, block.BlockSize()), decrypt: decrypt}
+}
+
+func (c *testCipher) apply(data []byte) []byte {
+	out := make([]byte, len(data))
+
+	for i, in := range data {
+		c.block.Encrypt(c.keyStream, c.register)
+
+		out[i] = in ^ c.keyStream[0]
+
+		feedback := out[i]
+		if c.decrypt {
+			feedback = in
+		}
+
+		copy(c.register, c.register[1:])
+		c.register[len(c.register)-1] = feedback
+	}
+
+	return out
+}
+
+func decryptFromServer(t *testing.T, secret, ciphertext []byte) []byte {
+	t.Helper()
+
+	return newTestCipher(t, secret, true).apply(ciphertext)
 }
 
 // deflate is what a client that was told a threshold does to a body big enough
@@ -532,6 +666,488 @@ func TestReadPacketReportsABodyItCannotInflate(t *testing.T) {
 
 	if _, ok := packet.(*serverboundCommon.KeepAliveServerboundPacket); !ok {
 		t.Errorf("read %T, want the keep alive behind the frames that failed", packet)
+	}
+}
+
+// loginPeer is the far side of a login: it sends what a client sends and reads
+// what a client reads, taking on the cipher and then the compressed framing at
+// the points a real client takes them on.
+type loginPeer struct {
+	t    *testing.T
+	conn net.Conn
+
+	encrypter  *testCipher
+	decrypter  *testCipher
+	compressed bool
+}
+
+// encrypt turns the connection cipher on, as a client does the instant it has
+// sent its encryption response.
+func (p *loginPeer) encrypt(secret []byte) {
+	p.encrypter = newTestCipher(p.t, secret, false)
+	p.decrypter = newTestCipher(p.t, secret, true)
+}
+
+func (p *loginPeer) writePacket(body []byte) {
+	p.t.Helper()
+
+	// Everything this side sends is small enough to travel in full, so a zero
+	// data length is the whole of what compression adds to it.
+	if p.compressed {
+		body = append([]byte{0x00}, body...)
+	}
+
+	written := frame(p.t, body)
+	if p.encrypter != nil {
+		written = p.encrypter.apply(written)
+	}
+
+	if _, err := p.conn.Write(written); err != nil {
+		p.t.Fatalf("writing to the connection: %v", err)
+	}
+}
+
+func (p *loginPeer) readByte() byte {
+	p.t.Helper()
+
+	buf := make([]byte, 1)
+	if _, err := io.ReadFull(p.conn, buf); err != nil {
+		p.t.Fatalf("reading from the connection: %v", err)
+	}
+
+	if p.decrypter != nil {
+		buf = p.decrypter.apply(buf)
+	}
+
+	return buf[0]
+}
+
+func (p *loginPeer) readVarInt() int32 {
+	p.t.Helper()
+
+	value := int32(0)
+
+	for position := 0; position < 32; position += 7 {
+		current := p.readByte()
+		value |= int32(current&0x7F) << position
+
+		if current&0x80 == 0 {
+			return value
+		}
+	}
+
+	p.t.Fatal("reading from the connection: var int too big")
+
+	return 0
+}
+
+// readPacket reads one frame and returns the body inside it, through whichever
+// of the cipher and the compressed framing the connection has reached.
+func (p *loginPeer) readPacket() *streams.MinecraftStream {
+	p.t.Helper()
+
+	length := p.readVarInt()
+
+	body := make([]byte, length)
+	for i := range body {
+		body[i] = p.readByte()
+	}
+
+	if p.compressed {
+		size, read, err := streams.ReadVarIntFrom(body)
+		if err != nil {
+			p.t.Fatalf("reading the data length: %v", err)
+		}
+
+		body = body[read:]
+		if size != 0 {
+			body = inflate(p.t, body)
+		}
+	}
+
+	return streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(body))
+}
+
+// A login end to end: the handshake and login start a client sends in the clear,
+// the encryption request it answers, and then the two packets that finish the
+// login, which reach it only if the cipher, the packet ids and the compressed
+// framing all line up with what it turned on and when.
+func TestALoginIsEncryptedAndAuthenticated(t *testing.T) {
+	signature := "a signature"
+	authenticated := types.GameProfile{
+		Uuid:       "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+		Username:   "Notch",
+		Properties: []types.ProfileProperty{{Name: "textures", Value: "a base64 blob", Signature: &signature}},
+	}
+
+	sessionServer := &fakeSessionServer{profile: authenticated}
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	srv := &server{packetRegistry: packetRegistry, keyPair: testKeyPair(), sessionServer: sessionServer}
+
+	conn, client := net.Pipe()
+	defer client.Close()
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	go srv.handleConnection(conn)
+
+	peer := &loginPeer{t: t, conn: client}
+
+	// A handshake announcing the protocol version and an intent to log in, and
+	// then the name and uuid the client claims for itself.
+	handshake := new(bytes.Buffer)
+	handshakeStream := streams.NewMinecraftStreamFromBuffer(handshake)
+
+	for _, write := range []func() error{
+		func() error { return handshakeStream.WriteVarInt(0x00) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.ProtocolVersions.MINECRAFT_26_2.ID)) },
+		func() error { return handshakeStream.WriteString("localhost") },
+		func() error { return handshakeStream.WriteShort(25565) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseLogin)) },
+		handshakeStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the handshake: %v", err)
+		}
+	}
+
+	peer.writePacket(handshake.Bytes())
+
+	loginStart := new(bytes.Buffer)
+	loginStartStream := streams.NewMinecraftStreamFromBuffer(loginStart)
+
+	for _, write := range []func() error{
+		func() error { return loginStartStream.WriteVarInt(0x00) },
+		func() error { return loginStartStream.WriteString("notch") },
+		func() error { return loginStartStream.WriteUuid("00000000-0000-0000-0000-000000000001") },
+		loginStartStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the login start: %v", err)
+		}
+	}
+
+	peer.writePacket(loginStart.Bytes())
+
+	request := peer.readPacket()
+
+	packetId, err := request.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the encryption request: %v", err)
+	}
+
+	if packetId != 0x01 {
+		t.Fatalf("packet id = %#02x, want the login phase's encryption request %#02x", packetId, 0x01)
+	}
+
+	if _, err := request.ReadString(); err != nil {
+		t.Fatalf("reading the server id: %v", err)
+	}
+
+	publicKey, err := request.ReadByteArray(1024)
+	if err != nil {
+		t.Fatalf("reading the public key: %v", err)
+	}
+
+	verifyToken, err := request.ReadByteArray(1024)
+	if err != nil {
+		t.Fatalf("reading the verify token: %v", err)
+	}
+
+	if _, err := x509.ParsePKIXPublicKey(publicKey); err != nil {
+		t.Fatalf("the public key is not readable as the client reads it: %v", err)
+	}
+
+	secret := []byte("0123456789abcdef")
+
+	response := new(bytes.Buffer)
+	responseStream := streams.NewMinecraftStreamFromBuffer(response)
+
+	for _, write := range []func() error{
+		func() error { return responseStream.WriteVarInt(0x01) },
+		func() error {
+			return responseStream.WriteByteArray(encryptForServer(t, secret))
+		},
+		func() error {
+			return responseStream.WriteByteArray(encryptForServer(t, verifyToken))
+		},
+		responseStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the encryption response: %v", err)
+		}
+	}
+
+	peer.writePacket(response.Bytes())
+
+	// From here the client reads and writes through the cipher, whatever the
+	// server has managed.
+	peer.encrypt(secret)
+
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	threshold, err := setCompression.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	// The client frames everything after this packet for the threshold, and so
+	// does the server.
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	// The account Mojang answered with, rather than the one the client claimed.
+	if uuid != authenticated.Uuid {
+		t.Errorf("uuid = %q, want the authenticated %q", uuid, authenticated.Uuid)
+	}
+
+	username, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the username: %v", err)
+	}
+
+	if username != authenticated.Username {
+		t.Errorf("username = %q, want the authenticated %q", username, authenticated.Username)
+	}
+
+	properties, err := loginSuccess.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the property count: %v", err)
+	}
+
+	// The textures are the only reason the profile is worth authenticating for
+	// beyond the name, since they are what everyone else sees.
+	if properties != int32(len(authenticated.Properties)) {
+		t.Fatalf("carried %d properties, want the %d Mojang answered with", properties, len(authenticated.Properties))
+	}
+
+	name, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the property name: %v", err)
+	}
+
+	if name != "textures" {
+		t.Errorf("property name = %q, want %q", name, "textures")
+	}
+
+	// The client was asked about under the name it logged in with, which is the
+	// only name anything knew before Mojang answered.
+	if !slices.Equal(sessionServer.usernames, []string{"notch"}) {
+		t.Errorf("asked about %v, want the name the client logged in under", sessionServer.usernames)
+	}
+
+	// The vanilla threshold, which is what the login announces.
+	if threshold != 256 {
+		t.Errorf("threshold = %d, want %d", threshold, 256)
+	}
+}
+
+func TestBeginEncryptionOffersTheServerKeyAndANewToken(t *testing.T) {
+	client, _ := newLoginClient(t, &fakeSessionServer{})
+
+	publicKey, verifyToken, err := client.BeginEncryption()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Equal(publicKey, testKeyPair().PublicKey()) {
+		t.Errorf("public key = % x, want the server's", publicKey)
+	}
+
+	if !bytes.Equal(verifyToken, client.verifyToken) {
+		t.Errorf("sent token % x, waiting on % x", verifyToken, client.verifyToken)
+	}
+
+	if len(verifyToken) == 0 {
+		t.Error("sent an empty verify token, which is one anybody can answer with")
+	}
+
+	// A second request would leave the connection waiting on a token it never
+	// sent, and the client answering the one it was.
+	if _, _, err := client.BeginEncryption(); err == nil {
+		t.Error("error = nil, want encryption refused a second time")
+	}
+}
+
+func TestCompleteEncryptionPutsTheConnectionUnderTheSecret(t *testing.T) {
+	client, peer := newLoginClient(t, &fakeSessionServer{})
+
+	_, verifyToken, err := client.BeginEncryption()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	secret := []byte("0123456789abcdef")
+
+	if err := client.CompleteEncryption(encryptForServer(t, secret), encryptForServer(t, verifyToken)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The client is reading through its own cipher from the moment it answered,
+	// so a packet it cannot decrypt is a connection it drops.
+	read := make(chan []byte, 1)
+	go func() {
+		// A length, the login disconnect id, and a one character reason.
+		frame := make([]byte, 4)
+		if _, err := io.ReadFull(peer, frame); err != nil {
+			t.Errorf("reading the packet: %v", err)
+			close(read)
+
+			return
+		}
+
+		read <- decryptFromServer(t, secret, frame)
+	}()
+
+	if err := client.WritePacket(&clientboundLogin.DisconnectClientboundPacket{Reason: "x"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := <-read; !bytes.Equal(got, []byte{0x03, 0x00, 0x01, 'x'}) {
+		t.Errorf("the connection carried % x, want the packet under the client's cipher", got)
+	}
+
+	// The secret outlives the packet that carried it, because the session server
+	// matches a login by a hash taken over it.
+	if !bytes.Equal(client.sharedSecret, secret) {
+		t.Errorf("kept secret % x, want the one the client sent", client.sharedSecret)
+	}
+
+	// A connection with nothing outstanding is one a second response cannot
+	// rekey.
+	if client.verifyToken != nil {
+		t.Errorf("waiting on token % x, want an answered request waited on no longer", client.verifyToken)
+	}
+
+	if err := client.CompleteEncryption(encryptForServer(t, secret), encryptForServer(t, verifyToken)); err == nil {
+		t.Error("error = nil, want a second encryption response refused")
+	}
+}
+
+func TestCompleteEncryptionRefusesAResponseItCannotTie(t *testing.T) {
+	secret := []byte("0123456789abcdef")
+
+	tests := []struct {
+		name         string
+		begin        bool
+		sharedSecret func(t *testing.T, verifyToken []byte) []byte
+		verifyToken  func(t *testing.T, verifyToken []byte) []byte
+	}{
+		{
+			name:         "before a request was sent",
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return encryptForServer(t, secret) },
+			verifyToken:  func(t *testing.T, _ []byte) []byte { return encryptForServer(t, []byte{0x01, 0x02, 0x03, 0x04}) },
+		},
+		{
+			name:         "with another connection's token",
+			begin:        true,
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return encryptForServer(t, secret) },
+			verifyToken:  func(t *testing.T, _ []byte) []byte { return encryptForServer(t, []byte{0x01, 0x02, 0x03, 0x04}) },
+		},
+		{
+			name:         "with a token encrypted to nobody",
+			begin:        true,
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return encryptForServer(t, secret) },
+			verifyToken:  func(t *testing.T, _ []byte) []byte { return []byte("not a ciphertext") },
+		},
+		{
+			name:         "with a secret encrypted to nobody",
+			begin:        true,
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return []byte("not a ciphertext") },
+			verifyToken:  func(t *testing.T, verifyToken []byte) []byte { return encryptForServer(t, verifyToken) },
+		},
+		{
+			name:         "with a secret that is not a key",
+			begin:        true,
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return encryptForServer(t, []byte("too short")) },
+			verifyToken:  func(t *testing.T, verifyToken []byte) []byte { return encryptForServer(t, verifyToken) },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, _ := newLoginClient(t, &fakeSessionServer{})
+
+			var verifyToken []byte
+			if test.begin {
+				var err error
+				if _, verifyToken, err = client.BeginEncryption(); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+
+			if err := client.CompleteEncryption(test.sharedSecret(t, verifyToken), test.verifyToken(t, verifyToken)); err == nil {
+				t.Fatal("error = nil, want the response refused")
+			}
+
+			// A login that got this far and failed is one nothing else should be
+			// able to act on.
+			if client.sharedSecret != nil {
+				t.Errorf("kept secret % x, want a refused response to leave the connection alone", client.sharedSecret)
+			}
+
+			if _, err := client.Authenticate(); err == nil {
+				t.Error("error = nil, want a connection that was never encrypted refused")
+			}
+		})
+	}
+}
+
+func TestAuthenticateAsksAboutTheLoginTheConnectionIsIn(t *testing.T) {
+	authenticated := types.GameProfile{Uuid: "069a79f4-44e9-4726-a5be-fca90e38aaf5", Username: "Notch"}
+	sessionServer := &fakeSessionServer{profile: authenticated}
+
+	client, _ := newLoginClient(t, sessionServer)
+	client.SetProfile(types.GameProfile{Username: "Notch"})
+
+	_, verifyToken, err := client.BeginEncryption()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	secret := []byte("0123456789abcdef")
+
+	if err := client.CompleteEncryption(encryptForServer(t, secret), encryptForServer(t, verifyToken)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	profile, err := client.Authenticate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if profile.String() != authenticated.String() {
+		t.Errorf("profile = %s, want the one the session server answered with %s", profile, authenticated)
+	}
+
+	// The client is asked about by the name it logged in under, and by the hash
+	// it derived over the same secret and the same key before it answered.
+	if !slices.Equal(sessionServer.usernames, []string{"Notch"}) {
+		t.Errorf("asked about %v, want the name the client logged in under", sessionServer.usernames)
+	}
+
+	want := auth.ServerHash(serverId, secret, testKeyPair().PublicKey())
+	if !slices.Equal(sessionServer.hashes, []string{want}) {
+		t.Errorf("asked about %v, want the hash over this login %q", sessionServer.hashes, want)
 	}
 }
 

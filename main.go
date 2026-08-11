@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"errors"
 	"fmt"
+	"go-void-limbo/auth"
 	"go-void-limbo/gamedata"
 	"go-void-limbo/handlers"
 	clientboundCommon "go-void-limbo/packets/clientbound/common"
@@ -135,11 +137,27 @@ func decompressBody(body []byte, threshold int32) ([]byte, error) {
 	return streams.Decompress(payload, size)
 }
 
+// serverId is the name a login goes by at the session server. It has been the
+// empty string since the protocol stopped having anything to put in it, and both
+// ends hash it all the same.
+const serverId = ""
+
+// sessionServer is the side of a login this server does not hold: the service
+// that knows which accounts really logged in and what they look like.
+type sessionServer interface {
+	HasJoined(username, serverHash string) (types.GameProfile, error)
+}
+
 type MinecraftClient struct {
 	conn           net.Conn
 	stream         *streams.MinecraftStream
 	packetRegistry *registries.PacketRegistry
 	gameRegistries *gamedata.Provider
+
+	// keyPair and sessionServer are shared by every connection: one key is
+	// generated for the process, and one client talks to Mojang for all of them.
+	keyPair       *auth.KeyPair
+	sessionServer sessionServer
 
 	// mu guards everything below it, and every write to the connection. Keep
 	// alives are sent from a goroutine of their own while the read loop is
@@ -148,11 +166,21 @@ type MinecraftClient struct {
 	//
 	// Reading from the connection is not guarded and does not need to be: the
 	// read and write halves of the stream buffer nothing in common, and a
-	// net.Conn takes a read and a write at the same time.
+	// net.Conn takes a read and a write at the same time. Turning the cipher on
+	// rebuilds both halves, but it happens on the read loop's own goroutine and
+	// under the lock, so it is not a write either half can be caught mid-read
+	// by.
 	mu              sync.Mutex
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
 	profile         types.GameProfile
+
+	// verifyToken is the token an encryption request went out with and has not
+	// been answered yet, and sharedSecret is what the connection ended up
+	// encrypted with. The secret outlives the packet that carried it because the
+	// session server matches a login by a hash taken over it.
+	verifyToken  []byte
+	sharedSecret []byte
 
 	// pendingKeepAlive is the id of the keep alive the client has not answered
 	// yet, or zero when the server is not waiting on one.
@@ -206,6 +234,90 @@ func (c *MinecraftClient) EnableCompression(threshold int32) error {
 	c.compressionThreshold = threshold
 
 	return nil
+}
+
+// BeginEncryption generates the verify token this connection's encryption
+// request goes out with, and hands back what that packet has to carry.
+func (c *MinecraftClient) BeginEncryption() ([]byte, []byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.verifyToken != nil || c.sharedSecret != nil {
+		return nil, nil, errors.New("encryption has already been requested")
+	}
+
+	verifyToken, err := auth.NewVerifyToken()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	c.verifyToken = verifyToken
+
+	return c.keyPair.PublicKey(), verifyToken, nil
+}
+
+// CompleteEncryption decrypts an encryption response and puts the connection
+// under the secret it carried.
+//
+// The token is checked first and against the one this connection sent, which is
+// what keeps a response from being worth anything anywhere but here. Nothing is
+// written back before the cipher is on, because the client turned its own on the
+// moment it sent this.
+func (c *MinecraftClient) CompleteEncryption(sharedSecret, verifyToken []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.verifyToken == nil {
+		return errors.New("encryption was never requested")
+	}
+
+	token, err := c.keyPair.Decrypt(verifyToken)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt the verify token: %w", err)
+	}
+
+	if subtle.ConstantTimeCompare(token, c.verifyToken) != 1 {
+		return errors.New("the verify token is not the one that was sent")
+	}
+
+	secret, err := c.keyPair.Decrypt(sharedSecret)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt the shared secret: %w", err)
+	}
+
+	if err := c.stream.EnableEncryption(secret); err != nil {
+		return err
+	}
+
+	// The token has done its work, and a connection with nothing outstanding is
+	// one a second encryption response cannot restart.
+	c.verifyToken = nil
+	c.sharedSecret = secret
+
+	return nil
+}
+
+// Authenticate asks the session server about the login this connection is in the
+// middle of, and returns the profile Mojang holds for it.
+//
+// The hash is the whole of the question: the client sent Mojang one taken over
+// the same secret and the same key before it answered the encryption request, so
+// a session server that recognizes this one is a session server that saw the
+// same client on the other side of this connection.
+func (c *MinecraftClient) Authenticate() (types.GameProfile, error) {
+	// The session server is on the far side of the internet and answers when it
+	// answers. Holding the lock across that would stop a keep alive going out
+	// for as long as it takes.
+	c.mu.Lock()
+	username := c.profile.Username
+	secret := c.sharedSecret
+	c.mu.Unlock()
+
+	if secret == nil {
+		return types.GameProfile{}, errors.New("the connection is not encrypted")
+	}
+
+	return c.sessionServer.HasJoined(username, auth.ServerHash(serverId, secret, c.keyPair.PublicKey()))
 }
 
 func (c *MinecraftClient) RegistryPackets() []types.ClientboundPacket {
@@ -460,6 +572,16 @@ func (c *MinecraftClient) keepAliveLoop(done <-chan struct{}, interval time.Dura
 	}
 }
 
+// server is what every connection shares: the registries a packet is resolved
+// through, the game data the configuration phase hands out, and the key and
+// session server a login is checked with.
+type server struct {
+	packetRegistry *registries.PacketRegistry
+	gameRegistries *gamedata.Provider
+	keyPair        *auth.KeyPair
+	sessionServer  sessionServer
+}
+
 func main() {
 	configureLogging()
 
@@ -471,6 +593,22 @@ func main() {
 	if err != nil {
 		slog.Error("failed to encode game registries", "err", err)
 		return
+	}
+
+	// One key for the process, generated before the first client can ask for it.
+	// It is only ever used to get a login's secret across, so nothing is lost by
+	// it going away with the process.
+	keyPair, err := auth.NewKeyPair()
+	if err != nil {
+		slog.Error("failed to generate the server key", "err", err)
+		return
+	}
+
+	srv := &server{
+		packetRegistry: packetRegistry,
+		gameRegistries: gameRegistries,
+		keyPair:        keyPair,
+		sessionServer:  auth.NewSessionServer(),
 	}
 
 	listener, err := net.Listen("tcp", address)
@@ -490,13 +628,14 @@ func main() {
 			continue
 		}
 
-		go handleConnection(conn, packetRegistry, gameRegistries)
+		go srv.handleConnection(conn)
 	}
 }
 
 func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterServerbound(types.PhaseHandshake, types.ProtocolVersions.ZERO, 0x00, handshake.DecodeHandshakeServerboundPacket, handlers.HandleHandshakeServerboundPacket)
 	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x00, login.DecodeLoginStartServerboundPacket, handlers.HandleLoginStartServerboundPacket)
+	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x01, login.DecodeEncryptionResponseServerboundPacket, handlers.HandleEncryptionResponseServerboundPacket)
 	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x03, login.DecodeLoginAcknowledgedServerboundPacket, handlers.HandleLoginAcknowledgedServerboundPacket)
 	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x03, configuration.DecodeAcknowledgeFinishConfigurationServerboundPacket, handlers.HandleAcknowledgeFinishConfigurationServerboundPacket)
 
@@ -517,6 +656,7 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x2C, serverboundPlay.DecodePlayerLoadedServerboundPacket, nil)
 
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
+	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.EncryptionRequestClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x01)
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x02)
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.SetCompressionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
@@ -530,13 +670,22 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x48)
 }
 
-func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry, gameRegistries *gamedata.Provider) {
+func (s *server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("new client connected", "addr", remoteAddr)
 
-	mc := &MinecraftClient{protocolVersion: types.ProtocolVersions.ZERO, phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry, gameRegistries: gameRegistries}
+	mc := &MinecraftClient{
+		protocolVersion: types.ProtocolVersions.ZERO,
+		phase:           types.PhaseHandshake,
+		conn:            conn,
+		stream:          streams.NewMinecraftStreamFromNetConn(conn),
+		packetRegistry:  s.packetRegistry,
+		gameRegistries:  s.gameRegistries,
+		keyPair:         s.keyPair,
+		sessionServer:   s.sessionServer,
+	}
 
 	// A limbo has nothing to say to a client that has arrived, and thirty
 	// seconds of having nothing to say is what both ends treat as a dead
