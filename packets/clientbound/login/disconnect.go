@@ -2,7 +2,7 @@ package login
 
 import (
 	"fmt"
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/streams"
 )
 
 type DisconnectClientboundPacket struct {

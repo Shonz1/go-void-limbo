@@ -2,16 +2,17 @@
 // during the configuration phase, and resolves which content a given protocol
 // version should be sent.
 //
-// It is deliberately separate from package registries, which maps packet ids to
-// decoders and handlers. The two are unrelated despite both being called
-// registries: this one is game content, that one is protocol wiring.
+// It is deliberately separate from package protocol, which maps packet ids to
+// decoders and handlers. The two are unrelated despite both involving things
+// Minecraft calls registries: this one is game content, that one is protocol
+// wiring.
 package gamedata
 
 import (
 	"bytes"
 	"fmt"
-	"go-void-limbo/nbt"
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/nbt"
+	"github.com/Shonz1/go-void-limbo/streams"
 )
 
 // Entry is one element of a registry.

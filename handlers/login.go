@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"fmt"
-	clientboundLogin "go-void-limbo/packets/clientbound/login"
-	"go-void-limbo/types"
+	clientboundLogin "github.com/Shonz1/go-void-limbo/packets/clientbound/login"
+	"github.com/Shonz1/go-void-limbo/types"
 )
 
 // compressionThreshold is the body size at or above which packets are deflated.

@@ -1,7 +1,14 @@
 package types
 
-// Client is the connection state a packet handler is allowed to observe and mutate.
-type Client interface {
+// The interfaces below are the roles a connection plays for its packet
+// handlers, split so that a handler can say which slice of the connection it
+// actually touches. Client composes all of them, and is what the handler
+// signature carries, since handlers are looked up dynamically and need one
+// common shape.
+
+// ConnectionState is the state every phase of a connection reads and moves:
+// which version it speaks, which phase it is in, and who is on it.
+type ConnectionState interface {
 	ProtocolVersion() ProtocolVersion
 	SetProtocolVersion(protocolVersion ProtocolVersion)
 	Phase() Phase
@@ -14,9 +21,17 @@ type Client interface {
 	// the client about itself and nothing later asks.
 	Profile() GameProfile
 	SetProfile(profile GameProfile)
+}
 
+// PacketWriter sends a packet to the client, framed however far the connection
+// has come: compressed once a threshold has been announced, encrypted once a
+// cipher is on.
+type PacketWriter interface {
 	WritePacket(packet ClientboundPacket) error
+}
 
+// StatusReporter answers the one question the status phase asks.
+type StatusReporter interface {
 	// ServerStatus is what a server list ping arriving on this connection is
 	// answered with: what the operator set the server to say about itself, how
 	// many players are on it, and a version.
@@ -26,7 +41,12 @@ type Client interface {
 	// the version the client speaks whenever this server speaks it too, so that
 	// every version it supports sees a server that can be joined.
 	ServerStatus() ServerStatus
+}
 
+// Encrypting is the encryption handshake and the authentication that rides on
+// it, which is how a login nobody vouched for is settled on a server that
+// encrypts.
+type Encrypting interface {
 	// EncryptionEnabled reports whether this connection is to be encrypted, and
 	// with it whether the login is checked with Mojang at all. The two are one
 	// setting because they are one exchange: the client only encrypts once it
@@ -38,6 +58,33 @@ type Client interface {
 	// with no account behind it.
 	EncryptionEnabled() bool
 
+	// BeginEncryption starts the encryption handshake and returns what an
+	// encryption request has to carry: the server's public key, and a verify
+	// token the client encrypts under it and sends back. A connection can only
+	// begin it once.
+	BeginEncryption() (publicKey []byte, verifyToken []byte, err error)
+
+	// CompleteEncryption takes the two fields of an encryption response,
+	// decrypts them with the server's private key, refuses a verify token that
+	// is not the one that was sent, and puts the connection under the shared
+	// secret from there on.
+	//
+	// The client encrypts everything it sends after its response, so this has to
+	// happen before anything is written back, and a failure here leaves a
+	// connection neither end can read.
+	CompleteEncryption(sharedSecret, verifyToken []byte) error
+
+	// Authenticate asks the session server whether the client really is the
+	// account it logged in as, and returns the profile Mojang holds for it.
+	// Only an encrypted connection can be authenticated, since what the session
+	// server is asked about is a hash over the secret encrypting it.
+	Authenticate() (GameProfile, error)
+}
+
+// Forwarding is the account a proxy vouched for, however it arrived: written
+// into the handshake by a BungeeCord proxy, or signed into a payload of its
+// own by a modern one.
+type Forwarding interface {
 	// SetForwardedLogin records the account a proxy vouched for, whether it was
 	// written into the handshake by a BungeeCord proxy or signed into a
 	// forwarding payload by a modern one.
@@ -81,29 +128,11 @@ type Client interface {
 	// not the one that was sent, since a connection can only give up on the one
 	// question this server asked it.
 	DeclineModernForwarding(messageId int32) error
+}
 
-	// BeginEncryption starts the encryption handshake and returns what an
-	// encryption request has to carry: the server's public key, and a verify
-	// token the client encrypts under it and sends back. A connection can only
-	// begin it once.
-	BeginEncryption() (publicKey []byte, verifyToken []byte, err error)
-
-	// CompleteEncryption takes the two fields of an encryption response,
-	// decrypts them with the server's private key, refuses a verify token that
-	// is not the one that was sent, and puts the connection under the shared
-	// secret from there on.
-	//
-	// The client encrypts everything it sends after its response, so this has to
-	// happen before anything is written back, and a failure here leaves a
-	// connection neither end can read.
-	CompleteEncryption(sharedSecret, verifyToken []byte) error
-
-	// Authenticate asks the session server whether the client really is the
-	// account it logged in as, and returns the profile Mojang holds for it.
-	// Only an encrypted connection can be authenticated, since what the session
-	// server is asked about is a hash over the secret encrypting it.
-	Authenticate() (GameProfile, error)
-
+// Compressing announces the compression threshold, which only the login phase
+// has a packet for.
+type Compressing interface {
 	// EnableCompression tells the client the body size at or above which
 	// packets are deflated, and frames everything sent afterwards that way.
 	// Announcing the threshold and starting to use it are one step because the
@@ -113,17 +142,36 @@ type Client interface {
 	// Only the login phase has a packet to announce it with, so this can only
 	// be called there, and only once.
 	EnableCompression(threshold int32) error
+}
 
+// KeepAliveConfirmer records the client's side of the keep alive exchange.
+type KeepAliveConfirmer interface {
 	// ConfirmKeepAlive records the client's answer to the keep alive the server
 	// is waiting on. It reports an error when nothing was waiting on an answer
 	// or when the id is not the one that was sent, neither of which a client
 	// that is keeping itself alive does.
 	ConfirmKeepAlive(id int64) error
+}
 
+// GameDataSource hands out the game content the configuration phase sends.
+type GameDataSource interface {
 	// RegistryPackets returns the configuration-phase registry packets for this
 	// client's protocol version. The slice is shared across connections and must
 	// not be modified.
 	RegistryPackets() []ClientboundPacket
+}
+
+// Client is the connection state a packet handler is allowed to observe and
+// mutate: every role above, on one connection.
+type Client interface {
+	ConnectionState
+	PacketWriter
+	StatusReporter
+	Encrypting
+	Forwarding
+	Compressing
+	KeepAliveConfirmer
+	GameDataSource
 }
 
 // PacketHandler reacts to a decoded serverbound packet.

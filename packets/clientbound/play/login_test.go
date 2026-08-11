@@ -2,7 +2,7 @@ package play
 
 import (
 	"bytes"
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/streams"
 	"testing"
 )
 
@@ -76,18 +76,18 @@ func TestLoginClientboundPacketEncode(t *testing.T) {
 
 	want := []byte{
 		0x01, 0x02, 0x03, 0x04, // entity id, a plain int
-		0x01,                    // hardcore
-		0x02,                    // two dimensions
-		0x03, 'a', ':', 'b',     //
-		0x03, 'c', ':', 'd',     //
-		0x14,                    // max players
-		0x02,                    // view distance
-		0x03,                    // simulation distance
-		0x00,                    // reduced debug info
-		0x01,                    // show death screen
-		0x00,                    // do limited crafting
-		0x01,                    // dimension type id
-		0x03, 'a', ':', 'b',     // dimension
+		0x01,                // hardcore
+		0x02,                // two dimensions
+		0x03, 'a', ':', 'b', //
+		0x03, 'c', ':', 'd', //
+		0x14,                // max players
+		0x02,                // view distance
+		0x03,                // simulation distance
+		0x00,                // reduced debug info
+		0x01,                // show death screen
+		0x00,                // do limited crafting
+		0x01,                // dimension type id
+		0x03, 'a', ':', 'b', // dimension
 		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // hashed seed
 		0x03,                // spectator
 		0x02,                // previous mode, adventure
@@ -119,16 +119,16 @@ func TestLoginClientboundPacketEncodeWithoutDeathLocation(t *testing.T) {
 
 	want := []byte{
 		0x00, 0x00, 0x00, 0x00, // entity id
-		0x00,                                           // hardcore
-		0x01, 0x03, 'a', ':', 'b',                      // one dimension
-		0x00,                                           // max players
-		0x00,                                           // view distance
-		0x00,                                           // simulation distance
-		0x00,                                           // reduced debug info
-		0x00,                                           // show death screen
-		0x00,                                           // do limited crafting
-		0x00,                                           // dimension type id
-		0x03, 'a', ':', 'b',                            // dimension
+		0x00,                      // hardcore
+		0x01, 0x03, 'a', ':', 'b', // one dimension
+		0x00,                // max players
+		0x00,                // view distance
+		0x00,                // simulation distance
+		0x00,                // reduced debug info
+		0x00,                // show death screen
+		0x00,                // do limited crafting
+		0x00,                // dimension type id
+		0x03, 'a', ':', 'b', // dimension
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // hashed seed
 		0x03, // spectator
 		// The absent previous mode is a signed byte the client reads as none,

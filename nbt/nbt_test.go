@@ -2,7 +2,7 @@ package nbt
 
 import (
 	"bytes"
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/streams"
 	"reflect"
 	"strings"
 	"testing"

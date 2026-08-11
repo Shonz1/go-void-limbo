@@ -13,7 +13,7 @@
 // transformer straight into the body replacing it.
 package transformers
 
-import "go-void-limbo/streams"
+import "github.com/Shonz1/go-void-limbo/streams"
 
 // copyBytes moves a fixed width field across.
 func copyBytes(in *streams.MinecraftStream, out *streams.MinecraftStream, count int32) error {
