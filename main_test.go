@@ -21,6 +21,7 @@ import (
 	"go-void-limbo/types"
 	"io"
 	"net"
+	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -98,13 +99,14 @@ func newLoginClient(t *testing.T, sessionServer sessionServer) (*MinecraftClient
 	registerPackets(packetRegistry)
 
 	return &MinecraftClient{
-		protocolVersion: types.ProtocolVersions.MINECRAFT_26_2,
-		phase:           types.PhaseLogin,
-		conn:            server,
-		stream:          streams.NewMinecraftStreamFromNetConn(server),
-		packetRegistry:  packetRegistry,
-		keyPair:         testKeyPair(),
-		sessionServer:   sessionServer,
+		protocolVersion:   types.ProtocolVersions.MINECRAFT_26_2,
+		phase:             types.PhaseLogin,
+		conn:              server,
+		stream:            streams.NewMinecraftStreamFromNetConn(server),
+		packetRegistry:    packetRegistry,
+		keyPair:           testKeyPair(),
+		sessionServer:     sessionServer,
+		encryptionEnabled: true,
 	}, client
 }
 
@@ -793,7 +795,7 @@ func TestALoginIsEncryptedAndAuthenticated(t *testing.T) {
 	packetRegistry := registries.NewPacketRegistry()
 	registerPackets(packetRegistry)
 
-	srv := &server{packetRegistry: packetRegistry, keyPair: testKeyPair(), sessionServer: sessionServer}
+	srv := &server{packetRegistry: packetRegistry, keyPair: testKeyPair(), sessionServer: sessionServer, encryptionEnabled: true}
 
 	conn, client := net.Pipe()
 	defer client.Close()
@@ -966,6 +968,156 @@ func TestALoginIsEncryptedAndAuthenticated(t *testing.T) {
 	// The vanilla threshold, which is what the login announces.
 	if threshold != 256 {
 		t.Errorf("threshold = %d, want %d", threshold, 256)
+	}
+}
+
+// The same login on a server that was told not to encrypt: no encryption
+// request goes out, Mojang is never asked, and the two packets that finish the
+// login reach a client that never turned a cipher on.
+func TestALoginWithoutEncryptionIsTakenAtTheClientsWord(t *testing.T) {
+	sessionServer := &fakeSessionServer{}
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	srv := &server{packetRegistry: packetRegistry, keyPair: testKeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
+
+	conn, client := net.Pipe()
+	defer client.Close()
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	go srv.handleConnection(conn)
+
+	peer := &loginPeer{t: t, conn: client}
+
+	handshake := new(bytes.Buffer)
+	handshakeStream := streams.NewMinecraftStreamFromBuffer(handshake)
+
+	for _, write := range []func() error{
+		func() error { return handshakeStream.WriteVarInt(0x00) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.ProtocolVersions.MINECRAFT_26_2.ID)) },
+		func() error { return handshakeStream.WriteString("localhost") },
+		func() error { return handshakeStream.WriteShort(25565) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseLogin)) },
+		handshakeStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the handshake: %v", err)
+		}
+	}
+
+	peer.writePacket(handshake.Bytes())
+
+	loginStart := new(bytes.Buffer)
+	loginStartStream := streams.NewMinecraftStreamFromBuffer(loginStart)
+
+	for _, write := range []func() error{
+		func() error { return loginStartStream.WriteVarInt(0x00) },
+		func() error { return loginStartStream.WriteString("notch") },
+		// The uuid the client picked for itself, which is not the one it is
+		// given.
+		func() error { return loginStartStream.WriteUuid("00000000-0000-0000-0000-000000000001") },
+		loginStartStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the login start: %v", err)
+		}
+	}
+
+	peer.writePacket(loginStart.Bytes())
+
+	// Set compression rather than an encryption request: the login went
+	// straight to its end, and everything is still in the clear.
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	if uuid != types.OfflineUuid("notch") {
+		t.Errorf("uuid = %q, want the offline %q", uuid, types.OfflineUuid("notch"))
+	}
+
+	username, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the username: %v", err)
+	}
+
+	if username != "notch" {
+		t.Errorf("username = %q, want the name the client logged in under %q", username, "notch")
+	}
+
+	properties, err := loginSuccess.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the property count: %v", err)
+	}
+
+	// No session server answered, so there are no signed textures to carry, and
+	// the client shows the default skin.
+	if properties != 0 {
+		t.Errorf("carried %d properties, want none for a profile nobody signed", properties)
+	}
+
+	// A login with no secret behind it is one the session server could not have
+	// been asked about.
+	if len(sessionServer.usernames) != 0 {
+		t.Errorf("asked the session server about %v, want a login nobody can vouch for left alone", sessionServer.usernames)
+	}
+}
+
+func TestEncryptionSetting(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  bool
+	}{
+		// Nothing said is a server that encrypts, which is the only default
+		// worth having.
+		{name: "unset", set: false, want: true},
+		{name: "true", value: "true", set: true, want: true},
+		{name: "false", value: "false", set: true, want: false},
+		{name: "1", value: "1", set: true, want: true},
+		{name: "0", value: "0", set: true, want: false},
+		// A value nobody can read is not a reason to stop encrypting.
+		{name: "nonsense", value: "yes please", set: true, want: true},
+		{name: "empty", value: "", set: true, want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// t.Setenv is what puts back whatever the environment had; the
+			// unset the test is after comes on top of it.
+			t.Setenv("ENCRYPTION", test.value)
+
+			if !test.set {
+				os.Unsetenv("ENCRYPTION")
+			}
+
+			if got := encryptionSetting(); got != test.want {
+				t.Errorf("encryptionSetting() = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 

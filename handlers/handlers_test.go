@@ -39,6 +39,11 @@ type fakeClient struct {
 	compressionAfter      int
 	compressionErr        error
 
+	// encryptionEnabled is the setting the server was started with. The zero
+	// value is a server that encrypts nothing, so the tests about an encrypted
+	// login say so.
+	encryptionEnabled bool
+
 	// publicKey and verifyToken are what the real client hands back to put in an
 	// encryption request, and beginErr is a connection that could not produce
 	// them.
@@ -103,6 +108,8 @@ func (c *fakeClient) ConfirmKeepAlive(id int64) error {
 	return c.keepAliveErr
 }
 
+func (c *fakeClient) EncryptionEnabled() bool { return c.encryptionEnabled }
+
 func (c *fakeClient) BeginEncryption() ([]byte, []byte, error) {
 	if c.beginErr != nil {
 		return nil, nil, c.beginErr
@@ -157,7 +164,7 @@ func TestHandleHandshakeServerboundPacket(t *testing.T) {
 }
 
 func TestHandleLoginStartServerboundPacketAsksForEncryption(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
+	client := &fakeClient{phase: types.PhaseLogin, encryptionEnabled: true, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
 	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
 
 	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
@@ -212,7 +219,7 @@ func TestHandleLoginStartServerboundPacketAsksForEncryption(t *testing.T) {
 }
 
 func TestHandleLoginStartServerboundPacketReportsAFailureToBeginEncryption(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin, beginErr: errors.New("no verify token")}
+	client := &fakeClient{phase: types.PhaseLogin, encryptionEnabled: true, beginErr: errors.New("no verify token")}
 
 	// A request sent without a token to check the answer against is a login that
 	// cannot be finished, so it is not sent.
@@ -222,6 +229,79 @@ func TestHandleLoginStartServerboundPacketReportsAFailureToBeginEncryption(t *te
 
 	if len(client.written) != 0 {
 		t.Errorf("wrote %d packets, want none after encryption could not be begun", len(client.written))
+	}
+}
+
+func TestHandleLoginStartServerboundPacketFinishesALoginWithoutEncryption(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
+	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
+
+	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// An encryption request is what puts the client's cipher on, so sending one
+	// on a server that will never encrypt leaves the client reading through a
+	// cipher this end is not writing through.
+	for _, written := range client.written {
+		if _, ok := written.(*clientboundLogin.EncryptionRequestClientboundPacket); ok {
+			t.Fatal("asked for encryption, want a login left in the clear")
+		}
+	}
+
+	// There is no secret to hash, so there is nothing the session server could
+	// be asked about.
+	if client.authenticateCalls != 0 {
+		t.Errorf("asked the session server %d times, want a login nobody can vouch for left alone", client.authenticateCalls)
+	}
+
+	if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
+		t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
+	}
+
+	if client.compressionAfter != 0 {
+		t.Errorf("enabled compression after %d packets, want it announced before any reply", client.compressionAfter)
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	loginSuccess, ok := client.written[0].(*clientboundLogin.LoginSuccessClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *login.LoginSuccessClientboundPacket, got %T", client.written[0])
+	}
+
+	// The uuid is derived from the name, so the same name is the same account
+	// every time rather than whatever the client felt like sending.
+	want := types.OfflineUuid(packet.Name)
+
+	if loginSuccess.Profile.Uuid != want {
+		t.Errorf("login success uuid = %q, want the offline %q", loginSuccess.Profile.Uuid, want)
+	}
+
+	if loginSuccess.Profile.Username != packet.Name {
+		t.Errorf("login success username = %q, want the name the client logged in under %q", loginSuccess.Profile.Username, packet.Name)
+	}
+
+	// Nothing signed a skin for an account nobody vouched for, and an unsigned
+	// property is one the client refuses.
+	if len(loginSuccess.Profile.Properties) != 0 {
+		t.Errorf("carried %d properties, want none for a profile nobody signed", len(loginSuccess.Profile.Properties))
+	}
+
+	if client.Profile().String() != loginSuccess.Profile.String() {
+		t.Errorf("kept profile = %s, want the one the client was welcomed with %s", client.Profile(), loginSuccess.Profile)
+	}
+
+	if loginSuccess.SessionId == "" {
+		t.Error("expected a generated session id, got an empty string")
+	}
+
+	// The client stays in the login phase until it acknowledges the success
+	// packet.
+	if client.Phase() != types.PhaseLogin {
+		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
 	}
 }
 
@@ -388,7 +468,7 @@ func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testin
 
 func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *testing.T) {
 	profile := types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "Notch"}
-	client := &fakeClient{phase: types.PhaseConfiguration, profile: profile}
+	client := &fakeClient{phase: types.PhaseConfiguration, profile: profile, encryptionEnabled: true}
 
 	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -431,8 +511,8 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 		t.Errorf("previous game mode = %s, want none", login.SpawnInfo.PreviousGameMode)
 	}
 
-	// Every login here is one Mojang vouched for, and a client told otherwise
-	// draws no head beside any name in the player list.
+	// This login is one Mojang vouched for, and a client told otherwise draws no
+	// head beside any name in the player list.
 	if !login.OnlineMode {
 		t.Error("online mode = false, want the client told its login was authenticated")
 	}
@@ -496,6 +576,30 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 
 	if chunksNext.Event != clientboundPlay.GameEventStartWaitingForChunks {
 		t.Errorf("game event = %s, want start_waiting_for_chunks", chunksNext.Event)
+	}
+}
+
+// TestHandleAcknowledgeFinishConfigurationServerboundPacketTellsTheClientWhatItsLoginWasWorth
+// pins the online mode flag to the setting the server runs on. It is the claim
+// that a name here was checked with Mojang, and a server that claims it without
+// asking is a server telling the player list to draw heads it cannot stand
+// behind.
+func TestHandleAcknowledgeFinishConfigurationServerboundPacketTellsTheClientWhatItsLoginWasWorth(t *testing.T) {
+	for _, encryptionEnabled := range []bool{true, false} {
+		client := &fakeClient{phase: types.PhaseConfiguration, encryptionEnabled: encryptionEnabled}
+
+		if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
+			t.Fatalf("encryption enabled %t: unexpected error: %v", encryptionEnabled, err)
+		}
+
+		login, ok := client.written[0].(*clientboundPlay.LoginClientboundPacket)
+		if !ok {
+			t.Fatalf("encryption enabled %t: expected *play.LoginClientboundPacket first, got %T", encryptionEnabled, client.written[0])
+		}
+
+		if login.OnlineMode != encryptionEnabled {
+			t.Errorf("encryption enabled %t: online mode = %t, want the client told what its login was worth", encryptionEnabled, login.OnlineMode)
+		}
 	}
 }
 

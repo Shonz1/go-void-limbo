@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -152,6 +153,10 @@ type MinecraftClient struct {
 	keyPair       *auth.KeyPair
 	sessionServer sessionServer
 
+	// encryptionEnabled is the setting the server was started with, and never
+	// changes for the life of a connection, so it is read without the lock.
+	encryptionEnabled bool
+
 	// mu guards everything below it, and every write to the connection. Keep
 	// alives are sent from a goroutine of their own while the read loop is
 	// handling packets, so the state a write reads its packet id from is state
@@ -227,6 +232,12 @@ func (c *MinecraftClient) EnableCompression(threshold int32) error {
 	c.compressionThreshold = threshold
 
 	return nil
+}
+
+// EncryptionEnabled reports whether this connection is to be encrypted, and
+// with it whether its login is checked with Mojang.
+func (c *MinecraftClient) EncryptionEnabled() bool {
+	return c.encryptionEnabled
 }
 
 // BeginEncryption generates the verify token this connection's encryption
@@ -539,6 +550,28 @@ func configureLogging() {
 	}
 }
 
+// encryptionSetting reports whether connections are to be encrypted, read from
+// ENCRYPTION as anything strconv.ParseBool accepts.
+//
+// It defaults to on, and an unrecognized value is treated as on rather than
+// refused, because every way of misreading this setting has to land on the safe
+// side: an unencrypted server is one anyone can log in to under anyone's name,
+// and nothing about a connection says which of the two it got.
+func encryptionSetting() bool {
+	raw, ok := os.LookupEnv("ENCRYPTION")
+	if !ok {
+		return true
+	}
+
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		slog.Warn("unrecognized ENCRYPTION, falling back to enabled", "value", raw)
+		return true
+	}
+
+	return enabled
+}
+
 // ConfirmKeepAlive records the client's answer to the keep alive the server is
 // waiting on.
 func (c *MinecraftClient) ConfirmKeepAlive(id int64) error {
@@ -615,6 +648,11 @@ type server struct {
 	gameRegistries *gamedata.Provider
 	keyPair        *auth.KeyPair
 	sessionServer  sessionServer
+
+	// encryptionEnabled is what every connection this server accepts is handed,
+	// and it decides whether a login is encrypted and checked with Mojang or
+	// taken at the client's word.
+	encryptionEnabled bool
 }
 
 func main() {
@@ -639,11 +677,19 @@ func main() {
 		return
 	}
 
+	encryptionEnabled := encryptionSetting()
+	if !encryptionEnabled {
+		// The one thing this costs is the only thing anyone would want back, so
+		// it is said out loud rather than left to be discovered.
+		slog.Warn("encryption is disabled, logins are taken at the client's word and are not checked with Mojang")
+	}
+
 	srv := &server{
-		packetRegistry: packetRegistry,
-		gameRegistries: gameRegistries,
-		keyPair:        keyPair,
-		sessionServer:  auth.NewSessionServer(),
+		packetRegistry:    packetRegistry,
+		gameRegistries:    gameRegistries,
+		keyPair:           keyPair,
+		sessionServer:     auth.NewSessionServer(),
+		encryptionEnabled: encryptionEnabled,
 	}
 
 	listener, err := net.Listen("tcp", address)
@@ -674,14 +720,15 @@ func (s *server) handleConnection(conn net.Conn) {
 	slog.Info("new client connected", "addr", remoteAddr)
 
 	mc := &MinecraftClient{
-		protocolVersion: types.ProtocolVersions.ZERO,
-		phase:           types.PhaseHandshake,
-		conn:            conn,
-		stream:          streams.NewMinecraftStreamFromNetConn(conn),
-		packetRegistry:  s.packetRegistry,
-		gameRegistries:  s.gameRegistries,
-		keyPair:         s.keyPair,
-		sessionServer:   s.sessionServer,
+		protocolVersion:   types.ProtocolVersions.ZERO,
+		phase:             types.PhaseHandshake,
+		conn:              conn,
+		stream:            streams.NewMinecraftStreamFromNetConn(conn),
+		packetRegistry:    s.packetRegistry,
+		gameRegistries:    s.gameRegistries,
+		keyPair:           s.keyPair,
+		sessionServer:     s.sessionServer,
+		encryptionEnabled: s.encryptionEnabled,
 	}
 
 	// A limbo has nothing to say to a client that has arrived, and thirty

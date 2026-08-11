@@ -8,12 +8,6 @@ import (
 	"go-void-limbo/types"
 )
 
-// compressionThreshold is the body size at or above which packets are deflated.
-// It is what a vanilla server uses, and it sits above everything a limbo sends
-// on a tick and below the registries and tags it sends once, which are the only
-// packets here big enough for deflating to save more than it costs.
-const compressionThreshold = 256
-
 // authenticationFailureReason is what a client that could not be vouched for is
 // told before it is let go. The login phase's disconnect carries a chat
 // component rather than a plain line of text, so it is written as one.
@@ -46,26 +40,5 @@ func HandleEncryptionResponseServerboundPacket(client types.Client, packet types
 	// From here the profile is Mojang's rather than the client's: the account's
 	// own uuid and name, and the signed textures that are the only way anyone is
 	// shown a skin.
-	client.SetProfile(profile)
-
-	sessionId, err := types.NewRandomUuid()
-	if err != nil {
-		return fmt.Errorf("failed to generate session id: %w", err)
-	}
-
-	// Compression is announced here because this is the first packet the server
-	// sends on an encrypted connection, and the threshold has to reach the
-	// client before anything worth compressing does. The registries that follow
-	// in the configuration phase are the bulk of what this connection will ever
-	// send.
-	if err := client.EnableCompression(compressionThreshold); err != nil {
-		return fmt.Errorf("failed to enable compression: %w", err)
-	}
-
-	loginSuccess := clientboundLogin.LoginSuccessClientboundPacket{
-		Profile:   profile,
-		SessionId: sessionId,
-	}
-
-	return client.WritePacket(&loginSuccess)
+	return completeLogin(client, profile)
 }
