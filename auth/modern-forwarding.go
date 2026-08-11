@@ -52,9 +52,11 @@ const modernForwardingSignatureSize = sha256.Size
 // only the proxy and this server hold, so a payload that verifies is a payload
 // the proxy wrote, whoever carried it here.
 //
-// So the secret is the whole of the trust. A server holding one takes no login
-// without it, and nothing else about a connection -- not the address it came
-// from, not the name it logged in under -- is allowed to stand in.
+// So the secret is the whole of the trust. Nothing else about a connection --
+// not the address it came from, not the name it logged in under -- is allowed to
+// stand in for a login the proxy vouched for. A connection that produces none is
+// not being refused a login; it is a connection nobody vouched for, and is worth
+// whatever the server would make of one without a proxy in front of it.
 func ParseModernForwarding(secret, payload []byte) (types.ForwardedLogin, error) {
 	if len(secret) == 0 {
 		return types.ForwardedLogin{}, fmt.Errorf("no forwarding secret is configured")

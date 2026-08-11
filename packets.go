@@ -6,11 +6,13 @@ import (
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
 	clientboundPlay "go-void-limbo/packets/clientbound/play"
+	clientboundStatus "go-void-limbo/packets/clientbound/status"
 	serverboundCommon "go-void-limbo/packets/serverbound/common"
 	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
 	serverboundPlay "go-void-limbo/packets/serverbound/play"
+	"go-void-limbo/packets/serverbound/status"
 	"go-void-limbo/registries"
 	"go-void-limbo/transformers"
 	"go-void-limbo/types"
@@ -78,6 +80,26 @@ var serverboundPackets = []serverboundPacket{
 		// The handshake is what says which version the client speaks, so it is
 		// read before there is a version to read it at.
 		ids: packetIds{protocolZero: 0x00},
+	},
+
+	// The status phase is answered on every version, including the ones this
+	// server cannot be joined on. A client whose protocol is not one of the two
+	// below is a client whose handshake left the connection on protocol zero, and
+	// it is asking precisely so that its own server list can say the versions do
+	// not match. Refusing to answer would leave it with nothing to say that of.
+	{
+		phase:   types.PhaseStatus,
+		packet:  reflect.TypeOf(status.StatusRequestServerboundPacket{}),
+		decoder: status.DecodeStatusRequestServerboundPacket,
+		handler: handlers.HandleStatusRequestServerboundPacket,
+		ids:     packetIds{protocolZero: 0x00, protocol26_1: 0x00, protocol26_2: 0x00},
+	},
+	{
+		phase:   types.PhaseStatus,
+		packet:  reflect.TypeOf(status.PingRequestServerboundPacket{}),
+		decoder: status.DecodePingRequestServerboundPacket,
+		handler: handlers.HandlePingRequestServerboundPacket,
+		ids:     packetIds{protocolZero: 0x01, protocol26_1: 0x01, protocol26_2: 0x01},
 	},
 
 	{
@@ -182,6 +204,20 @@ var serverboundPackets = []serverboundPacket{
 
 // clientboundPackets is every packet the server writes.
 var clientboundPackets = []clientboundPacket{
+	// Answered on protocol zero as well, for the same reason the requests are
+	// read there: a client on a version this server does not speak still gets an
+	// answer, and works out from the version in it that it cannot join.
+	{
+		phase:  types.PhaseStatus,
+		packet: reflect.TypeOf(clientboundStatus.StatusResponseClientboundPacket{}),
+		ids:    packetIds{protocolZero: 0x00, protocol26_1: 0x00, protocol26_2: 0x00},
+	},
+	{
+		phase:  types.PhaseStatus,
+		packet: reflect.TypeOf(clientboundStatus.PongResponseClientboundPacket{}),
+		ids:    packetIds{protocolZero: 0x01, protocol26_1: 0x01, protocol26_2: 0x01},
+	},
+
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}),

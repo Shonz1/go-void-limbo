@@ -28,6 +28,14 @@ func unauthenticatedProfile(client types.Client, username string) types.GameProf
 		return types.GameProfile{Uuid: forwarded.Uuid, Username: username, Properties: forwarded.Properties}
 	}
 
+	return offlineProfile(username)
+}
+
+// offlineProfile is who a client is when there is nobody who could be asked: the
+// name it logged in under, and a uuid derived from that name rather than taken
+// from what the client sent, so a name is worth the same account on every
+// connection. Nothing signed for the skin, so there is none to carry.
+func offlineProfile(username string) types.GameProfile {
 	return types.GameProfile{Uuid: types.OfflineUuid(username), Username: username}
 }
 
@@ -44,10 +52,12 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 	client.SetProfile(types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name})
 
 	// A server holding a forwarding secret asks the connection to produce the
-	// login signed under it, and finishes nothing until it has. Whoever is out
-	// there answers next: a proxy with the account it authenticated, or a client
-	// saying it has never heard of the channel, which is how the two are told
-	// apart without anything being configured about this connection.
+	// login signed under it before it settles anything. Whoever is out there
+	// answers next: a proxy with the account it authenticated, or a client saying
+	// it has never heard of the channel, which is how the two are told apart
+	// without anything being configured about this connection. The answer decides
+	// which way the login goes, and a client that has none is one this server
+	// settles as it would with nothing in front of it at all.
 	if client.ModernForwardingEnabled() {
 		messageId, err := client.BeginModernForwarding()
 		if err != nil {
@@ -74,23 +84,5 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 		return completeLogin(client, unauthenticatedProfile(client, loginStart.Name))
 	}
 
-	publicKey, verifyToken, err := client.BeginEncryption()
-	if err != nil {
-		return fmt.Errorf("failed to begin encryption: %w", err)
-	}
-
-	// Nothing else goes out with this. The client answers an encryption request
-	// with the secret and then encrypts everything after it, so a packet sent
-	// alongside is one that arrives in a framing the client has already stopped
-	// reading for. Compression is announced later, once the cipher is on.
-	encryptionRequest := clientboundLogin.EncryptionRequestClientboundPacket{
-		PublicKey:   publicKey,
-		VerifyToken: verifyToken,
-
-		// A limbo that took the client's word for who it is would be a limbo
-		// anyone can enter under anyone's name.
-		ShouldAuthenticate: true,
-	}
-
-	return client.WritePacket(&encryptionRequest)
+	return askForEncryption(client)
 }

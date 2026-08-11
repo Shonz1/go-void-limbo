@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"go-void-limbo/auth"
 	clientboundCommon "go-void-limbo/packets/clientbound/common"
@@ -1304,18 +1305,31 @@ func signedForwardingPayload(t *testing.T, secret []byte, address, uuid, usernam
 
 // forwardingServer is a limbo with a proxy configured in front of it: a secret
 // to check a forwarded login against, and no encryption, since the proxy holds
-// the connection with the player and answered for them already.
+// the connection with the player and answered for them already. A login it does
+// not sign for is left to the client's own word here, which is what an operator
+// who turned encryption off asked for.
 func forwardingServer(t *testing.T) (*server, *loginPeer) {
+	t.Helper()
+
+	return forwardingServerOn(t, false, &fakeSessionServer{})
+}
+
+// forwardingServerOn is forwardingServer for the tests about what a login the
+// proxy did not sign for is worth on it, which is the one thing holding a secret
+// does not decide: whether the connection is to be encrypted, and what the
+// session server would then say about it.
+func forwardingServerOn(t *testing.T, encryptionEnabled bool, sessionServer sessionServer) (*server, *loginPeer) {
 	t.Helper()
 
 	packetRegistry := registries.NewPacketRegistry()
 	registerPackets(packetRegistry)
 
 	srv := &server{
-		packetRegistry:   packetRegistry,
-		keyPair:          testKeyPair(),
-		sessionServer:    &fakeSessionServer{},
-		forwardingSecret: testForwardingSecret,
+		packetRegistry:    packetRegistry,
+		keyPair:           testKeyPair(),
+		sessionServer:     sessionServer,
+		encryptionEnabled: encryptionEnabled,
+		forwardingSecret:  testForwardingSecret,
 	}
 
 	conn, client := net.Pipe()
@@ -1497,21 +1511,21 @@ func TestALoginBehindAModernProxyIsTheAccountItSigned(t *testing.T) {
 	}
 }
 
-// The same server, reached by somebody who does not hold the secret. Every way
-// of not holding it ends the same way, which is the point of holding one: there
-// is no answer left that gets a login finished.
-func TestALoginWithoutTheForwardingSecretIsRefused(t *testing.T) {
+// The same server, answered by something that produced a login without holding
+// the secret. This is the answer a client is never in a position to give: it
+// names an account under the proxy's authority, and the signature is the whole of
+// that authority, so every way of getting it wrong ends the same way.
+//
+// A connection that answers with no login at all is a different thing and is not
+// refused. It is a player who came to the port directly, and is settled by what
+// the server would do with any login nobody forwarded.
+func TestALoginTheForwardingSecretDoesNotVouchForIsRefused(t *testing.T) {
 	tests := []struct {
 		name string
 
-		// payload is what the connection answers with, and nil is the answer of
-		// a client that has never heard of the channel.
+		// payload is what the connection answers with.
 		payload func(t *testing.T) []byte
 	}{
-		{
-			name:    "a client that came straight here",
-			payload: func(t *testing.T) []byte { return nil },
-		},
 		{
 			name: "a login signed under a guess at the secret",
 			payload: func(t *testing.T) []byte {
@@ -1552,6 +1566,172 @@ func TestALoginWithoutTheForwardingSecretIsRefused(t *testing.T) {
 				t.Error("disconnected without a word, want a reason the player can read")
 			}
 		})
+	}
+}
+
+// A player who came to the port itself, on a server a proxy also points at. The
+// connection has never heard of the forwarding channel and says so, and that is
+// not a refusal: the login carries on to be settled the way this server settles
+// any login nobody forwarded, which here means asking Mojang behind a cipher of
+// its own.
+func TestALoginNoProxyForwardedIsCheckedWithMojangHere(t *testing.T) {
+	signature := "a signature"
+	authenticated := types.GameProfile{
+		Uuid:       "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+		Username:   "Notch",
+		Properties: []types.ProfileProperty{{Name: "textures", Value: "a base64 blob", Signature: &signature}},
+	}
+
+	sessionServer := &fakeSessionServer{profile: authenticated}
+
+	_, peer := forwardingServerOn(t, true, sessionServer)
+
+	messageId, _ := openForwardedLogin(t, peer, "limbo.example", "notch")
+
+	// The answer of a client that has never heard of the channel.
+	answerForwardingRequest(t, peer, messageId, nil)
+
+	// The question this server asks a login it has to settle itself, which it
+	// only gets to once the proxy has had its chance.
+	request := peer.readPacket()
+
+	if packetId, err := request.ReadVarInt(); err != nil || packetId != 0x01 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's encryption request %#02x", packetId, err, 0x01)
+	}
+
+	if _, err := request.ReadString(); err != nil {
+		t.Fatalf("reading the server id: %v", err)
+	}
+
+	publicKey, err := request.ReadByteArray(1024)
+	if err != nil {
+		t.Fatalf("reading the public key: %v", err)
+	}
+
+	verifyToken, err := request.ReadByteArray(1024)
+	if err != nil {
+		t.Fatalf("reading the verify token: %v", err)
+	}
+
+	if _, err := x509.ParsePKIXPublicKey(publicKey); err != nil {
+		t.Fatalf("the public key is not readable as the client reads it: %v", err)
+	}
+
+	secret := []byte("0123456789abcdef")
+
+	response := new(bytes.Buffer)
+	responseStream := streams.NewMinecraftStreamFromBuffer(response)
+
+	for _, write := range []func() error{
+		func() error { return responseStream.WriteVarInt(0x01) },
+		func() error { return responseStream.WriteByteArray(encryptForServer(t, secret)) },
+		func() error { return responseStream.WriteByteArray(encryptForServer(t, verifyToken)) },
+		responseStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the encryption response: %v", err)
+		}
+	}
+
+	peer.writePacket(response.Bytes())
+
+	peer.encrypt(secret)
+
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	// The account Mojang answered with. Nothing about the login came from the
+	// proxy, and nothing about it came from the client either.
+	if uuid != authenticated.Uuid {
+		t.Errorf("uuid = %q, want the authenticated %q", uuid, authenticated.Uuid)
+	}
+
+	if !slices.Equal(sessionServer.usernames, []string{"notch"}) {
+		t.Errorf("asked about %v, want the name the client logged in under", sessionServer.usernames)
+	}
+}
+
+// The same player on a server that encrypts nothing, which is how a limbo behind
+// a proxy is usually run. There is nobody left to ask, so the login is finished
+// on the name the client logged in under, with the uuid that name is worth.
+func TestALoginNoProxyForwardedIsTakenAtTheClientsWordWithoutEncryption(t *testing.T) {
+	srv, peer := forwardingServer(t)
+
+	messageId, _ := openForwardedLogin(t, peer, "limbo.example", "notch")
+
+	answerForwardingRequest(t, peer, messageId, nil)
+
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	if uuid != types.OfflineUuid("notch") {
+		t.Errorf("uuid = %q, want the offline %q", uuid, types.OfflineUuid("notch"))
+	}
+
+	username, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the username: %v", err)
+	}
+
+	if username != "notch" {
+		t.Errorf("username = %q, want the name the client logged in under %q", username, "notch")
+	}
+
+	properties, err := loginSuccess.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the property count: %v", err)
+	}
+
+	// Nobody signed for anything, so there are no textures to carry and the
+	// client shows the default skin.
+	if properties != 0 {
+		t.Errorf("carried %d properties, want none for a profile nobody signed", properties)
+	}
+
+	// A login nobody vouched for is not one Mojang was asked about: the
+	// connection has no secret on it to ask under.
+	if asked := srv.sessionServer.(*fakeSessionServer).usernames; len(asked) != 0 {
+		t.Errorf("asked the session server about %v, want a login nobody can vouch for left alone", asked)
 	}
 }
 
@@ -1706,6 +1886,45 @@ func TestModernForwardingRefusesAnAnswerToAnotherRequest(t *testing.T) {
 
 	if _, ok := client.ForwardedLogin(); ok {
 		t.Error("kept a forwarded login, want the one that answered nothing left out")
+	}
+}
+
+// The request is answered by an answer with no login in it as much as by one that
+// works, so the connection gives up on it and has nothing outstanding afterwards.
+// The login goes on to be settled without a proxy, and a payload turning up
+// behind that would be settling it a second time.
+func TestModernForwardingGivesUpOnARequestTheConnectionCannotAnswer(t *testing.T) {
+	client, _ := newLoginClient(t, &fakeSessionServer{})
+	client.forwardingSecret = testForwardingSecret
+
+	messageId, err := client.BeginModernForwarding()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The id ties the answer to the question, whichever kind of answer it is.
+	if err := client.DeclineModernForwarding(messageId + 1); err == nil {
+		t.Error("error = nil, want an answer to another request refused")
+	}
+
+	if err := client.DeclineModernForwarding(messageId); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+
+	if _, err := client.CompleteModernForwarding(messageId, payload); err == nil {
+		t.Error("error = nil, want a payload behind a request already given up on refused")
+	}
+
+	if _, ok := client.ForwardedLogin(); ok {
+		t.Error("kept a forwarded login, want the one that answered nothing left out")
+	}
+
+	// And the connection cannot give up twice, since the second time there is
+	// nothing left to give up on.
+	if err := client.DeclineModernForwarding(messageId); err == nil {
+		t.Error("error = nil, want a second answer to the same request refused")
 	}
 }
 
@@ -2133,5 +2352,301 @@ func TestWritePacketDropsTheSessionIdForAnOlderClient(t *testing.T) {
 	want := latestBody[:len(latestBody)-16]
 	if !bytes.Equal(olderBody, want) {
 		t.Errorf("26.1 body is\n%v\nwant\n%v", olderBody, want)
+	}
+}
+
+// statusServer builds a server that answers pings, opens a connection to it and
+// sends the handshake a client sends before one, returning the far side of that
+// connection to play the client.
+//
+// A ping needs nothing else of a server: no key, no session server and no game
+// registries, because nothing in the status phase is anybody's login.
+// protocolId is what the handshake says the client speaks, which may be a
+// version this server has never heard of.
+func statusServer(t *testing.T, description string, protocolId types.ProtocolId) *loginPeer {
+	t.Helper()
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	srv := &server{packetRegistry: packetRegistry, description: description}
+
+	conn, client := net.Pipe()
+	t.Cleanup(func() { client.Close() })
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	go srv.handleConnection(conn)
+
+	peer := &loginPeer{t: t, conn: client}
+
+	handshake := new(bytes.Buffer)
+	handshakeStream := streams.NewMinecraftStreamFromBuffer(handshake)
+
+	for _, write := range []func() error{
+		func() error { return handshakeStream.WriteVarInt(0x00) },
+		func() error { return handshakeStream.WriteVarInt(int32(protocolId)) },
+		func() error { return handshakeStream.WriteString("limbo.example") },
+		func() error { return handshakeStream.WriteShort(25565) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseStatus)) },
+		handshakeStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the handshake: %v", err)
+		}
+	}
+
+	peer.writePacket(handshake.Bytes())
+
+	return peer
+}
+
+// askStatus sends the status request a client sends and reads the document the
+// server answers with, parsed the way a client parses it rather than field by
+// field: the packet is one JSON string, and a client that cannot read it is left
+// with the defaults for everything it could not find.
+func askStatus(t *testing.T, peer *loginPeer) types.ServerStatus {
+	t.Helper()
+
+	request := new(bytes.Buffer)
+	requestStream := streams.NewMinecraftStreamFromBuffer(request)
+
+	// A packet id and nothing behind it.
+	for _, write := range []func() error{
+		func() error { return requestStream.WriteVarInt(0x00) },
+		requestStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the status request: %v", err)
+		}
+	}
+
+	peer.writePacket(request.Bytes())
+
+	response := peer.readPacket()
+
+	if packetId, err := response.ReadVarInt(); err != nil || packetId != 0x00 {
+		t.Fatalf("packet id = %#02x err = %v, want the status phase's status response %#02x", packetId, err, 0x00)
+	}
+
+	document, err := response.ReadString()
+	if err != nil {
+		t.Fatalf("reading the document: %v", err)
+	}
+
+	var status types.ServerStatus
+	if err := json.Unmarshal([]byte(document), &status); err != nil {
+		t.Fatalf("parsing %s: %v", document, err)
+	}
+
+	return status
+}
+
+// ping sends a ping request and returns the number that came back, which is what
+// the client times the round trip of.
+func ping(t *testing.T, peer *loginPeer, payload int64) int64 {
+	t.Helper()
+
+	request := new(bytes.Buffer)
+	requestStream := streams.NewMinecraftStreamFromBuffer(request)
+
+	for _, write := range []func() error{
+		func() error { return requestStream.WriteVarInt(0x01) },
+		func() error { return requestStream.WriteLong(payload) },
+		requestStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the ping request: %v", err)
+		}
+	}
+
+	peer.writePacket(request.Bytes())
+
+	response := peer.readPacket()
+
+	if packetId, err := response.ReadVarInt(); err != nil || packetId != 0x01 {
+		t.Fatalf("packet id = %#02x err = %v, want the status phase's pong response %#02x", packetId, err, 0x01)
+	}
+
+	pong, err := response.ReadLong()
+	if err != nil {
+		t.Fatalf("reading the payload: %v", err)
+	}
+
+	return pong
+}
+
+// A server list ping end to end: the handshake and the two questions a client
+// asks before it has decided to connect, and the two answers it draws the entry
+// in its server list from.
+func TestAPingIsAnsweredWithWhatTheServerSaysAboutItself(t *testing.T) {
+	peer := statusServer(t, "A void limbo", types.ProtocolVersions.MINECRAFT_26_2.ID)
+
+	status := askStatus(t, peer)
+
+	if status.Description.Text != "A void limbo" {
+		t.Errorf("description = %q, want the one the server was started with", status.Description.Text)
+	}
+
+	// The version the client speaks, since this server speaks it too. Anything
+	// else here is a client that draws the server as one it cannot join.
+	want := types.ServerVersion{Name: "26.2", Protocol: types.ProtocolVersions.MINECRAFT_26_2.ID}
+	if status.Version != want {
+		t.Errorf("version = %+v, want %+v", status.Version, want)
+	}
+
+	// Nobody has joined, and a limbo is never full.
+	if wantPlayers := (types.ServerPlayers{Online: 0, Max: 1}); status.Players != wantPlayers {
+		t.Errorf("players = %+v, want %+v", status.Players, wantPlayers)
+	}
+
+	// The client times the answer to this and matches it against what it sent,
+	// so the only wrong answer is a different number.
+	payload := int64(0x0000019870A5E1D3)
+	if pong := ping(t, peer, payload); pong != payload {
+		t.Errorf("pong = %d, want the %d that was asked", pong, payload)
+	}
+}
+
+// A client on a version this server cannot be joined on still gets an answer.
+// Its handshake left the connection on protocol zero, so nothing in the status
+// phase could be resolved at the version it speaks, and the point of answering
+// is that its own server list is what says the versions do not match.
+func TestAPingFromAVersionThisServerDoesNotSpeakIsStillAnswered(t *testing.T) {
+	peer := statusServer(t, "A void limbo", 47)
+
+	status := askStatus(t, peer)
+
+	want := types.ServerVersion{Name: types.LatestProtocolVersion.Names[0], Protocol: types.LatestProtocolVersion.ID}
+	if status.Version != want {
+		t.Errorf("version = %+v, want the latest this server speaks %+v", status.Version, want)
+	}
+
+	if status.Description.Text != "A void limbo" {
+		t.Errorf("description = %q, want the one the server was started with", status.Description.Text)
+	}
+
+	if pong := ping(t, peer, 1); pong != 1 {
+		t.Errorf("pong = %d, want the 1 that was asked", pong)
+	}
+}
+
+func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
+	latest := types.ServerVersion{Name: types.LatestProtocolVersion.Names[0], Protocol: types.LatestProtocolVersion.ID}
+
+	tests := []struct {
+		name    string
+		version types.ProtocolVersion
+		want    types.ServerVersion
+	}{
+		// Each supported version is reported as itself, which is what makes a
+		// client on either of them see a server it can join. The name is the
+		// first the version goes by, since a release that shares a protocol with
+		// another shares everything a client checks.
+		{name: "26.1", version: types.ProtocolVersions.MINECRAFT_26_1, want: types.ServerVersion{Name: "26.1", Protocol: types.ProtocolVersions.MINECRAFT_26_1.ID}},
+		{name: "26.2", version: types.ProtocolVersions.MINECRAFT_26_2, want: types.ServerVersion{Name: "26.2", Protocol: types.ProtocolVersions.MINECRAFT_26_2.ID}},
+
+		// A version this server does not speak, which is what a handshake it
+		// could not place leaves behind, is told the latest instead.
+		{name: "protocol zero", version: types.ProtocolVersions.ZERO, want: latest},
+		{name: "a version from before any of this", version: types.GetProtocolVersionById(47), want: latest},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := statusVersion(test.version); got != test.want {
+				t.Errorf("statusVersion(%d) = %+v, want %+v", test.version.ID, got, test.want)
+			}
+		})
+	}
+}
+
+// The count a ping reports is the clients in the play phase, which is the one
+// thing this server knows about more than one connection at a time.
+func TestServerStatusCountsTheClientsInPlay(t *testing.T) {
+	srv := &server{description: "A void limbo"}
+
+	// Two connections to the one server: the one that joins, and the one that
+	// only came to ask.
+	joining := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, players: &srv.players}
+	pinging := &MinecraftClient{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, players: &srv.players, description: srv.description}
+
+	players := func() types.ServerPlayers {
+		t.Helper()
+
+		return pinging.ServerStatus().Players
+	}
+
+	if got, want := players(), (types.ServerPlayers{Online: 0, Max: 1}); got != want {
+		t.Errorf("players = %+v, want %+v on a server nobody has joined", got, want)
+	}
+
+	// A connection part way through arriving is not a player yet: the phases
+	// before play are ones a player is still waiting behind.
+	joining.SetPhase(types.PhaseLogin)
+	joining.SetPhase(types.PhaseConfiguration)
+
+	if got, want := players(), (types.ServerPlayers{Online: 0, Max: 1}); got != want {
+		t.Errorf("players = %+v, want %+v while the client is still arriving", got, want)
+	}
+
+	joining.SetPhase(types.PhasePlay)
+
+	if got, want := players(), (types.ServerPlayers{Online: 1, Max: 2}); got != want {
+		t.Errorf("players = %+v, want %+v once the client is in play", got, want)
+	}
+
+	// Being put into the phase it is already in is not a second player.
+	joining.SetPhase(types.PhasePlay)
+
+	if got, want := players(), (types.ServerPlayers{Online: 1, Max: 2}); got != want {
+		t.Errorf("players = %+v, want %+v after a phase that did not change", got, want)
+	}
+
+	joining.leavePlay()
+
+	if got, want := players(), (types.ServerPlayers{Online: 0, Max: 1}); got != want {
+		t.Errorf("players = %+v, want %+v once the connection has ended", got, want)
+	}
+
+	// A connection that ended without ever joining leaves nothing behind.
+	// Counting it out would make every ping after it report fewer players than
+	// are there.
+	pinging.leavePlay()
+
+	if got, want := players(), (types.ServerPlayers{Online: 0, Max: 1}); got != want {
+		t.Errorf("players = %+v, want %+v after a connection that never joined ended", got, want)
+	}
+}
+
+func TestDescriptionSetting(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  string
+	}{
+		// Nothing said is a server that says what it is, since a player looking
+		// at a list of them has nothing else to go on.
+		{name: "unset", set: false, want: defaultDescription},
+		{name: "set", value: "somewhere to wait", set: true, want: "somewhere to wait"},
+		// A blank line in a server list reads as a server that failed to answer.
+		{name: "empty", value: "", set: true, want: defaultDescription},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("MOTD", test.value)
+
+			if !test.set {
+				os.Unsetenv("MOTD")
+			}
+
+			if got := descriptionSetting(); got != test.want {
+				t.Errorf("descriptionSetting() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

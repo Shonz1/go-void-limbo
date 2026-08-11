@@ -12,6 +12,36 @@ import (
 // packets here big enough for deflating to save more than it costs.
 const compressionThreshold = 256
 
+// askForEncryption puts the connection's login to Mojang, by asking the client
+// for the secret the session server is then asked about.
+//
+// It is where a login with nobody vouching for it goes on an encrypted server,
+// whether nothing was ever pointed at this one or the proxy in front of it had
+// nothing to say about this connection. Both have the same question left, and
+// this is the only way this end can ask it.
+//
+// Nothing else goes out with the request. The client answers it with the secret
+// and then encrypts everything after that, so a packet sent alongside is one that
+// arrives in a framing the client has already stopped reading for. Compression is
+// announced later, once the cipher is on.
+func askForEncryption(client types.Client) error {
+	publicKey, verifyToken, err := client.BeginEncryption()
+	if err != nil {
+		return fmt.Errorf("failed to begin encryption: %w", err)
+	}
+
+	encryptionRequest := clientboundLogin.EncryptionRequestClientboundPacket{
+		PublicKey:   publicKey,
+		VerifyToken: verifyToken,
+
+		// A limbo that took the client's word for who it is would be a limbo
+		// anyone can enter under anyone's name.
+		ShouldAuthenticate: true,
+	}
+
+	return client.WritePacket(&encryptionRequest)
+}
+
 // completeLogin welcomes a client whose profile is settled, whether it was
 // settled by Mojang or, on an unencrypted connection, by the name the client
 // logged in under. It is the last of the login phase: the client acknowledges
