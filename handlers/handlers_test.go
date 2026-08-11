@@ -3,16 +3,19 @@ package handlers
 import (
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
+	clientboundPlay "go-void-limbo/packets/clientbound/play"
 	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
 	"go-void-limbo/types"
+	"slices"
 	"testing"
 )
 
 type fakeClient struct {
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
+	profile         types.GameProfile
 	written         []types.ClientboundPacket
 	// writePhases records the phase the client was in as each packet was
 	// written, since that phase is what the real client resolves a clientbound
@@ -32,6 +35,10 @@ func (c *fakeClient) SetProtocolVersion(protocolVersion types.ProtocolVersion) {
 func (c *fakeClient) Phase() types.Phase { return c.phase }
 
 func (c *fakeClient) SetPhase(phase types.Phase) { c.phase = phase }
+
+func (c *fakeClient) Profile() types.GameProfile { return c.profile }
+
+func (c *fakeClient) SetProfile(profile types.GameProfile) { c.profile = profile }
 
 func (c *fakeClient) WritePacket(packet types.ClientboundPacket) error {
 	c.written = append(c.written, packet)
@@ -98,6 +105,12 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 	if client.Phase() != types.PhaseLogin {
 		t.Errorf("expected phase %d, got %d", types.PhaseLogin, client.Phase())
 	}
+
+	// Nothing later in the connection asks the client who it is, so the play
+	// phase can only tell it about itself from what was kept here.
+	if client.Profile().Username != packet.Name || client.Profile().Uuid != packet.Uuid {
+		t.Errorf("kept profile %s, want the one the client logged in with", client.Profile())
+	}
 }
 
 func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testing.T) {
@@ -142,7 +155,8 @@ func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testin
 }
 
 func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseConfiguration}
+	profile := types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "Notch"}
+	client := &fakeClient{phase: types.PhaseConfiguration, profile: profile}
 
 	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -152,8 +166,92 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 		t.Errorf("expected phase %d, got %d", types.PhasePlay, client.Phase())
 	}
 
-	if len(client.written) != 0 {
-		t.Errorf("expected no written packets, got %d", len(client.written))
+	if len(client.written) != 4 {
+		t.Fatalf("expected 4 written packets, got %d", len(client.written))
+	}
+
+	// Writing before the phase moves would resolve the packet ids in the
+	// configuration phase, where none of these are registered.
+	for i, phase := range client.writePhases {
+		if phase != types.PhasePlay {
+			t.Errorf("expected packet %d to be written in phase %d, got %d", i, types.PhasePlay, phase)
+		}
+	}
+
+	login, ok := client.written[0].(*clientboundPlay.LoginClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *play.LoginClientboundPacket first, got %T", client.written[0])
+	}
+
+	// A dimension the login packet does not list is one the client refuses to
+	// be spawned in.
+	if !slices.Contains(login.Dimensions, login.SpawnInfo.Dimension) {
+		t.Errorf("spawn dimension %q is not among the listed dimensions %v", login.SpawnInfo.Dimension, login.Dimensions)
+	}
+
+	// Any other mode leaves the client waiting for the chunk it stands in,
+	// which a limbo that sends no chunks never provides.
+	if login.SpawnInfo.GameMode != clientboundPlay.GameModeSpectator {
+		t.Errorf("game mode = %s, want spectator", login.SpawnInfo.GameMode)
+	}
+
+	if login.SpawnInfo.PreviousGameMode != clientboundPlay.GameModeNone {
+		t.Errorf("previous game mode = %s, want none", login.SpawnInfo.PreviousGameMode)
+	}
+
+	position, ok := client.written[1].(*clientboundPlay.PlayerPositionClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *play.PlayerPositionClientboundPacket second, got %T", client.written[1])
+	}
+
+	// The client answers with this id, so a teleport it can only report as zero
+	// cannot be told from one that was never sent.
+	if position.TeleportId == 0 {
+		t.Error("expected a non-zero teleport id")
+	}
+
+	playerInfo, ok := client.written[2].(*clientboundPlay.PlayerInfoUpdateClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *play.PlayerInfoUpdateClientboundPacket third, got %T", client.written[2])
+	}
+
+	if len(playerInfo.Entries) != 1 {
+		t.Fatalf("expected 1 player list entry, got %d", len(playerInfo.Entries))
+	}
+
+	entry := playerInfo.Entries[0]
+
+	// The entry is the client's own, so it has to carry the profile the client
+	// logged in with rather than a fresh one.
+	if entry.Profile.String() != client.Profile().String() {
+		t.Errorf("player list entry profile = %s, want %s", entry.Profile, client.Profile())
+	}
+
+	// An entry the client is never told about is one it ignores every later
+	// update for.
+	if playerInfo.Actions&clientboundPlay.PlayerInfoAddPlayer == 0 {
+		t.Errorf("actions = %s, want the entry to be added", playerInfo.Actions)
+	}
+
+	if playerInfo.Actions&clientboundPlay.PlayerInfoUpdateListed == 0 || !entry.Listed {
+		t.Errorf("actions = %s listed = %t, want the player listed", playerInfo.Actions, entry.Listed)
+	}
+
+	// The client reads its own mode from both packets, so disagreeing would
+	// leave it in one mode holding a list entry that says another.
+	if playerInfo.Actions&clientboundPlay.PlayerInfoUpdateGameMode == 0 || entry.GameMode != login.SpawnInfo.GameMode {
+		t.Errorf("player list game mode = %s, want the login packet's %s", entry.GameMode, login.SpawnInfo.GameMode)
+	}
+
+	// The client sits on its loading screen until this arrives, so it has to be
+	// the packet that ends the join rather than one in the middle of it.
+	chunksNext, ok := client.written[3].(*clientboundPlay.GameEventClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *play.GameEventClientboundPacket last, got %T", client.written[3])
+	}
+
+	if chunksNext.Event != clientboundPlay.GameEventStartWaitingForChunks {
+		t.Errorf("game event = %s, want start_waiting_for_chunks", chunksNext.Event)
 	}
 }
 

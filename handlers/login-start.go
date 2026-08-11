@@ -20,8 +20,14 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 
 	// The limbo does not authenticate, so the profile is taken at face value from
 	// the client and carries no skin properties.
+	profile := types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name}
+
+	// The play phase has to tell the client who it is, and this is the only
+	// packet that says so.
+	client.SetProfile(profile)
+
 	loginSuccess := clientboundLogin.LoginSuccessClientboundPacket{
-		Profile:   types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name},
+		Profile:   profile,
 		SessionId: sessionId,
 	}
 
