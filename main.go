@@ -80,14 +80,59 @@ func (e *packetError) Error() string { return e.err.Error() }
 
 func (e *packetError) Unwrap() error { return e.err }
 
-func VarIntSize(value int32) int {
-	uvalue := uint32(value)
-	size := 1
-	for (uvalue & ^uint32(0x7F)) != 0 {
-		size++
-		uvalue >>= 7
+// compressBody frames a packet body for a connection that has been told a
+// compression threshold, deflating it when it is big enough to be worth it. The
+// var int in front carries the size the body inflates to, or zero for a body
+// small enough to be left in full.
+func compressBody(body []byte, threshold int32) ([]byte, error) {
+	size := int32(0)
+	payload := body
+
+	if int32(len(body)) >= threshold {
+		compressed, err := streams.Compress(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress packet: %w", err)
+		}
+
+		size = int32(len(body))
+		payload = compressed
 	}
-	return size
+
+	buf := new(bytes.Buffer)
+	stream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	if err := stream.WriteVarInt(size); err != nil {
+		return nil, err
+	}
+
+	if err := stream.Flush(); err != nil {
+		return nil, err
+	}
+
+	return append(buf.Bytes(), payload...), nil
+}
+
+// decompressBody undoes compressBody on a body that arrived from a client that
+// was told the same threshold. A size the client had no business compressing at
+// is refused: a body it should have sent in full is one this end cannot tell
+// from a frame that lost its place.
+func decompressBody(body []byte, threshold int32) ([]byte, error) {
+	size, read, err := streams.ReadVarIntFrom(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read data length: %w", err)
+	}
+
+	payload := body[read:]
+
+	if size == 0 {
+		return payload, nil
+	}
+
+	if size < threshold || size > maxPacketSize {
+		return nil, fmt.Errorf("invalid data length: %d", size)
+	}
+
+	return streams.Decompress(payload, size)
 }
 
 type MinecraftClient struct {
@@ -112,6 +157,55 @@ type MinecraftClient struct {
 	// pendingKeepAlive is the id of the keep alive the client has not answered
 	// yet, or zero when the server is not waiting on one.
 	pendingKeepAlive int64
+
+	// compressionEnabled says whether the client has been told a compression
+	// threshold, which is what puts a data length in front of every packet body
+	// in both directions. compressionThreshold is the size at or above which a
+	// body is deflated; a threshold of zero deflates every one of them, so the
+	// two cannot be the same field.
+	//
+	// A client is only ever told once, and the framing has to match on both
+	// ends, so the zero value is the connection every client starts on: no
+	// threshold sent, nothing framed for one.
+	compressionEnabled   bool
+	compressionThreshold int32
+}
+
+// compression reports the threshold packets are deflated at, and whether the
+// client has been told one at all.
+func (c *MinecraftClient) compression() (int32, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.compressionThreshold, c.compressionEnabled
+}
+
+// EnableCompression tells the client the body size at or above which packets
+// are deflated, and frames everything written afterwards that way.
+//
+// The lock is held across both because the packet announcing the threshold is
+// the last one framed uncompressed: a keep alive slipping in between would be
+// framed one way and read the other, and the connection would never recover.
+func (c *MinecraftClient) EnableCompression(threshold int32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if threshold < 0 {
+		return fmt.Errorf("invalid compression threshold: %d", threshold)
+	}
+
+	if c.compressionEnabled {
+		return errors.New("compression is already enabled")
+	}
+
+	if err := c.writePacket(&clientboundLogin.SetCompressionClientboundPacket{Threshold: threshold}); err != nil {
+		return err
+	}
+
+	c.compressionEnabled = true
+	c.compressionThreshold = threshold
+
+	return nil
 }
 
 func (c *MinecraftClient) RegistryPackets() []types.ClientboundPacket {
@@ -180,6 +274,15 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 		return nil, nil, err
 	}
 
+	// A body that cannot be inflated is still a body that was read in full, so
+	// the frames after it start where they should.
+	if threshold, enabled := c.compression(); enabled {
+		body, err = decompressBody(body, threshold)
+		if err != nil {
+			return nil, nil, &packetError{err: err}
+		}
+	}
+
 	bodyStream := streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(body))
 
 	packetId, err := bodyStream.ReadVarInt()
@@ -224,7 +327,12 @@ func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 	buf := new(bytes.Buffer)
 	tempStream := streams.NewMinecraftStreamFromBuffer(buf)
 
-	err := packet.Encode(tempStream)
+	err := tempStream.WriteVarInt(packetId)
+	if err != nil {
+		return err
+	}
+
+	err = packet.Encode(tempStream)
 	if err != nil {
 		return err
 	}
@@ -234,17 +342,21 @@ func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 		return err
 	}
 
-	err = c.stream.WriteVarInt(int32(buf.Len() + VarIntSize(packetId)))
+	body := buf.Bytes()
+
+	if c.compressionEnabled {
+		body, err = compressBody(body, c.compressionThreshold)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = c.stream.WriteVarInt(int32(len(body)))
 	if err != nil {
 		return err
 	}
 
-	err = c.stream.WriteVarInt(packetId)
-	if err != nil {
-		return err
-	}
-
-	err = c.stream.WriteBytes(buf.Bytes())
+	err = c.stream.WriteBytes(body)
 	if err != nil {
 		return err
 	}
@@ -277,7 +389,7 @@ func configureLogging() {
 
 	if unrecognized != "" {
 		slog.Warn("unrecognized LOG_LEVEL, falling back to INFO", "value", unrecognized)
-  }
+	}
 }
 
 // ConfirmKeepAlive records the client's answer to the keep alive the server is
@@ -406,6 +518,7 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x02)
+	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.SetCompressionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x0D)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.FinishConfigurationClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
