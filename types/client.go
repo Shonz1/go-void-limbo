@@ -28,6 +28,18 @@ type Client interface {
 	// with no account behind it.
 	EncryptionEnabled() bool
 
+	// SetForwardedLogin records the account a BungeeCord proxy vouched for in
+	// the handshake it forwarded. Only the handshake carries it, and the login
+	// it belongs to arrives in the packet after.
+	SetForwardedLogin(forwarded ForwardedLogin)
+
+	// ForwardedLogin returns what a proxy vouched for, and whether anything did.
+	// Nothing did on a connection that no proxy forwarded, which is every
+	// connection on a server nothing is pointed at, and it is what tells the two
+	// apart: there is no setting saying which kind this is, only a handshake
+	// that either carried a login or did not.
+	ForwardedLogin() (ForwardedLogin, bool)
+
 	// BeginEncryption starts the encryption handshake and returns what an
 	// encryption request has to carry: the server's public key, and a verify
 	// token the client encrypts under it and sends back. A connection can only
