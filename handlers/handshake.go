@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"fmt"
-	"go-void-limbo/auth"
-	"go-void-limbo/packets/serverbound/handshake"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/auth"
+	"github.com/Shonz1/go-void-limbo/packets/serverbound/handshake"
+	"github.com/Shonz1/go-void-limbo/types"
 	"log/slog"
 )
 

@@ -8,7 +8,7 @@
 package nbt
 
 import (
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/streams"
 	"sort"
 	"strconv"
 	"strings"

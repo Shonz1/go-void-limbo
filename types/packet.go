@@ -1,6 +1,6 @@
 package types
 
-import "go-void-limbo/streams"
+import "github.com/Shonz1/go-void-limbo/streams"
 
 type PacketId = int32
 

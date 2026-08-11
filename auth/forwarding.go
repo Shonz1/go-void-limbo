@@ -3,7 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/types"
 	"strings"
 )
 

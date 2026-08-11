@@ -1,0 +1,650 @@
+// Package client holds one accepted connection: the state a login moves
+// through, the framing the connection is on, and the read and keep alive loops
+// that drive it. Everything server-wide reaches it through the Config it is
+// built with.
+package client
+
+import (
+	"bytes"
+	"crypto/subtle"
+	"errors"
+	"fmt"
+	"net"
+	"reflect"
+	"sync"
+
+	"github.com/Shonz1/go-void-limbo/auth"
+	"github.com/Shonz1/go-void-limbo/gamedata"
+	clientboundLogin "github.com/Shonz1/go-void-limbo/packets/clientbound/login"
+	"github.com/Shonz1/go-void-limbo/protocol"
+	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
+)
+
+// serverId is the name a login goes by at the session server. It has been the
+// empty string since the protocol stopped having anything to put in it, and both
+// ends hash it all the same.
+const serverId = ""
+
+// SessionServer is the side of a login this server does not hold: the service
+// that knows which accounts really logged in and what they look like.
+type SessionServer interface {
+	HasJoined(username, serverHash string) (types.GameProfile, error)
+}
+
+// StatusProvider is the server-wide state a ping is answered from and the
+// player count a connection joins and leaves. It is an interface here because
+// the state belongs to the server, which is the package that constructs
+// clients: the connection only ever asks about it.
+type StatusProvider interface {
+	// Status assembles what a ping arriving on a connection speaking version is
+	// answered with.
+	Status(version types.ProtocolVersion) types.ServerStatus
+
+	// PlayerJoined counts a client that has just reached the play phase, and
+	// PlayerLeft stops counting one whose connection has ended.
+	PlayerJoined()
+	PlayerLeft()
+}
+
+// Config is everything a connection shares with the rest of its server.
+type Config struct {
+	PacketRegistry *protocol.Registry
+	GameData       *gamedata.Provider
+
+	// KeyPair and SessionServer are shared by every connection: one key is
+	// generated for the process, and one client talks to Mojang for all of them.
+	KeyPair       *auth.KeyPair
+	SessionServer SessionServer
+
+	// Status is what a ping on this connection is answered from, and is the one
+	// the server keeps rather than a copy: a ping asks about the server, and
+	// nothing in it belongs to the connection it arrived on.
+	Status StatusProvider
+
+	// EncryptionEnabled is the setting the server was started with, and decides
+	// what a login is worth: checked with Mojang behind a cipher of this
+	// server's own, or taken on the word of whoever is on the connection.
+	EncryptionEnabled bool
+
+	// ForwardingSecret is what a modern proxy signs the logins it forwards
+	// with, shared by every connection and empty on a server that no proxy was
+	// configured in front of.
+	ForwardingSecret []byte
+}
+
+// Client is one accepted connection and the state a packet handler may observe
+// and mutate on it. It implements types.Client.
+type Client struct {
+	conn           net.Conn
+	stream         *streams.MinecraftStream
+	packetRegistry *protocol.Registry
+	gameRegistries *gamedata.Provider
+
+	// status is what a ping on this connection is answered from. The pointer is
+	// handed over when the connection is accepted and never changes.
+	status StatusProvider
+
+	// keyPair and sessionServer are shared by every connection: one key is
+	// generated for the process, and one client talks to Mojang for all of them.
+	keyPair       *auth.KeyPair
+	sessionServer SessionServer
+
+	// encryptionEnabled is the setting the server was started with, and never
+	// changes for the life of a connection, so it is read without the lock.
+	encryptionEnabled bool
+
+	// forwardingSecret is what a modern proxy signs the logins it forwards with,
+	// shared by every connection and empty on a server that no proxy was
+	// configured in front of. Like the setting above it, it is fixed for the
+	// life of the process and read without the lock.
+	forwardingSecret []byte
+
+	// mu guards everything below it, and every write to the connection. Keep
+	// alives are sent from a goroutine of their own while the read loop is
+	// handling packets, so the state a write reads its packet id from is state
+	// two goroutines reach for.
+	//
+	// Reading from the connection is not guarded and does not need to be: the
+	// read and write halves of the stream buffer nothing in common, and a
+	// net.Conn takes a read and a write at the same time. Turning the cipher on
+	// rebuilds both halves, but it happens on the read loop's own goroutine and
+	// under the lock, so it is not a write either half can be caught mid-read
+	// by.
+	mu              sync.Mutex
+	protocolVersion types.ProtocolVersion
+	phase           types.Phase
+	profile         types.GameProfile
+
+	// forwardedLogin is the account a proxy vouched for, and forwarded says
+	// whether one arrived at all. A BungeeCord proxy writes it into the
+	// handshake, where nothing is configured about it: a connection carries one
+	// or it does not, and only an unencrypted server looks. A modern proxy signs
+	// it into a payload of its own, which only a server holding the secret ever
+	// asks for.
+	forwarded      bool
+	forwardedLogin types.ForwardedLogin
+
+	// pendingForwardingMessageId is the message id the forwarding request went
+	// out under and has not been answered yet, or zero when this connection is
+	// not waiting on one. It is what makes a payload an answer to something this
+	// end asked rather than something a client volunteered.
+	pendingForwardingMessageId int32
+
+	// verifyToken is the token an encryption request went out with and has not
+	// been answered yet, and sharedSecret is what the connection ended up
+	// encrypted with. The secret outlives the packet that carried it because the
+	// session server matches a login by a hash taken over it.
+	verifyToken  []byte
+	sharedSecret []byte
+
+	// pendingKeepAlive is the id of the keep alive the client has not answered
+	// yet, or zero when the server is not waiting on one.
+	pendingKeepAlive int64
+
+	// compressionEnabled says whether the client has been told a compression
+	// threshold, which is what puts a data length in front of every packet body
+	// in both directions. compressionThreshold is the size at or above which a
+	// body is deflated; a threshold of zero deflates every one of them, so the
+	// two cannot be the same field.
+	//
+	// A client is only ever told once, and the framing has to match on both
+	// ends, so the zero value is the connection every client starts on: no
+	// threshold sent, nothing framed for one.
+	compressionEnabled   bool
+	compressionThreshold int32
+}
+
+// New builds the client for a connection the server just accepted, at the
+// start of everything: protocol zero, the handshake phase, and the plain
+// framing.
+func New(conn net.Conn, cfg Config) *Client {
+	return &Client{
+		protocolVersion:   types.ProtocolVersions.ZERO,
+		phase:             types.PhaseHandshake,
+		conn:              conn,
+		stream:            streams.NewMinecraftStreamFromNetConn(conn),
+		packetRegistry:    cfg.PacketRegistry,
+		gameRegistries:    cfg.GameData,
+		keyPair:           cfg.KeyPair,
+		sessionServer:     cfg.SessionServer,
+		status:            cfg.Status,
+		encryptionEnabled: cfg.EncryptionEnabled,
+		forwardingSecret:  cfg.ForwardingSecret,
+	}
+}
+
+// compression reports the threshold packets are deflated at, and whether the
+// client has been told one at all.
+func (c *Client) compression() (int32, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.compressionThreshold, c.compressionEnabled
+}
+
+// EnableCompression tells the client the body size at or above which packets
+// are deflated, and frames everything written afterwards that way.
+//
+// The lock is held across both because the packet announcing the threshold is
+// the last one framed uncompressed: a keep alive slipping in between would be
+// framed one way and read the other, and the connection would never recover.
+func (c *Client) EnableCompression(threshold int32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if threshold < 0 {
+		return fmt.Errorf("invalid compression threshold: %d", threshold)
+	}
+
+	if c.compressionEnabled {
+		return errors.New("compression is already enabled")
+	}
+
+	if err := c.writePacket(&clientboundLogin.SetCompressionClientboundPacket{Threshold: threshold}); err != nil {
+		return err
+	}
+
+	c.compressionEnabled = true
+	c.compressionThreshold = threshold
+
+	return nil
+}
+
+// EncryptionEnabled reports whether this connection is to be encrypted, and
+// with it whether its login is checked with Mojang.
+func (c *Client) EncryptionEnabled() bool {
+	return c.encryptionEnabled
+}
+
+// SetForwardedLogin records the account a proxy vouched for in the handshake.
+func (c *Client) SetForwardedLogin(forwarded types.ForwardedLogin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.forwarded = true
+	c.forwardedLogin = forwarded
+}
+
+// ForwardedLogin returns what the proxy vouched for, and whether anything did.
+func (c *Client) ForwardedLogin() (types.ForwardedLogin, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.forwardedLogin, c.forwarded
+}
+
+// ModernForwardingEnabled reports whether this server holds a forwarding secret,
+// and with it whether a login is expected to arrive signed by a proxy.
+func (c *Client) ModernForwardingEnabled() bool {
+	return len(c.forwardingSecret) > 0
+}
+
+// modernForwardingMessageId is the id the one forwarding request a connection
+// ever sends goes out under.
+//
+// One fixed id is enough because there is only ever one request outstanding and
+// only one that is ever sent. Nothing rests on it being hard to guess either: an
+// answer is worth something because of the signature over it, and a client that
+// echoes the right id without one is a client that gets no further than a client
+// that echoes the wrong one.
+const modernForwardingMessageId = 1
+
+// BeginModernForwarding records that this connection is waiting on a forwarding
+// payload, and returns the message id the request goes out under.
+func (c *Client) BeginModernForwarding() (int32, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.ModernForwardingEnabled() {
+		return 0, errors.New("no forwarding secret is configured")
+	}
+
+	if c.pendingForwardingMessageId != 0 {
+		return 0, errors.New("the forwarding request has already been sent")
+	}
+
+	c.pendingForwardingMessageId = modernForwardingMessageId
+
+	return c.pendingForwardingMessageId, nil
+}
+
+// CompleteModernForwarding checks a payload against the request this connection
+// is waiting on and the secret the proxy shares, and returns the login it
+// vouches for.
+//
+// A payload that gets this far settles the login on its own: the account, the
+// name and the signed textures all come out of it, under a signature over the
+// lot. What the client said about itself in login start is not consulted, since
+// the point of the secret is that nothing on the connection has to be taken at
+// its word.
+func (c *Client) CompleteModernForwarding(messageId int32, payload []byte) (types.ForwardedLogin, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := c.checkPendingForwardingRequest(messageId); err != nil {
+		return types.ForwardedLogin{}, err
+	}
+
+	forwarded, err := auth.ParseModernForwarding(c.forwardingSecret, payload)
+	if err != nil {
+		return types.ForwardedLogin{}, err
+	}
+
+	// The request has been answered, and a connection with nothing outstanding
+	// is one a second payload cannot rewrite the login of.
+	c.pendingForwardingMessageId = 0
+
+	c.forwarded = true
+	c.forwardedLogin = forwarded
+
+	return forwarded, nil
+}
+
+// DeclineModernForwarding records that the connection answered the forwarding
+// request without a login in it, which is what a client that has never heard of
+// the channel answers.
+//
+// The request is answered either way, and a connection with nothing outstanding
+// is one a payload arriving afterwards cannot rewrite the login of. That matters
+// here as much as it does on the answer that worked: the login goes on to be
+// settled without a proxy, and a signed payload turning up behind it would be
+// settling it twice.
+func (c *Client) DeclineModernForwarding(messageId int32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := c.checkPendingForwardingRequest(messageId); err != nil {
+		return err
+	}
+
+	c.pendingForwardingMessageId = 0
+
+	return nil
+}
+
+// checkPendingForwardingRequest reports whether messageId answers the forwarding
+// request this connection is actually waiting on, which is what makes an answer
+// a reply to something this end asked rather than something a client
+// volunteered.
+//
+// It is the one question both ways of answering the request have to ask, so it
+// is asked in one place: an answer that carried a login and an answer that
+// carried none are told apart by what they settle, not by what makes them an
+// answer. Clearing the request is left to the caller, because the two clear it
+// at different moments -- a payload only once it has been read, so that a
+// signature this end could not verify leaves the question still open.
+//
+// The lock is held by the caller, which took it to decide what the answer was
+// worth in the first place.
+func (c *Client) checkPendingForwardingRequest(messageId int32) error {
+	if c.pendingForwardingMessageId == 0 {
+		return errors.New("no forwarding request is waiting on an answer")
+	}
+
+	if messageId != c.pendingForwardingMessageId {
+		return fmt.Errorf("forwarding payload %d answers the wrong request, expected %d", messageId, c.pendingForwardingMessageId)
+	}
+
+	return nil
+}
+
+// BeginEncryption generates the verify token this connection's encryption
+// request goes out with, and hands back what that packet has to carry.
+func (c *Client) BeginEncryption() ([]byte, []byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.verifyToken != nil || c.sharedSecret != nil {
+		return nil, nil, errors.New("encryption has already been requested")
+	}
+
+	verifyToken, err := auth.NewVerifyToken()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	c.verifyToken = verifyToken
+
+	return c.keyPair.PublicKey(), verifyToken, nil
+}
+
+// CompleteEncryption decrypts an encryption response and puts the connection
+// under the secret it carried.
+//
+// The token is checked first and against the one this connection sent, which is
+// what keeps a response from being worth anything anywhere but here. Nothing is
+// written back before the cipher is on, because the client turned its own on the
+// moment it sent this.
+func (c *Client) CompleteEncryption(sharedSecret, verifyToken []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.verifyToken == nil {
+		return errors.New("encryption was never requested")
+	}
+
+	token, err := c.keyPair.Decrypt(verifyToken)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt the verify token: %w", err)
+	}
+
+	if subtle.ConstantTimeCompare(token, c.verifyToken) != 1 {
+		return errors.New("the verify token is not the one that was sent")
+	}
+
+	secret, err := c.keyPair.Decrypt(sharedSecret)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt the shared secret: %w", err)
+	}
+
+	if err := c.stream.EnableEncryption(secret); err != nil {
+		return err
+	}
+
+	// The token has done its work, and a connection with nothing outstanding is
+	// one a second encryption response cannot restart.
+	c.verifyToken = nil
+	c.sharedSecret = secret
+
+	return nil
+}
+
+// Authenticate asks the session server about the login this connection is in the
+// middle of, and returns the profile Mojang holds for it.
+//
+// The hash is the whole of the question: the client sent Mojang one taken over
+// the same secret and the same key before it answered the encryption request, so
+// a session server that recognizes this one is a session server that saw the
+// same client on the other side of this connection.
+func (c *Client) Authenticate() (types.GameProfile, error) {
+	// The session server is on the far side of the internet and answers when it
+	// answers. Holding the lock across that would stop a keep alive going out
+	// for as long as it takes.
+	c.mu.Lock()
+	username := c.profile.Username
+	secret := c.sharedSecret
+	c.mu.Unlock()
+
+	if secret == nil {
+		return types.GameProfile{}, errors.New("the connection is not encrypted")
+	}
+
+	return c.sessionServer.HasJoined(username, auth.ServerHash(serverId, secret, c.keyPair.PublicKey()))
+}
+
+func (c *Client) RegistryPackets() []types.ClientboundPacket {
+	return c.gameRegistries.PacketsFor(c.ProtocolVersion())
+}
+
+func (c *Client) ProtocolVersion() types.ProtocolVersion {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.protocolVersion
+}
+
+func (c *Client) SetProtocolVersion(protocolVersion types.ProtocolVersion) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.protocolVersion = protocolVersion
+}
+
+func (c *Client) Phase() types.Phase {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.phase
+}
+
+// SetPhase moves the connection on, and counts a client that has arrived in the
+// play phase among the players a ping reports.
+//
+// Nothing moves a connection back out of play, so the count is joined once, and
+// the connection ending is what leaves it. That is also why the phase alone says
+// whether a connection ever counted, and no second field records it.
+func (c *Client) SetPhase(phase types.Phase) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if phase == types.PhasePlay && c.phase != types.PhasePlay {
+		c.status.PlayerJoined()
+	}
+
+	c.phase = phase
+}
+
+// leavePlay stops counting a client whose connection has ended, if it ever got
+// as far as being counted.
+//
+// The phase is the whole of that question: nothing moves a connection back out
+// of play, so one that ends there is a player leaving, and one that ends
+// anywhere else never arrived.
+func (c *Client) leavePlay() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.phase == types.PhasePlay {
+		c.status.PlayerLeft()
+	}
+}
+
+// ServerStatus assembles what a ping on this connection is answered with, which
+// is the server's own status read at the version this connection speaks.
+func (c *Client) ServerStatus() types.ServerStatus {
+	return c.status.Status(c.ProtocolVersion())
+}
+
+func (c *Client) Profile() types.GameProfile {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.profile
+}
+
+func (c *Client) SetProfile(profile types.GameProfile) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.profile = profile
+}
+
+// ReadPacket decodes the next packet and returns the handler registered for it,
+// which may be nil when the packet needs no reaction. The packet body is consumed
+// from the connection in full before decoding, so an unknown packet id or a failed
+// decode cannot desynchronize subsequent reads. Those two are reported as a
+// *packetError; anything else is the connection itself failing.
+//
+// The id says which packet arrived on the version the client speaks, and the
+// body is then carried up to the latest version before it is decoded, since
+// that is the only version a decoder exists for.
+func (c *Client) ReadPacket() (types.ServerboundPacket, types.PacketHandler, error) {
+	body, err := c.stream.ReadFrame()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// A body that cannot be inflated is still a body that was read in full, so
+	// the frames after it start where they should.
+	if threshold, enabled := c.compression(); enabled {
+		body, err = streams.DecompressBody(body, threshold)
+		if err != nil {
+			return nil, nil, &packetError{err: err}
+		}
+	}
+
+	bodyStream := streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(body))
+
+	packetId, err := bodyStream.ReadVarInt()
+	if err != nil {
+		return nil, nil, &packetError{err: err}
+	}
+
+	phase := c.Phase()
+	protocolVersion := c.ProtocolVersion()
+
+	packetType, ok := c.packetRegistry.GetServerboundType(phase, protocolVersion, packetId)
+	if !ok {
+		return nil, nil, &packetError{err: fmt.Errorf("unknown packet id: %d", packetId)}
+	}
+
+	entry, ok := c.packetRegistry.GetServerbound(phase, packetType)
+	if !ok || entry.Decoder == nil {
+		return nil, nil, &packetError{err: fmt.Errorf("no decoder for packet id %d", packetId)}
+	}
+
+	payload, err := bodyStream.ReadRest()
+	if err != nil {
+		return nil, nil, &packetError{err: err}
+	}
+
+	payload, err = c.packetRegistry.UpgradeBody(phase, packetType, protocolVersion, payload)
+	if err != nil {
+		return nil, nil, &packetError{err: err}
+	}
+
+	packet, err := entry.Decoder(streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(payload)))
+	if err != nil {
+		return nil, nil, &packetError{err: fmt.Errorf("failed to decode packet: %w", err)}
+	}
+
+	logPacket("packet received", packet)
+
+	return packet, entry.Handler, nil
+}
+
+func (c *Client) WritePacket(packet types.ClientboundPacket) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.writePacket(packet)
+}
+
+// writePacket is WritePacket with the lock already held, for the callers that
+// took it to decide what to write in the first place.
+func (c *Client) writePacket(packet types.ClientboundPacket) error {
+	if packet == nil {
+		return errors.New("packet is nil")
+	}
+
+	packetType := reflect.TypeOf(packet).Elem()
+
+	packetId := c.packetRegistry.GetClientboundId(c.phase, packetType, c.protocolVersion)
+	if packetId == -1 {
+		return errors.New("unknown packet id")
+	}
+
+	// The packet encodes itself at the latest version, which is the only one it
+	// knows how to be, and is then carried back down to the version the client
+	// speaks.
+	payloadBuf := new(bytes.Buffer)
+	payloadStream := streams.NewMinecraftStreamFromBuffer(payloadBuf)
+
+	err := packet.Encode(payloadStream)
+	if err != nil {
+		return err
+	}
+
+	err = payloadStream.Flush()
+	if err != nil {
+		return err
+	}
+
+	payload, err := c.packetRegistry.DowngradeBody(c.phase, packetType, c.protocolVersion, payloadBuf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	// The id goes in front of the body it was resolved for, at the version the
+	// client reads both at.
+	buf := new(bytes.Buffer)
+	tempStream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	err = tempStream.WriteVarInt(packetId)
+	if err != nil {
+		return err
+	}
+
+	err = tempStream.Flush()
+	if err != nil {
+		return err
+	}
+
+	body := append(buf.Bytes(), payload...)
+
+	if c.compressionEnabled {
+		body, err = streams.CompressBody(body, c.compressionThreshold)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := c.stream.WriteFrame(body); err != nil {
+		return err
+	}
+
+	logPacket("packet sent", packet)
+
+	return nil
+}

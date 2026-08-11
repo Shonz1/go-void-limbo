@@ -3,7 +3,7 @@ package gamedata
 import (
 	"bytes"
 	"fmt"
-	"go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/streams"
 )
 
 // NamedTag is one tag and the entries in it.

@@ -2,8 +2,8 @@ package handshake
 
 import (
 	"fmt"
-	"go-void-limbo/streams"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
 )
 
 type HandshakeServerboundPacket struct {

@@ -2,8 +2,8 @@ package gamedata
 
 import (
 	"fmt"
-	"go-void-limbo/packets/clientbound/configuration"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
+	"github.com/Shonz1/go-void-limbo/types"
 	"sort"
 )
 

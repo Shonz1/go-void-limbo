@@ -2,10 +2,10 @@ package gamedata
 
 import (
 	"bytes"
-	"go-void-limbo/nbt"
-	"go-void-limbo/packets/clientbound/configuration"
-	"go-void-limbo/streams"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/nbt"
+	"github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
+	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
 	"strings"
 	"testing"
 )
@@ -64,6 +64,30 @@ func newTestProvider(t *testing.T, sets ...Set) *Provider {
 	}
 
 	return provider
+}
+
+// mustLoadRegistries and mustLoadTags unwrap one version's content for the
+// tests that inspect it, failing the test on a data file that cannot be read.
+func mustLoadRegistries(t *testing.T, load func() ([]Registry, error)) []Registry {
+	t.Helper()
+
+	registries, err := load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	return registries
+}
+
+func mustLoadTags(t *testing.T, load func() ([]TagSet, error)) []TagSet {
+	t.Helper()
+
+	tags, err := load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	return tags
 }
 
 // registryNames collects the registries in the order they are sent. Anything
@@ -201,7 +225,7 @@ func TestDefaultProviderCoversTheSupportedVersion(t *testing.T) {
 // mid-join and reports it as a missing element.
 func TestCrossRegistryReferencesResolve(t *testing.T) {
 	entries := map[string]map[string]bool{}
-	for _, registry := range registriesMinecraft26_2() {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_2) {
 		names := make(map[string]bool, len(registry.Entries))
 		for _, entry := range registry.Entries {
 			names[entry.Name] = true
@@ -279,7 +303,7 @@ func TestEncodeTags(t *testing.T) {
 // TestDefaultProviderEntriesRoundTrip decodes what the provider produced, so a
 // definition that encodes but is structurally wrong does not pass unnoticed.
 func TestDefaultProviderEntriesRoundTrip(t *testing.T) {
-	for _, registry := range registriesMinecraft26_2() {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_2) {
 		for _, entry := range registry.Entries {
 			if entry.Data == nil {
 				continue
@@ -315,7 +339,7 @@ func TestDefaultProviderEntriesRoundTrip(t *testing.T) {
 // to parse and takes its whole registry with it.
 func TestRegistriesFor26_1LeaveOutWhat26_2Added(t *testing.T) {
 	registries := map[string]map[string]bool{}
-	for _, registry := range registriesMinecraft26_1() {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_1) {
 		names := make(map[string]bool, len(registry.Entries))
 		for _, entry := range registry.Entries {
 			names[entry.Name] = true
@@ -367,8 +391,8 @@ func TestEnchantmentsFor26_1UseTheOlderPredicateShape(t *testing.T) {
 		return ""
 	}
 
-	older := rendered(registriesMinecraft26_1())
-	newer := rendered(registriesMinecraft26_2())
+	older := rendered(mustLoadRegistries(t, registriesMinecraft26_1))
+	newer := rendered(mustLoadRegistries(t, registriesMinecraft26_2))
 
 	if older == "" || newer == "" {
 		t.Fatal("no enchantment registry in one of the sets")
@@ -408,7 +432,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 func TestDimensionTypeFor26_1NamesTheInfiniburnTag(t *testing.T) {
 	var dimensionType nbt.Compound
 
-	for _, registry := range registriesMinecraft26_1() {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_1) {
 		if registry.Name != "minecraft:dimension_type" {
 			continue
 		}
@@ -465,8 +489,8 @@ func TestTagsFor26_1DeclareTheNamesThatVersionAsksFor(t *testing.T) {
 		return nil
 	}
 
-	older := names(tagsMinecraft26_1(), "minecraft:block")
-	newer := names(tagsMinecraft26_2(), "minecraft:block")
+	older := names(mustLoadTags(t, tagsMinecraft26_1), "minecraft:block")
+	newer := names(mustLoadTags(t, tagsMinecraft26_2), "minecraft:block")
 
 	if older == nil || newer == nil {
 		t.Fatal("no block tags in one of the sets")

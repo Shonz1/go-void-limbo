@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/types"
 	"io"
 	"net/http"
 	"net/url"
