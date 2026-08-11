@@ -56,10 +56,9 @@ const (
 // Four packets are what a join needs, and this sends exactly those. What a
 // vanilla server also sends -- difficulty, abilities, held slot, recipes,
 // world border, time, spawn position -- is either a value the client already
-// defaults to or a fact about a world this one does not have. The one thing
-// left out that a client does notice is keep alive: neither end tolerates
-// thirty seconds of silence, so a joined client here drops on the timeout
-// until something sends them.
+// defaults to or a fact about a world this one does not have. Keep alives are
+// what a joined client needs after this, and they are not sent from here: they
+// belong to a clock rather than to a packet that arrived.
 func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	_, ok := packet.(*configuration.AcknowledgeFinishConfigurationServerboundPacket)
 	if !ok {

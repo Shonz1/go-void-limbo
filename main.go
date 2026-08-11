@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"go-void-limbo/gamedata"
 	"go-void-limbo/handlers"
+	clientboundCommon "go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
 	clientboundPlay "go-void-limbo/packets/clientbound/play"
+	serverboundCommon "go-void-limbo/packets/serverbound/common"
 	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
@@ -20,12 +22,39 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"sync"
+	"time"
 )
 
 const address = ":25565"
 
 // maxPacketSize is the largest packet body the protocol allows (2^21 - 1 bytes).
 const maxPacketSize = 2097151
+
+// keepAliveInterval is how often a keep alive goes out, and equally how long an
+// unanswered one has before the connection is given up on.
+//
+// Both ends drop a connection they have read nothing from for thirty seconds,
+// so the interval has to leave room for an answer to come back inside that
+// window; fifteen seconds is what a vanilla server uses and is half of it.
+const keepAliveInterval = 15 * time.Second
+
+// errKeepAliveTimeout is what a client that let a keep alive go unanswered for
+// a whole interval leaves behind. Nothing on that connection is worth waiting
+// for any longer, since the client either stopped reading or stopped existing.
+var errKeepAliveTimeout = errors.New("keep alive went unanswered")
+
+// packetError is a failure to make sense of a packet whose body was already
+// read from the connection in full: an unknown id, or a decode that did not
+// work out. The connection is still in sync and still usable, so the read loop
+// reports these and carries on, unlike the read failures that end it.
+type packetError struct {
+	err error
+}
+
+func (e *packetError) Error() string { return e.err.Error() }
+
+func (e *packetError) Unwrap() error { return e.err }
 
 func VarIntSize(value int32) int {
 	uvalue := uint32(value)
@@ -38,47 +67,80 @@ func VarIntSize(value int32) int {
 }
 
 type MinecraftClient struct {
+	conn           net.Conn
+	stream         *streams.MinecraftStream
+	packetRegistry *registries.PacketRegistry
+	gameRegistries *gamedata.Provider
+
+	// mu guards everything below it, and every write to the connection. Keep
+	// alives are sent from a goroutine of their own while the read loop is
+	// handling packets, so the state a write reads its packet id from is state
+	// two goroutines reach for.
+	//
+	// Reading from the connection is not guarded and does not need to be: the
+	// read and write halves of the stream buffer nothing in common, and a
+	// net.Conn takes a read and a write at the same time.
+	mu              sync.Mutex
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
 	profile         types.GameProfile
-	conn            net.Conn
-	stream          *streams.MinecraftStream
-	packetRegistry  *registries.PacketRegistry
-	gameRegistries  *gamedata.Provider
+
+	// pendingKeepAlive is the id of the keep alive the client has not answered
+	// yet, or zero when the server is not waiting on one.
+	pendingKeepAlive int64
 }
 
 func (c *MinecraftClient) RegistryPackets() []types.ClientboundPacket {
-	return c.gameRegistries.PacketsFor(c.protocolVersion)
+	return c.gameRegistries.PacketsFor(c.ProtocolVersion())
 }
 
 func (c *MinecraftClient) ProtocolVersion() types.ProtocolVersion {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return c.protocolVersion
 }
 
 func (c *MinecraftClient) SetProtocolVersion(protocolVersion types.ProtocolVersion) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.protocolVersion = protocolVersion
 }
 
 func (c *MinecraftClient) Phase() types.Phase {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return c.phase
 }
 
 func (c *MinecraftClient) SetPhase(phase types.Phase) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.phase = phase
 }
 
 func (c *MinecraftClient) Profile() types.GameProfile {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return c.profile
 }
 
 func (c *MinecraftClient) SetProfile(profile types.GameProfile) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.profile = profile
 }
 
 // ReadPacket decodes the next packet and returns the handler registered for it,
 // which may be nil when the packet needs no reaction. The packet body is consumed
 // from the connection in full before decoding, so an unknown packet id or a failed
-// decode cannot desynchronize subsequent reads.
+// decode cannot desynchronize subsequent reads. Those two are reported as a
+// *packetError; anything else is the connection itself failing.
 func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHandler, error) {
 	length, err := c.stream.ReadVarInt()
 	if err != nil {
@@ -98,17 +160,17 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 
 	packetId, err := bodyStream.ReadVarInt()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &packetError{err: err}
 	}
 
-	entry, ok := c.packetRegistry.GetServerbound(c.phase, c.protocolVersion, packetId)
+	entry, ok := c.packetRegistry.GetServerbound(c.Phase(), c.ProtocolVersion(), packetId)
 	if !ok || entry.Decoder == nil {
-		return nil, nil, fmt.Errorf("unknown packet id: %d", packetId)
+		return nil, nil, &packetError{err: fmt.Errorf("unknown packet id: %d", packetId)}
 	}
 
 	packet, err := entry.Decoder(bodyStream)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode packet: %w", err)
+		return nil, nil, &packetError{err: fmt.Errorf("failed to decode packet: %w", err)}
 	}
 
 	slog.Info("packet received", "packet", packet)
@@ -117,6 +179,15 @@ func (c *MinecraftClient) ReadPacket() (types.ServerboundPacket, types.PacketHan
 }
 
 func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.writePacket(packet)
+}
+
+// writePacket is WritePacket with the lock already held, for the callers that
+// took it to decide what to write in the first place.
+func (c *MinecraftClient) writePacket(packet types.ClientboundPacket) error {
 	if packet == nil {
 		return errors.New("packet is nil")
 	}
@@ -164,6 +235,74 @@ func (c *MinecraftClient) WritePacket(packet types.ClientboundPacket) error {
 	return nil
 }
 
+// ConfirmKeepAlive records the client's answer to the keep alive the server is
+// waiting on.
+func (c *MinecraftClient) ConfirmKeepAlive(id int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.pendingKeepAlive == 0 {
+		return fmt.Errorf("keep alive %d answers nothing that was sent", id)
+	}
+
+	if id != c.pendingKeepAlive {
+		return fmt.Errorf("keep alive %d answers the wrong packet, expected %d", id, c.pendingKeepAlive)
+	}
+
+	c.pendingKeepAlive = 0
+
+	return nil
+}
+
+// sendKeepAlive asks the client to prove it is still there, unless the last ask
+// is still unanswered, which is errKeepAliveTimeout.
+//
+// Only configuration and play have a keep alive packet, so only they get one.
+// The phases before them need none: a handshake and a login are exchanges the
+// client drives from one packet to the next, and a client that stops driving
+// one has stopped connecting rather than gone quiet.
+func (c *MinecraftClient) sendKeepAlive() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.phase != types.PhaseConfiguration && c.phase != types.PhasePlay {
+		return nil
+	}
+
+	if c.pendingKeepAlive != 0 {
+		return errKeepAliveTimeout
+	}
+
+	// Any id the answer can be matched against works. The clock is what vanilla
+	// uses, and it never repeats a value inside a connection.
+	id := time.Now().UnixMilli()
+	c.pendingKeepAlive = id
+
+	return c.writePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: id})
+}
+
+// keepAliveLoop sends a keep alive every interval until done is closed, and
+// closes the connection when one is not answered or cannot be sent. Closing is
+// what ends the read loop, which is what closes done.
+func (c *MinecraftClient) keepAliveLoop(done <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			if err := c.sendKeepAlive(); err != nil {
+				slog.Error("dropping connection", "addr", c.conn.RemoteAddr(), "err", err)
+				c.conn.Close()
+
+				return
+			}
+		}
+	}
+}
+
 func main() {
 	packetRegistry := registries.NewPacketRegistry()
 
@@ -202,6 +341,11 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x03, login.DecodeLoginAcknowledgedServerboundPacket, handlers.HandleLoginAcknowledgedServerboundPacket)
 	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x03, configuration.DecodeAcknowledgeFinishConfigurationServerboundPacket, handlers.HandleAcknowledgeFinishConfigurationServerboundPacket)
 
+	// The same keep alive in both phases that have one, under the id each phase
+	// gives it.
+	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x04, serverboundCommon.DecodeKeepAliveServerboundPacket, handlers.HandleKeepAliveServerboundPacket)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1C, serverboundCommon.DecodeKeepAliveServerboundPacket, handlers.HandleKeepAliveServerboundPacket)
+
 	// What a joined client sends on its own. None of it needs a reaction from a
 	// limbo, but a packet with no decoder is one the read loop can only report
 	// as an unknown id, and the client sends these every tick.
@@ -218,6 +362,8 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x0D)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.FinishConfigurationClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
+	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x04)
+	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x2C)
 	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x26)
 	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x31)
 	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x46)
@@ -232,15 +378,36 @@ func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry, 
 
 	mc := &MinecraftClient{protocolVersion: types.ProtocolVersions.ZERO, phase: types.PhaseHandshake, conn: conn, stream: streams.NewMinecraftStreamFromNetConn(conn), packetRegistry: packetRegistry, gameRegistries: gameRegistries}
 
+	// A limbo has nothing to say to a client that has arrived, and thirty
+	// seconds of having nothing to say is what both ends treat as a dead
+	// connection. Keep alives are the something, and they go out on a clock of
+	// their own rather than in reaction to what the client sends.
+	done := make(chan struct{})
+	defer close(done)
+
+	go mc.keepAliveLoop(done, keepAliveInterval)
+
 	for {
 		packet, handler, err := mc.ReadPacket()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return
+			// A packet the server could not make sense of is one packet lost,
+			// since its body was read in full and the next one starts where it
+			// should. Anything else is the connection, including the close a
+			// keep alive that went unanswered performs.
+			var packetErr *packetError
+			if errors.As(err, &packetErr) {
+				slog.Error("failed to read packet", "err", err)
+				continue
 			}
 
-			slog.Error("failed to read packet", "err", err)
-			continue
+			// A client that left, and a connection this server closed on a keep
+			// alive that went unanswered, are both connections already
+			// accounted for.
+			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+				slog.Error("connection lost", "addr", remoteAddr, "err", err)
+			}
+
+			return
 		}
 
 		if handler == nil {
