@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"go-void-limbo/auth"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
 	"go-void-limbo/packets/serverbound/login"
 	"go-void-limbo/types"
@@ -41,6 +42,28 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 	// the session server is asked about the client by the name it logged in
 	// under, and no later packet carries one.
 	client.SetProfile(types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name})
+
+	// A server holding a forwarding secret asks the connection to produce the
+	// login signed under it, and finishes nothing until it has. Whoever is out
+	// there answers next: a proxy with the account it authenticated, or a client
+	// saying it has never heard of the channel, which is how the two are told
+	// apart without anything being configured about this connection.
+	if client.ModernForwardingEnabled() {
+		messageId, err := client.BeginModernForwarding()
+		if err != nil {
+			return fmt.Errorf("failed to ask for the forwarded login: %w", err)
+		}
+
+		// The version asked for is the version answered at, and the payload is
+		// the whole of the request.
+		request := clientboundLogin.LoginPluginRequestClientboundPacket{
+			MessageId: messageId,
+			Channel:   auth.ModernForwardingChannel,
+			Data:      []byte{auth.ModernForwardingVersion},
+		}
+
+		return client.WritePacket(&request)
+	}
 
 	// A connection that is not encrypted is a connection that cannot be
 	// authenticated here, since the session server is asked about a login by a

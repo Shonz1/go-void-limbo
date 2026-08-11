@@ -15,9 +15,14 @@ type ForwardedLogin struct {
 	// Uuid is the account the proxy authenticated, and Properties the signed
 	// textures the session server gave it, which are the only way anyone is
 	// shown a skin.
-	//
-	// The username is not here. It arrives in login start, where the proxy fills
-	// it in from the same profile.
 	Uuid       string
 	Properties []ProfileProperty
+
+	// Username is the name on the account, and is empty for a login a
+	// BungeeCord proxy forwarded: the handshake it writes has nowhere to put
+	// one, and the login start behind it carries the name instead. A proxy
+	// signing a modern forwarding payload does say it, and there it is the name
+	// the login is finished under, since it comes from the same profile as the
+	// uuid and under the same signature.
+	Username string
 }

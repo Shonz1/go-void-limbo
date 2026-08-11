@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"errors"
+	"flag"
 	"fmt"
 	"go-void-limbo/auth"
 	"go-void-limbo/gamedata"
@@ -157,6 +158,12 @@ type MinecraftClient struct {
 	// changes for the life of a connection, so it is read without the lock.
 	encryptionEnabled bool
 
+	// forwardingSecret is what a modern proxy signs the logins it forwards with,
+	// shared by every connection and empty on a server that no proxy was
+	// configured in front of. Like the setting above it, it is fixed for the
+	// life of the process and read without the lock.
+	forwardingSecret []byte
+
 	// mu guards everything below it, and every write to the connection. Keep
 	// alives are sent from a goroutine of their own while the read loop is
 	// handling packets, so the state a write reads its packet id from is state
@@ -173,12 +180,20 @@ type MinecraftClient struct {
 	phase           types.Phase
 	profile         types.GameProfile
 
-	// forwardedLogin is the account a proxy vouched for in the handshake, and
-	// forwarded says whether one arrived at all. Nothing is configured about
-	// this: a connection carries a forwarded login or it does not, and only an
-	// unencrypted server looks.
+	// forwardedLogin is the account a proxy vouched for, and forwarded says
+	// whether one arrived at all. A BungeeCord proxy writes it into the
+	// handshake, where nothing is configured about it: a connection carries one
+	// or it does not, and only an unencrypted server looks. A modern proxy signs
+	// it into a payload of its own, which only a server holding the secret ever
+	// asks for.
 	forwarded      bool
 	forwardedLogin types.ForwardedLogin
+
+	// pendingForwardingMessageId is the message id the forwarding request went
+	// out under and has not been answered yet, or zero when this connection is
+	// not waiting on one. It is what makes a payload an answer to something this
+	// end asked rather than something a client volunteered.
+	pendingForwardingMessageId int32
 
 	// verifyToken is the token an encryption request went out with and has not
 	// been answered yet, and sharedSecret is what the connection ended up
@@ -262,6 +277,77 @@ func (c *MinecraftClient) ForwardedLogin() (types.ForwardedLogin, bool) {
 	defer c.mu.Unlock()
 
 	return c.forwardedLogin, c.forwarded
+}
+
+// ModernForwardingEnabled reports whether this server holds a forwarding secret,
+// and with it whether a login is expected to arrive signed by a proxy.
+func (c *MinecraftClient) ModernForwardingEnabled() bool {
+	return len(c.forwardingSecret) > 0
+}
+
+// modernForwardingMessageId is the id the one forwarding request a connection
+// ever sends goes out under.
+//
+// One fixed id is enough because there is only ever one request outstanding and
+// only one that is ever sent. Nothing rests on it being hard to guess either: an
+// answer is worth something because of the signature over it, and a client that
+// echoes the right id without one is a client that gets no further than a client
+// that echoes the wrong one.
+const modernForwardingMessageId = 1
+
+// BeginModernForwarding records that this connection is waiting on a forwarding
+// payload, and returns the message id the request goes out under.
+func (c *MinecraftClient) BeginModernForwarding() (int32, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.ModernForwardingEnabled() {
+		return 0, errors.New("no forwarding secret is configured")
+	}
+
+	if c.pendingForwardingMessageId != 0 {
+		return 0, errors.New("the forwarding request has already been sent")
+	}
+
+	c.pendingForwardingMessageId = modernForwardingMessageId
+
+	return c.pendingForwardingMessageId, nil
+}
+
+// CompleteModernForwarding checks a payload against the request this connection
+// is waiting on and the secret the proxy shares, and returns the login it
+// vouches for.
+//
+// A payload that gets this far settles the login on its own: the account, the
+// name and the signed textures all come out of it, under a signature over the
+// lot. What the client said about itself in login start is not consulted, since
+// the point of the secret is that nothing on the connection has to be taken at
+// its word.
+func (c *MinecraftClient) CompleteModernForwarding(messageId int32, payload []byte) (types.ForwardedLogin, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.pendingForwardingMessageId == 0 {
+		return types.ForwardedLogin{}, errors.New("no forwarding request is waiting on an answer")
+	}
+
+	if messageId != c.pendingForwardingMessageId {
+		return types.ForwardedLogin{}, fmt.Errorf("forwarding payload %d answers the wrong request, expected %d", messageId, c.pendingForwardingMessageId)
+	}
+
+	forwarded, err := auth.ParseModernForwarding(c.forwardingSecret, payload)
+	if err != nil {
+		return types.ForwardedLogin{}, err
+	}
+
+	// The request has been answered, and a connection with nothing outstanding
+	// is one a second payload cannot rewrite the login of.
+	c.pendingForwardingMessageId = 0
+
+	c.forwarded = true
+	c.forwardedLogin = forwarded
+
+	return forwarded, nil
 }
 
 // BeginEncryption generates the verify token this connection's encryption
@@ -596,6 +682,37 @@ func encryptionSetting() bool {
 	return enabled
 }
 
+// forwardingSecretFlag is the secret on the command line, which is the one place
+// an operator can put it that does not outlive the process. It wins over the
+// environment when both are set, because it is the more deliberate of the two:
+// the environment is inherited and a flag is typed.
+var forwardingSecretFlag = flag.String("forwarding-secret", "", "the secret a modern proxy signs the logins it forwards with, taken from FORWARDING_SECRET when this is empty")
+
+// forwardingSecretSetting reports the secret a modern proxy shares with this
+// server, taken from the flag when it has one and from FORWARDING_SECRET
+// otherwise.
+//
+// There is no setting that turns forwarding on. The secret is the setting: a
+// server that holds one is a server behind a proxy, and asks every login for a
+// payload signed with it. A server that holds none never asks, and logins there
+// are settled as they were before any of this existed.
+//
+// So an empty value is no secret rather than an empty one. A secret nobody set
+// is a secret everybody has, and a server that asked for a signature under it
+// would be checking a signature anyone can produce, which is worse than not
+// asking at all.
+func forwardingSecretSetting(argument string) []byte {
+	if argument != "" {
+		return []byte(argument)
+	}
+
+	if raw, ok := os.LookupEnv("FORWARDING_SECRET"); ok && raw != "" {
+		return []byte(raw)
+	}
+
+	return nil
+}
+
 // ConfirmKeepAlive records the client's answer to the keep alive the server is
 // waiting on.
 func (c *MinecraftClient) ConfirmKeepAlive(id int64) error {
@@ -678,10 +795,18 @@ type server struct {
 	// of this server's own, or taken on the word of whoever is on the connection
 	// -- the proxy that forwarded it, or the client itself.
 	encryptionEnabled bool
+
+	// forwardingSecret is what a modern proxy signs the logins it forwards with,
+	// and is empty on a server that no proxy was configured in front of. Holding
+	// one is what turns a login into a question asked of the proxy rather than
+	// of Mojang or of the client.
+	forwardingSecret []byte
 }
 
 func main() {
 	configureLogging()
+
+	flag.Parse()
 
 	packetRegistry := registries.NewPacketRegistry()
 
@@ -703,7 +828,18 @@ func main() {
 	}
 
 	encryptionEnabled := encryptionSetting()
-	if !encryptionEnabled {
+
+	// A proxy holds the connection with the player and did the asking already,
+	// so there is nobody on this side of it to answer an encryption request:
+	// what arrives here is the proxy's own connection, and the login on it is
+	// worth what its signature is worth. A secret therefore settles the
+	// question the encryption setting would otherwise have, and says so rather
+	// than leaving an operator to wonder which of the two took effect.
+	forwardingSecret := forwardingSecretSetting(*forwardingSecretFlag)
+	if len(forwardingSecret) > 0 {
+		slog.Info("a forwarding secret is configured, logins are taken from the proxy that signed them and are not checked with Mojang here")
+		encryptionEnabled = false
+	} else if !encryptionEnabled {
 		// The one thing this costs is the only thing anyone would want back, so
 		// it is said out loud rather than left to be discovered. A login here is
 		// taken on the word of whoever is on the connection, which is the proxy's
@@ -718,6 +854,7 @@ func main() {
 		keyPair:           keyPair,
 		sessionServer:     auth.NewSessionServer(),
 		encryptionEnabled: encryptionEnabled,
+		forwardingSecret:  forwardingSecret,
 	}
 
 	listener, err := net.Listen("tcp", address)
@@ -757,6 +894,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		keyPair:           s.keyPair,
 		sessionServer:     s.sessionServer,
 		encryptionEnabled: s.encryptionEnabled,
+		forwardingSecret:  s.forwardingSecret,
 	}
 
 	// A limbo has nothing to say to a client that has arrived, and thirty

@@ -96,6 +96,13 @@ var serverboundPackets = []serverboundPacket{
 	},
 	{
 		phase:   types.PhaseLogin,
+		packet:  reflect.TypeOf(login.LoginPluginResponseServerboundPacket{}),
+		decoder: login.DecodeLoginPluginResponseServerboundPacket,
+		handler: handlers.HandleLoginPluginResponseServerboundPacket,
+		ids:     packetIds{protocol26_1: 0x02, protocol26_2: 0x02},
+	},
+	{
+		phase:   types.PhaseLogin,
 		packet:  reflect.TypeOf(login.LoginAcknowledgedServerboundPacket{}),
 		decoder: login.DecodeLoginAcknowledgedServerboundPacket,
 		handler: handlers.HandleLoginAcknowledgedServerboundPacket,
@@ -194,6 +201,11 @@ var clientboundPackets = []clientboundPacket{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.SetCompressionClientboundPacket{}),
 		ids:    packetIds{protocol26_1: 0x03, protocol26_2: 0x03},
+	},
+	{
+		phase:  types.PhaseLogin,
+		packet: reflect.TypeOf(clientboundLogin.LoginPluginRequestClientboundPacket{}),
+		ids:    packetIds{protocol26_1: 0x04, protocol26_2: 0x04},
 	},
 
 	{

@@ -28,6 +28,15 @@ func HandleHandshakeServerboundPacket(client types.Client, packet types.Serverbo
 		return nil
 	}
 
+	// A server holding a forwarding secret has a better question to ask, and
+	// asks it in the login phase. Reading these fields alongside it would put
+	// back exactly what the secret was configured to remove: an account anyone
+	// who can open a connection can name, arriving one packet ahead of the one
+	// that has to be signed.
+	if client.ModernForwardingEnabled() {
+		return nil
+	}
+
 	// The address a client sends is the one it was told to connect to and is of
 	// no interest here, unless a proxy has written the login it is forwarding
 	// into it. A proxy only does that to a login: anything else it opens, a ping

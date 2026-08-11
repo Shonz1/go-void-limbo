@@ -5,8 +5,10 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
@@ -1250,6 +1252,474 @@ func TestALoginBehindAProxyIsTheAccountTheProxyForwarded(t *testing.T) {
 	// this end has no secret to ask about even if it wanted to.
 	if len(sessionServer.usernames) != 0 {
 		t.Errorf("asked the session server about %v, want a login the proxy already settled left alone", sessionServer.usernames)
+	}
+}
+
+// testForwardingSecret is what an operator shares between a modern proxy and
+// this server, and is the whole of what makes a forwarded login worth anything.
+var testForwardingSecret = []byte("a shared secret")
+
+// signedForwardingPayload builds the answer a modern proxy gives: the fields of
+// the login, with the digest it takes over them under the shared secret in
+// front.
+func signedForwardingPayload(t *testing.T, secret []byte, address, uuid, username string, properties []types.ProfileProperty) []byte {
+	t.Helper()
+
+	buf := new(bytes.Buffer)
+	stream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	writes := []func() error{
+		func() error { return stream.WriteVarInt(auth.ModernForwardingVersion) },
+		func() error { return stream.WriteString(address) },
+		func() error { return stream.WriteUuid(uuid) },
+		func() error { return stream.WriteString(username) },
+		func() error { return stream.WriteVarInt(int32(len(properties))) },
+	}
+
+	for _, property := range properties {
+		writes = append(writes,
+			func() error { return stream.WriteString(property.Name) },
+			func() error { return stream.WriteString(property.Value) },
+			func() error { return stream.WriteBoolean(property.Signature != nil) },
+		)
+
+		if property.Signature != nil {
+			writes = append(writes, func() error { return stream.WriteString(*property.Signature) })
+		}
+	}
+
+	writes = append(writes, stream.Flush)
+
+	for _, write := range writes {
+		if err := write(); err != nil {
+			t.Fatalf("building the forwarding payload: %v", err)
+		}
+	}
+
+	digest := hmac.New(sha256.New, secret)
+	digest.Write(buf.Bytes())
+
+	return append(digest.Sum(nil), buf.Bytes()...)
+}
+
+// forwardingServer is a limbo with a proxy configured in front of it: a secret
+// to check a forwarded login against, and no encryption, since the proxy holds
+// the connection with the player and answered for them already.
+func forwardingServer(t *testing.T) (*server, *loginPeer) {
+	t.Helper()
+
+	packetRegistry := registries.NewPacketRegistry()
+	registerPackets(packetRegistry)
+
+	srv := &server{
+		packetRegistry:   packetRegistry,
+		keyPair:          testKeyPair(),
+		sessionServer:    &fakeSessionServer{},
+		forwardingSecret: testForwardingSecret,
+	}
+
+	conn, client := net.Pipe()
+	t.Cleanup(func() { client.Close() })
+
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	go srv.handleConnection(conn)
+
+	return srv, &loginPeer{t: t, conn: client}
+}
+
+// openForwardedLogin sends the handshake and login start a proxy sends, and
+// reads the question the server asks back: which channel it wants the login on,
+// and under which message id.
+func openForwardedLogin(t *testing.T, peer *loginPeer, serverAddress, username string) (int32, string) {
+	t.Helper()
+
+	handshake := new(bytes.Buffer)
+	handshakeStream := streams.NewMinecraftStreamFromBuffer(handshake)
+
+	for _, write := range []func() error{
+		func() error { return handshakeStream.WriteVarInt(0x00) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.ProtocolVersions.MINECRAFT_26_2.ID)) },
+		func() error { return handshakeStream.WriteString(serverAddress) },
+		func() error { return handshakeStream.WriteShort(25565) },
+		func() error { return handshakeStream.WriteVarInt(int32(types.PhaseLogin)) },
+		handshakeStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the handshake: %v", err)
+		}
+	}
+
+	peer.writePacket(handshake.Bytes())
+
+	loginStart := new(bytes.Buffer)
+	loginStartStream := streams.NewMinecraftStreamFromBuffer(loginStart)
+
+	for _, write := range []func() error{
+		func() error { return loginStartStream.WriteVarInt(0x00) },
+		func() error { return loginStartStream.WriteString(username) },
+		func() error { return loginStartStream.WriteUuid("00000000-0000-0000-0000-000000000001") },
+		loginStartStream.Flush,
+	} {
+		if err := write(); err != nil {
+			t.Fatalf("building the login start: %v", err)
+		}
+	}
+
+	peer.writePacket(loginStart.Bytes())
+
+	request := peer.readPacket()
+
+	if packetId, err := request.ReadVarInt(); err != nil || packetId != 0x04 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's plugin request %#02x", packetId, err, 0x04)
+	}
+
+	messageId, err := request.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the message id: %v", err)
+	}
+
+	channel, err := request.ReadString()
+	if err != nil {
+		t.Fatalf("reading the channel: %v", err)
+	}
+
+	return messageId, channel
+}
+
+// answerForwardingRequest sends what a proxy answers a forwarding request with,
+// under the message id it came in on.
+func answerForwardingRequest(t *testing.T, peer *loginPeer, messageId int32, payload []byte) {
+	t.Helper()
+
+	response := new(bytes.Buffer)
+	responseStream := streams.NewMinecraftStreamFromBuffer(response)
+
+	writes := []func() error{
+		func() error { return responseStream.WriteVarInt(0x02) },
+		func() error { return responseStream.WriteVarInt(messageId) },
+		func() error { return responseStream.WriteBoolean(payload != nil) },
+	}
+
+	if payload != nil {
+		writes = append(writes, func() error { return responseStream.WriteBytes(payload) })
+	}
+
+	writes = append(writes, responseStream.Flush)
+
+	for _, write := range writes {
+		if err := write(); err != nil {
+			t.Fatalf("building the plugin response: %v", err)
+		}
+	}
+
+	peer.writePacket(response.Bytes())
+}
+
+// A login through a modern proxy, end to end. Nothing about the connection says
+// who the player is: the handshake carries the address it was reached at, the
+// login start carries a name nobody checked, and the account arrives afterwards
+// in a payload signed with the secret the proxy and this server share.
+func TestALoginBehindAModernProxyIsTheAccountItSigned(t *testing.T) {
+	signature := "a signature"
+	properties := []types.ProfileProperty{{Name: "textures", Value: "a base64 blob", Signature: &signature}}
+
+	_, peer := forwardingServer(t)
+
+	messageId, channel := openForwardedLogin(t, peer, "limbo.example", "somebody else")
+
+	if channel != auth.ModernForwardingChannel {
+		t.Fatalf("asked on %q, want the channel a proxy forwards a login on %q", channel, auth.ModernForwardingChannel)
+	}
+
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", properties)
+
+	answerForwardingRequest(t, peer, messageId, payload)
+
+	// Set compression rather than an encryption request: the payload settled
+	// the account, so the login went straight to its end.
+	setCompression := peer.readPacket()
+
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	if uuid != "069a79f4-44e9-4726-a5be-fca90e38aaf5" {
+		t.Errorf("uuid = %q, want the account the proxy signed for", uuid)
+	}
+
+	username, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the username: %v", err)
+	}
+
+	// The name comes out of the payload as well, and not out of the login start,
+	// which said something else entirely.
+	if username != "Notch" {
+		t.Errorf("username = %q, want the name the payload carried %q", username, "Notch")
+	}
+
+	count, err := loginSuccess.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading the property count: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("carried %d properties, want the textures the proxy forwarded", count)
+	}
+
+	name, err := loginSuccess.ReadString()
+	if err != nil {
+		t.Fatalf("reading the property name: %v", err)
+	}
+
+	if name != "textures" {
+		t.Errorf("property = %q, want the forwarded textures", name)
+	}
+}
+
+// The same server, reached by somebody who does not hold the secret. Every way
+// of not holding it ends the same way, which is the point of holding one: there
+// is no answer left that gets a login finished.
+func TestALoginWithoutTheForwardingSecretIsRefused(t *testing.T) {
+	tests := []struct {
+		name string
+
+		// payload is what the connection answers with, and nil is the answer of
+		// a client that has never heard of the channel.
+		payload func(t *testing.T) []byte
+	}{
+		{
+			name:    "a client that came straight here",
+			payload: func(t *testing.T) []byte { return nil },
+		},
+		{
+			name: "a login signed under a guess at the secret",
+			payload: func(t *testing.T) []byte {
+				return signedForwardingPayload(t, []byte("a guess"), "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+			},
+		},
+		{
+			name: "a login with no signature at all",
+			payload: func(t *testing.T) []byte {
+				signed := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+				return signed[sha256.Size:]
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, peer := forwardingServer(t)
+
+			messageId, _ := openForwardedLogin(t, peer, "limbo.example", "Notch")
+
+			answerForwardingRequest(t, peer, messageId, test.payload(t))
+
+			disconnect := peer.readPacket()
+
+			if packetId, err := disconnect.ReadVarInt(); err != nil || packetId != 0x00 {
+				t.Fatalf("packet id = %#02x err = %v, want the login phase's disconnect %#02x", packetId, err, 0x00)
+			}
+
+			// A client sitting on a connection it has no reason to think went
+			// wrong is told why it is being let go.
+			reason, err := disconnect.ReadString()
+			if err != nil {
+				t.Fatalf("reading the reason: %v", err)
+			}
+
+			if reason == "" {
+				t.Error("disconnected without a word, want a reason the player can read")
+			}
+		})
+	}
+}
+
+// A BungeeCord proxy's fields written into the handshake of a server that holds
+// a secret. They are plain text anyone who can reach the port can write, and a
+// server that asks for a signature reads none of them: the login is held to the
+// question it asked, and the account in the address never becomes anybody.
+func TestAForwardedAddressCannotStandInForASignedLogin(t *testing.T) {
+	_, peer := forwardingServer(t)
+
+	messageId, _ := openForwardedLogin(t, peer, forwardedHandshakeAddress, "Notch")
+
+	// The question went out rather than a success packet, which is already the
+	// address having bought nothing. Answering it properly is what settles the
+	// login, and the account that arrives is the signed one.
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "3d5b1b4e-08d9-484c-9ba1-ae3f6c02a1e2", "Notch", nil)
+
+	answerForwardingRequest(t, peer, messageId, payload)
+
+	setCompression := peer.readPacket()
+	if packetId, err := setCompression.ReadVarInt(); err != nil || packetId != 0x03 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's set compression %#02x", packetId, err, 0x03)
+	}
+
+	if _, err := setCompression.ReadVarInt(); err != nil {
+		t.Fatalf("reading the threshold: %v", err)
+	}
+
+	peer.compressed = true
+
+	loginSuccess := peer.readPacket()
+	if packetId, err := loginSuccess.ReadVarInt(); err != nil || packetId != 0x02 {
+		t.Fatalf("packet id = %#02x err = %v, want the login phase's login success %#02x", packetId, err, 0x02)
+	}
+
+	uuid, err := loginSuccess.ReadUuid()
+	if err != nil {
+		t.Fatalf("reading the uuid: %v", err)
+	}
+
+	if uuid != "3d5b1b4e-08d9-484c-9ba1-ae3f6c02a1e2" {
+		t.Errorf("uuid = %q, want the account the payload was signed for rather than the one written into the address", uuid)
+	}
+}
+
+// The secret is the setting: a server that holds one asks every login for a
+// payload signed with it, and a server that holds none never asks. So an empty
+// value is no secret rather than an empty one, whichever of the two places it
+// came from.
+func TestForwardingSecretSetting(t *testing.T) {
+	tests := []struct {
+		name        string
+		argument    string
+		environment string
+		set         bool
+		want        string
+	}{
+		{name: "neither", want: ""},
+		{name: "the environment alone", environment: "from the environment", set: true, want: "from the environment"},
+		{name: "the argument alone", argument: "from the argument", want: "from the argument"},
+		// A flag is typed and an environment is inherited, so the typed one is
+		// the one that was meant.
+		{name: "both", argument: "from the argument", environment: "from the environment", set: true, want: "from the argument"},
+		// A secret nobody set is a secret everybody has, and checking a
+		// signature under one is worse than not asking for a signature at all.
+		{name: "an empty environment", environment: "", set: true, want: ""},
+		{name: "an empty argument", argument: "", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("FORWARDING_SECRET", test.environment)
+
+			if !test.set {
+				os.Unsetenv("FORWARDING_SECRET")
+			}
+
+			got := forwardingSecretSetting(test.argument)
+
+			if string(got) != test.want {
+				t.Errorf("forwardingSecretSetting(%q) = %q, want %q", test.argument, got, test.want)
+			}
+
+			// Nothing is what an unconfigured server checks against, and it is
+			// what the connection reads as having no proxy in front of it.
+			if test.want == "" && got != nil {
+				t.Errorf("forwardingSecretSetting(%q) = %q, want no secret at all", test.argument, got)
+			}
+		})
+	}
+}
+
+// A connection on a server that holds a secret asks its question once, and takes
+// one answer to it. A second payload arrives too late to name anybody else.
+func TestModernForwardingIsAnsweredOnce(t *testing.T) {
+	client, _ := newLoginClient(t, &fakeSessionServer{})
+	client.forwardingSecret = testForwardingSecret
+
+	messageId, err := client.BeginModernForwarding()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := client.BeginModernForwarding(); err == nil {
+		t.Error("error = nil, want a second request refused")
+	}
+
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+
+	forwarded, err := client.CompleteModernForwarding(messageId, payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if forwarded.Uuid != "069a79f4-44e9-4726-a5be-fca90e38aaf5" {
+		t.Errorf("uuid = %q, want the account the payload was signed for", forwarded.Uuid)
+	}
+
+	kept, ok := client.ForwardedLogin()
+	if !ok || kept.Username != "Notch" {
+		t.Errorf("kept %s (%t), want the login the payload carried", kept, ok)
+	}
+
+	second := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "00000000-0000-0000-0000-000000000002", "Somebody", nil)
+
+	if _, err := client.CompleteModernForwarding(messageId, second); err == nil {
+		t.Error("error = nil, want a second payload refused")
+	}
+
+	if kept, _ := client.ForwardedLogin(); kept.Username != "Notch" {
+		t.Errorf("kept %s, want the login the first payload carried", kept)
+	}
+}
+
+// The message id ties an answer to the question this connection asked. A payload
+// answering some other number is not this connection's to read, however well it
+// is signed.
+func TestModernForwardingRefusesAnAnswerToAnotherRequest(t *testing.T) {
+	client, _ := newLoginClient(t, &fakeSessionServer{})
+	client.forwardingSecret = testForwardingSecret
+
+	messageId, err := client.BeginModernForwarding()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+
+	if _, err := client.CompleteModernForwarding(messageId+1, payload); err == nil {
+		t.Error("error = nil, want a payload answering another request refused")
+	}
+
+	if _, ok := client.ForwardedLogin(); ok {
+		t.Error("kept a forwarded login, want the one that answered nothing left out")
+	}
+}
+
+// A payload nobody asked for. A connection that has not sent the request has
+// nothing outstanding, and a login start is what sends it, so this is a client
+// trying to name itself before the question was put to it.
+func TestModernForwardingRefusesAPayloadNothingAskedFor(t *testing.T) {
+	client, _ := newLoginClient(t, &fakeSessionServer{})
+	client.forwardingSecret = testForwardingSecret
+
+	payload := signedForwardingPayload(t, testForwardingSecret, "203.0.113.7", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch", nil)
+
+	if _, err := client.CompleteModernForwarding(1, payload); err == nil {
+		t.Error("error = nil, want a payload nothing asked for refused")
 	}
 }
 
