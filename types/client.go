@@ -17,6 +17,17 @@ type Client interface {
 
 	WritePacket(packet ClientboundPacket) error
 
+	// EncryptionEnabled reports whether this connection is to be encrypted, and
+	// with it whether the login is checked with Mojang at all. The two are one
+	// setting because they are one exchange: the client only encrypts once it
+	// has been sent an encryption request, and the session server is asked about
+	// a login by a hash over the secret that request produced.
+	//
+	// A connection that is not encrypted is a connection anyone can log in on
+	// under anyone's name, which is what turning it off is for: a test client
+	// with no account behind it.
+	EncryptionEnabled() bool
+
 	// BeginEncryption starts the encryption handshake and returns what an
 	// encryption request has to carry: the server's public key, and a verify
 	// token the client encrypts under it and sends back. A connection can only

@@ -19,6 +19,21 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 	// under, and no later packet carries one.
 	client.SetProfile(types.GameProfile{Uuid: loginStart.Uuid, Username: loginStart.Name})
 
+	// A connection that is not encrypted is a connection that cannot be
+	// authenticated, since the session server is asked about a login by a hash
+	// over the secret encrypting it. So the login is finished here and on the
+	// client's word alone: no encryption request goes out, and the client keeps
+	// reading in the clear because none did.
+	//
+	// The uuid is derived from the name rather than taken from what the client
+	// sent, so a name is worth the same account on every connection, and the
+	// skin nobody signed for is the one the client does without.
+	if !client.EncryptionEnabled() {
+		profile := types.GameProfile{Uuid: types.OfflineUuid(loginStart.Name), Username: loginStart.Name}
+
+		return completeLogin(client, profile)
+	}
+
 	publicKey, verifyToken, err := client.BeginEncryption()
 	if err != nil {
 		return fmt.Errorf("failed to begin encryption: %w", err)
