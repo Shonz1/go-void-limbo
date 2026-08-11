@@ -28,17 +28,36 @@ type Client interface {
 	// with no account behind it.
 	EncryptionEnabled() bool
 
-	// SetForwardedLogin records the account a BungeeCord proxy vouched for in
-	// the handshake it forwarded. Only the handshake carries it, and the login
-	// it belongs to arrives in the packet after.
+	// SetForwardedLogin records the account a proxy vouched for, whether it was
+	// written into the handshake by a BungeeCord proxy or signed into a
+	// forwarding payload by a modern one.
 	SetForwardedLogin(forwarded ForwardedLogin)
 
 	// ForwardedLogin returns what a proxy vouched for, and whether anything did.
 	// Nothing did on a connection that no proxy forwarded, which is every
 	// connection on a server nothing is pointed at, and it is what tells the two
-	// apart: there is no setting saying which kind this is, only a handshake
-	// that either carried a login or did not.
+	// apart: on a server with no forwarding secret there is no setting saying
+	// which kind a connection is, only a handshake that either carried a login
+	// or did not.
 	ForwardedLogin() (ForwardedLogin, bool)
+
+	// ModernForwardingEnabled reports whether this server holds a forwarding
+	// secret, which is the whole of what says a modern proxy is in front of it.
+	// A server that holds one asks every login for a payload signed with it and
+	// takes no login without one, so this is not a hint about a connection but a
+	// statement about the server.
+	ModernForwardingEnabled() bool
+
+	// BeginModernForwarding returns the message id the forwarding request goes
+	// out under, and is what makes the answer to it something this connection
+	// asked for. A connection can only begin it once.
+	BeginModernForwarding() (messageId int32, err error)
+
+	// CompleteModernForwarding checks a forwarding payload against the message
+	// id that was sent and the secret the proxy shares, and returns the login it
+	// vouches for. A payload that fails either is no login at all, which is a
+	// connection that does not come from the proxy.
+	CompleteModernForwarding(messageId int32, payload []byte) (ForwardedLogin, error)
 
 	// BeginEncryption starts the encryption handshake and returns what an
 	// encryption request has to carry: the server's public key, and a verify
