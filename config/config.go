@@ -52,6 +52,25 @@ func EncryptionEnabled() bool {
 	return enabled
 }
 
+// defaultAddress is where the server listens when the operator has said
+// nothing about it, which is the port every Minecraft client fills in on its
+// own.
+const defaultAddress = ":25565"
+
+// Address reports where the server is to listen, read from ADDRESS as anything
+// net.Listen takes, like ":25565" or "127.0.0.1:25599".
+//
+// An empty value is treated as nothing said rather than passed along, because
+// net.Listen reads an empty address as a port picked by the OS, which is a
+// server no client ever finds.
+func Address() string {
+	if raw, ok := os.LookupEnv("ADDRESS"); ok && raw != "" {
+		return raw
+	}
+
+	return defaultAddress
+}
+
 // defaultDescription is what the server list draws under this server's address
 // when the operator has said nothing about it. It says what the server is, which
 // is the one thing a player looking at a list of them needs to be told.
