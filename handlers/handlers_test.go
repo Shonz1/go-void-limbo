@@ -29,6 +29,14 @@ type fakeClient struct {
 	// real client would report for an answer that matches nothing.
 	confirmedKeepAlives []int64
 	keepAliveErr        error
+
+	// compressionThresholds records the thresholds compression was enabled at,
+	// and compressionAfter how many packets had been written by then. The
+	// threshold only applies to what follows it, so when it was announced
+	// matters as much as that it was.
+	compressionThresholds []int32
+	compressionAfter      int
+	compressionErr        error
 }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
@@ -50,6 +58,17 @@ func (c *fakeClient) SetProfile(profile types.GameProfile) { c.profile = profile
 func (c *fakeClient) WritePacket(packet types.ClientboundPacket) error {
 	c.written = append(c.written, packet)
 	c.writePhases = append(c.writePhases, c.phase)
+	return nil
+}
+
+func (c *fakeClient) EnableCompression(threshold int32) error {
+	if c.compressionErr != nil {
+		return c.compressionErr
+	}
+
+	c.compressionThresholds = append(c.compressionThresholds, threshold)
+	c.compressionAfter = len(c.written)
+
 	return nil
 }
 
@@ -122,6 +141,38 @@ func TestHandleLoginStartServerboundPacketWritesLoginSuccess(t *testing.T) {
 	// phase can only tell it about itself from what was kept here.
 	if client.Profile().Username != packet.Name || client.Profile().Uuid != packet.Uuid {
 		t.Errorf("kept profile %s, want the one the client logged in with", client.Profile())
+	}
+}
+
+func TestHandleLoginStartServerboundPacketEnablesCompressionBeforeItReplies(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin}
+
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
+		t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
+	}
+
+	// Every packet after the threshold is framed for it, so a reply written
+	// first is one the client reads through a framing it was never told about.
+	if client.compressionAfter != 0 {
+		t.Errorf("enabled compression after %d packets, want it announced before any reply", client.compressionAfter)
+	}
+}
+
+func TestHandleLoginStartServerboundPacketReportsAFailureToCompress(t *testing.T) {
+	client := &fakeClient{phase: types.PhaseLogin, compressionErr: errors.New("connection lost")}
+
+	// A client that was not told the threshold cannot read anything framed for
+	// it, so a login that carries on regardless is a connection already broken.
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err == nil {
+		t.Error("error = nil, want the failure to announce compression passed back")
+	}
+
+	if len(client.written) != 0 {
+		t.Errorf("wrote %d packets, want none after compression could not be announced", len(client.written))
 	}
 }
 

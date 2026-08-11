@@ -61,22 +61,38 @@ func (s *MinecraftStream) WriteBytes(b []byte) error {
 }
 
 func (s *MinecraftStream) ReadVarInt() (int32, error) {
+	value, _, err := readVarInt(s.stream)
+	return value, err
+}
+
+// ReadVarIntFrom reads a var int from the front of b and reports how many bytes
+// it took up. A compressed packet has to be split at the end of the var int in
+// front of its body, and a buffered reader cannot say where that is.
+func ReadVarIntFrom(b []byte) (int32, int, error) {
+	return readVarInt(bytes.NewReader(b))
+}
+
+// readVarInt reads a var int a byte at a time, returning it along with the
+// number of bytes it occupied.
+func readVarInt(reader io.ByteReader) (int32, int, error) {
 	value := int32(0)
+	size := 0
 
 	for position := 0; position < 32; position += 7 {
-		currentByte, err := s.ReadByte()
+		currentByte, err := reader.ReadByte()
 		if err != nil {
-			return 0, err
+			return 0, size, err
 		}
 
+		size++
 		value |= int32(currentByte&0x7F) << position
 
 		if currentByte&0x80 == 0 {
-			return value, nil
+			return value, size, nil
 		}
 	}
 
-	return 0, errors.New("VarInt too big")
+	return 0, size, errors.New("VarInt too big")
 }
 
 func (s *MinecraftStream) WriteVarInt(value int32) error {

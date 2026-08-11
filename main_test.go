@@ -2,8 +2,13 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
 	"errors"
+	clientboundCommon "go-void-limbo/packets/clientbound/common"
+	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
+	clientboundLogin "go-void-limbo/packets/clientbound/login"
+	serverboundCommon "go-void-limbo/packets/serverbound/common"
 	"go-void-limbo/registries"
 	"go-void-limbo/streams"
 	"go-void-limbo/types"
@@ -29,6 +34,126 @@ func newTestClient(phase types.Phase) (*MinecraftClient, *bytes.Buffer) {
 		packetRegistry:  packetRegistry,
 	}, buf
 }
+
+// deflate is what a client that was told a threshold does to a body big enough
+// for it. It stands apart from the server's own compression so that a frame
+// built here is a frame the other end would have built.
+func deflate(t *testing.T, body []byte) []byte {
+	t.Helper()
+
+	buf := new(bytes.Buffer)
+	writer := zlib.NewWriter(buf)
+
+	if _, err := writer.Write(body); err != nil {
+		t.Fatalf("compressing the body: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("compressing the body: %v", err)
+	}
+
+	return buf.Bytes()
+}
+
+// frame puts the length in front of a packet body, which is the whole of the
+// framing on a connection that has not been told a threshold.
+func frame(t *testing.T, body []byte) []byte {
+	t.Helper()
+
+	buf := new(bytes.Buffer)
+	stream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	if err := stream.WriteVarInt(int32(len(body))); err != nil {
+		t.Fatalf("framing the body: %v", err)
+	}
+
+	if err := stream.Flush(); err != nil {
+		t.Fatalf("framing the body: %v", err)
+	}
+
+	return append(buf.Bytes(), body...)
+}
+
+// compressedFrame is frame for a connection that was told a threshold: the body
+// gains a var int saying what it inflates to, or zero when it was small enough
+// to travel in full. dataLength is written as given so that a client behaving
+// badly can be framed too.
+func compressedFrame(t *testing.T, body []byte, dataLength int32) []byte {
+	t.Helper()
+
+	buf := new(bytes.Buffer)
+	stream := streams.NewMinecraftStreamFromBuffer(buf)
+
+	if err := stream.WriteVarInt(dataLength); err != nil {
+		t.Fatalf("framing the body: %v", err)
+	}
+
+	if err := stream.Flush(); err != nil {
+		t.Fatalf("framing the body: %v", err)
+	}
+
+	if dataLength != 0 {
+		body = deflate(t, body)
+	}
+
+	return frame(t, append(buf.Bytes(), body...))
+}
+
+// inflate undoes deflate, for reading back what the server framed.
+func inflate(t *testing.T, data []byte) []byte {
+	t.Helper()
+
+	reader, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("inflating the body: %v", err)
+	}
+
+	defer reader.Close()
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("inflating the body: %v", err)
+	}
+
+	return body
+}
+
+// framedBody splits a frame written to a compressed connection into the size
+// the body inflates to, which is zero for one left in full, and the body
+// itself. It fails the test on a frame whose length does not match what
+// follows it, since a client reads the next frame from where this one ends.
+func framedBody(t *testing.T, written []byte) (int32, []byte) {
+	t.Helper()
+
+	length, read, err := streams.ReadVarIntFrom(written)
+	if err != nil {
+		t.Fatalf("reading the packet length: %v", err)
+	}
+
+	body := written[read:]
+	if int(length) != len(body) {
+		t.Fatalf("length says %d bytes, frame carries %d", length, len(body))
+	}
+
+	dataLength, read, err := streams.ReadVarIntFrom(body)
+	if err != nil {
+		t.Fatalf("reading the data length: %v", err)
+	}
+
+	return dataLength, body[read:]
+}
+
+// enableCompressionOn puts a client on a compressed connection without sending
+// the packet that announces it, for the tests that are about the framing rather
+// than about announcing it.
+func enableCompressionOn(client *MinecraftClient, threshold int32) {
+	client.compressionEnabled = true
+	client.compressionThreshold = threshold
+}
+
+// The keep alive a client answers with, as it arrives in the play phase: the
+// packet id and the eight byte id it was sent.
+var keepAliveBody = []byte{0x1C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xD2}
 
 // The client answers a keep alive with the id it carried, so what was sent has
 // to be readable back out of the frame.
@@ -197,6 +322,216 @@ func TestKeepAliveLoopDropsAClientThatNeverAnswers(t *testing.T) {
 	// Nothing is sent back, so the next tick finds the keep alive unanswered.
 	if _, err := client.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Errorf("error = %v, want the connection closed", err)
+	}
+}
+
+func TestEnableCompressionAnnouncesTheThresholdInThePlainFraming(t *testing.T) {
+	client, buf := newTestClient(types.PhaseLogin)
+
+	if err := client.EnableCompression(256); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// A length, the login phase's set compression id, and 256 as a var int. A
+	// data length in front of this body is one the client is not reading for
+	// yet, since this is the packet that tells it to start.
+	want := []byte{0x03, 0x03, 0x80, 0x02}
+	if !bytes.Equal(buf.Bytes(), want) {
+		t.Fatalf("wrote % x, want % x", buf.Bytes(), want)
+	}
+
+	threshold, enabled := client.compression()
+	if !enabled || threshold != 256 {
+		t.Errorf("threshold = %d enabled = %t, want 256 and enabled", threshold, enabled)
+	}
+
+	// Everything after it is framed for the threshold, whether or not it is big
+	// enough to be deflated.
+	buf.Reset()
+
+	if err := client.WritePacket(&clientboundLogin.DisconnectClientboundPacket{Reason: "x"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// A length, a data length of zero for a body left in full, the login
+	// disconnect id, and a one character reason.
+	want = []byte{0x04, 0x00, 0x00, 0x01, 'x'}
+	if !bytes.Equal(buf.Bytes(), want) {
+		t.Errorf("wrote % x, want % x", buf.Bytes(), want)
+	}
+
+	// A client can only be told once, and telling it again would leave it
+	// reading for a threshold while another one is being written for.
+	if err := client.EnableCompression(256); err == nil {
+		t.Error("error = nil, want compression to be refused a second time")
+	}
+}
+
+func TestEnableCompressionRefusesAThresholdThatIsNotOne(t *testing.T) {
+	client, buf := newTestClient(types.PhaseLogin)
+
+	// A negative threshold is how the protocol says compression is off. Sending
+	// it and then framing everything for it is the one thing that cannot be
+	// meant, so it is refused rather than half done.
+	if err := client.EnableCompression(-1); err == nil {
+		t.Error("error = nil, want a negative threshold refused")
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("wrote % x, want nothing", buf.Bytes())
+	}
+
+	if _, enabled := client.compression(); enabled {
+		t.Error("compression is on after a threshold that was refused")
+	}
+}
+
+func TestWritePacketDeflatesOnlyTheBodiesAtTheThreshold(t *testing.T) {
+	const threshold = 256
+
+	client, buf := newTestClient(types.PhaseConfiguration)
+	enableCompressionOn(client, threshold)
+
+	if err := client.WritePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: 1}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Nine bytes of keep alive behind a data length of zero: deflating a body
+	// this size costs more bytes than it saves.
+	want := []byte{0x0A, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}
+	if !bytes.Equal(buf.Bytes(), want) {
+		t.Fatalf("wrote % x, want % x", buf.Bytes(), want)
+	}
+
+	buf.Reset()
+
+	// A body of exactly the threshold is deflated: the threshold is the size
+	// deflating starts at, not the size it starts after, and a client reading
+	// the boundary the other way reads the frame as something else entirely.
+	// One byte of the body is the packet id.
+	if err := client.WritePacket(clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:worldgen/biome", bytes.Repeat([]byte("a"), threshold-1))); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if dataLength, _ := framedBody(t, buf.Bytes()); dataLength != threshold {
+		t.Errorf("data length = %d, want a body of exactly %d deflated", dataLength, threshold)
+	}
+
+	buf.Reset()
+
+	// One byte under it is not, however close it came.
+	if err := client.WritePacket(clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:worldgen/biome", bytes.Repeat([]byte("a"), threshold-2))); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if dataLength, _ := framedBody(t, buf.Bytes()); dataLength != 0 {
+		t.Errorf("data length = %d, want a body one byte under the threshold left in full", dataLength)
+	}
+
+	buf.Reset()
+
+	// A registry is the one thing a limbo sends that is worth deflating, and
+	// repetitive enough for it to pay off.
+	registry := bytes.Repeat([]byte("minecraft:dimension_type"), 32)
+
+	if err := client.WritePacket(clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:dimension_type", registry)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dataLength, deflated := framedBody(t, buf.Bytes())
+
+	// The configuration phase's registry data id, and then the body as given.
+	wantBody := append([]byte{0x07}, registry...)
+
+	if int(dataLength) != len(wantBody) {
+		t.Errorf("data length = %d, want the %d bytes the body inflates to", dataLength, len(wantBody))
+	}
+
+	if len(deflated) >= len(wantBody) {
+		t.Errorf("deflated %d bytes into %d, want fewer", len(wantBody), len(deflated))
+	}
+
+	if got := inflate(t, deflated); !bytes.Equal(got, wantBody) {
+		t.Errorf("body inflates to % x, want % x", got, wantBody)
+	}
+}
+
+func TestReadPacketReadsWhicheverFramingTheConnectionIsOn(t *testing.T) {
+	tests := []struct {
+		name      string
+		threshold int32
+		enabled   bool
+		frame     []byte
+	}{
+		{name: "no threshold", frame: frame(t, keepAliveBody)},
+		{name: "under the threshold", threshold: 256, enabled: true, frame: compressedFrame(t, keepAliveBody, 0)},
+		{name: "deflated", threshold: 4, enabled: true, frame: compressedFrame(t, keepAliveBody, int32(len(keepAliveBody)))},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, buf := newTestClient(types.PhasePlay)
+			if test.enabled {
+				enableCompressionOn(client, test.threshold)
+			}
+
+			buf.Write(test.frame)
+
+			packet, handler, err := client.ReadPacket()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			keepAlive, ok := packet.(*serverboundCommon.KeepAliveServerboundPacket)
+			if !ok {
+				t.Fatalf("read %T, want a keep alive", packet)
+			}
+
+			if keepAlive.Id != 1234 {
+				t.Errorf("id = %d, want 1234", keepAlive.Id)
+			}
+
+			// An answer the server does not act on is a connection it drops on
+			// the next keep alive.
+			if handler == nil {
+				t.Error("handler = nil, want the keep alive handled")
+			}
+		})
+	}
+}
+
+func TestReadPacketReportsABodyItCannotInflate(t *testing.T) {
+	client, buf := newTestClient(types.PhasePlay)
+	enableCompressionOn(client, 256)
+
+	// A data length under the threshold is a body the client had no business
+	// deflating, and one this end cannot tell apart from a frame that lost its
+	// place. A body claiming to inflate to more than it does is the other way
+	// the same frame goes wrong.
+	buf.Write(compressedFrame(t, keepAliveBody, int32(len(keepAliveBody))))
+	buf.Write(frame(t, append([]byte{0x80, 0x02}, deflate(t, keepAliveBody)...)))
+
+	// Behind them, a frame there is nothing wrong with.
+	buf.Write(compressedFrame(t, keepAliveBody, 0))
+
+	for _, name := range []string{"below the threshold", "shorter than it claims"} {
+		_, _, err := client.ReadPacket()
+
+		var packetErr *packetError
+		if !errors.As(err, &packetErr) {
+			t.Fatalf("%s: error = %v, want a packet error the read loop carries on from", name, err)
+		}
+	}
+
+	// The bodies were read in full, so the frame behind them starts where it
+	// should and the connection is still worth reading.
+	packet, _, err := client.ReadPacket()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := packet.(*serverboundCommon.KeepAliveServerboundPacket); !ok {
+		t.Errorf("read %T, want the keep alive behind the frames that failed", packet)
 	}
 }
 
