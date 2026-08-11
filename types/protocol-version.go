@@ -9,14 +9,43 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO           ProtocolVersion
+	MINECRAFT_26_1 ProtocolVersion
 	MINECRAFT_26_2 ProtocolVersion
 }{
-	ZERO:           ProtocolVersion{ID: 0, Names: []string{}},
+	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
+
+	// The three releases of the 26.1 cycle share a protocol, so a client on any
+	// of them is a client on this version.
+	MINECRAFT_26_1: ProtocolVersion{ID: 775, Names: []string{"26.1", "26.1.1", "26.1.2"}},
 	MINECRAFT_26_2: ProtocolVersion{ID: 776, Names: []string{"26.2"}},
 }
 
+// SupportedProtocolVersions is every version a client may connect on, oldest
+// first.
+//
+// The order is the one the packet transformers walk. A packet read from a
+// client is carried up this list one version at a time until it reaches the
+// latest, which is the only version anything is implemented at, and a packet
+// written to a client is carried back down it. That is why the list has to hold
+// every version in between rather than only the ends: a step is what a
+// transformer is registered for.
+//
+// ZERO is not among them. It is what a connection speaks before its handshake
+// says otherwise, which is not a version anything is transformed to or from.
+var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_26_1,
+	ProtocolVersions.MINECRAFT_26_2,
+}
+
+// LatestProtocolVersion is the version every packet is implemented at. Older
+// versions are reached by transforming what this one produces, so adding one
+// adds a table of ids and whatever transformers its differences need, and no
+// second implementation of anything.
+var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersions)-1]
+
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:           ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_26_1.ID: ProtocolVersions.MINECRAFT_26_1,
 	ProtocolVersions.MINECRAFT_26_2.ID: ProtocolVersions.MINECRAFT_26_2,
 }
 
@@ -26,4 +55,46 @@ func GetProtocolVersionById(id ProtocolId) ProtocolVersion {
 	}
 
 	return ProtocolVersions.ZERO
+}
+
+// protocolVersionIndex is where version sits in SupportedProtocolVersions, or
+// -1 for a version that is not on the chain at all.
+func protocolVersionIndex(version ProtocolVersion) int {
+	for i, supported := range SupportedProtocolVersions {
+		if supported.ID == version.ID {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// IsSupportedProtocolVersion reports whether version is one the server speaks,
+// which is to say one the transformers can carry a packet to and from.
+func IsSupportedProtocolVersion(version ProtocolVersion) bool {
+	return protocolVersionIndex(version) >= 0
+}
+
+// NextProtocolVersion returns the version one step newer than version. It
+// reports false for the latest version, which has nothing above it, and for a
+// version that is not on the chain.
+func NextProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
+	index := protocolVersionIndex(version)
+	if index < 0 || index == len(SupportedProtocolVersions)-1 {
+		return ProtocolVersions.ZERO, false
+	}
+
+	return SupportedProtocolVersions[index+1], true
+}
+
+// PreviousProtocolVersion returns the version one step older than version. It
+// reports false for the oldest version and for a version that is not on the
+// chain.
+func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
+	index := protocolVersionIndex(version)
+	if index <= 0 {
+		return ProtocolVersions.ZERO, false
+	}
+
+	return SupportedProtocolVersions[index-1], true
 }
