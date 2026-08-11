@@ -8,9 +8,11 @@ import (
 	"go-void-limbo/handlers"
 	clientboundConfiguration "go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "go-void-limbo/packets/clientbound/login"
+	clientboundPlay "go-void-limbo/packets/clientbound/play"
 	"go-void-limbo/packets/serverbound/configuration"
 	"go-void-limbo/packets/serverbound/handshake"
 	"go-void-limbo/packets/serverbound/login"
+	serverboundPlay "go-void-limbo/packets/serverbound/play"
 	"go-void-limbo/registries"
 	"go-void-limbo/streams"
 	"go-void-limbo/types"
@@ -38,6 +40,7 @@ func VarIntSize(value int32) int {
 type MinecraftClient struct {
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
+	profile         types.GameProfile
 	conn            net.Conn
 	stream          *streams.MinecraftStream
 	packetRegistry  *registries.PacketRegistry
@@ -62,6 +65,14 @@ func (c *MinecraftClient) Phase() types.Phase {
 
 func (c *MinecraftClient) SetPhase(phase types.Phase) {
 	c.phase = phase
+}
+
+func (c *MinecraftClient) Profile() types.GameProfile {
+	return c.profile
+}
+
+func (c *MinecraftClient) SetProfile(profile types.GameProfile) {
+	c.profile = profile
 }
 
 // ReadPacket decodes the next packet and returns the handler registered for it,
@@ -191,11 +202,26 @@ func registerPackets(packetRegistry *registries.PacketRegistry) {
 	packetRegistry.RegisterServerbound(types.PhaseLogin, types.ProtocolVersions.MINECRAFT_26_2, 0x03, login.DecodeLoginAcknowledgedServerboundPacket, handlers.HandleLoginAcknowledgedServerboundPacket)
 	packetRegistry.RegisterServerbound(types.PhaseConfiguration, types.ProtocolVersions.MINECRAFT_26_2, 0x03, configuration.DecodeAcknowledgeFinishConfigurationServerboundPacket, handlers.HandleAcknowledgeFinishConfigurationServerboundPacket)
 
+	// What a joined client sends on its own. None of it needs a reaction from a
+	// limbo, but a packet with no decoder is one the read loop can only report
+	// as an unknown id, and the client sends these every tick.
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x00, serverboundPlay.DecodeAcceptTeleportationServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x0D, serverboundPlay.DecodeClientTickEndServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1E, serverboundPlay.DecodeMovePlayerPositionServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x1F, serverboundPlay.DecodeMovePlayerPositionRotationServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x20, serverboundPlay.DecodeMovePlayerRotationServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x21, serverboundPlay.DecodeMovePlayerStatusServerboundPacket, nil)
+	packetRegistry.RegisterServerbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, 0x2C, serverboundPlay.DecodePlayerLoadedServerboundPacket, nil)
+
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x00)
 	packetRegistry.RegisterClientbound(types.PhaseLogin, reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x02)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x07)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x0D)
 	packetRegistry.RegisterClientbound(types.PhaseConfiguration, reflect.TypeOf(clientboundConfiguration.FinishConfigurationClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x03)
+	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x26)
+	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x31)
+	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x46)
+	packetRegistry.RegisterClientbound(types.PhasePlay, reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}), types.ProtocolVersions.MINECRAFT_26_2, 0x48)
 }
 
 func handleConnection(conn net.Conn, packetRegistry *registries.PacketRegistry, gameRegistries *gamedata.Provider) {

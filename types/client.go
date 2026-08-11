@@ -6,6 +6,14 @@ type Client interface {
 	SetProtocolVersion(protocolVersion ProtocolVersion)
 	Phase() Phase
 	SetPhase(phase Phase)
+
+	// Profile is who the client says it is, which it only says once, in the
+	// login phase. The play phase has to tell the client about itself, so the
+	// profile outlives the packet that carried it. It is the zero profile
+	// before login start has been handled.
+	Profile() GameProfile
+	SetProfile(profile GameProfile)
+
 	WritePacket(packet ClientboundPacket) error
 
 	// RegistryPackets returns the configuration-phase registry packets for this
