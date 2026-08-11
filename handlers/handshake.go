@@ -32,7 +32,9 @@ func HandleHandshakeServerboundPacket(client types.Client, packet types.Serverbo
 	// asks it in the login phase. Reading these fields alongside it would put
 	// back exactly what the secret was configured to remove: an account anyone
 	// who can open a connection can name, arriving one packet ahead of the one
-	// that has to be signed.
+	// that has to be signed. A login that produces no signature is not settled
+	// from them either -- it falls back to the client's own word, which is worth
+	// less and is honest about it.
 	if client.ModernForwardingEnabled() {
 		return nil
 	}

@@ -10,21 +10,22 @@ import (
 	"log/slog"
 )
 
-// forwardingFailureReason is what a connection that could not produce the login
-// this server asked the proxy for is told before it is let go. It is the same
-// line whether the answer was missing, unsigned or signed with the wrong secret,
-// because the three are one thing from here: a connection that did not come
-// through the proxy.
-const forwardingFailureReason = `{"text":"This server can only be reached through its proxy"}`
+// forwardingFailureReason is what a connection that answered with a login this
+// server could not verify is told before it is let go. It is the same line
+// whether the payload was unsigned, signed with the wrong secret or answering a
+// request that was never sent, because the three are one thing from here: an
+// answer claiming the proxy's authority without holding what the proxy holds.
+const forwardingFailureReason = `{"text":"This login was not signed by this server's proxy"}`
 
 // HandleLoginPluginResponseServerboundPacket takes the answer to the one
 // question this server asks during a login: the account the proxy in front of it
 // vouches for, signed with the secret the two share.
 //
-// A server that asked has already decided that this is the only way in. So a
-// client that has never heard of the channel is let go here rather than falling
-// back to its own word for who it is, which is the word a forwarding secret
-// exists to stop anyone having to take.
+// The question is not a demand. A connection that has never heard of the channel
+// is not a connection doing anything wrong -- it is a player who came to the port
+// directly, on a server a proxy also happens to point at -- so its login goes on
+// to be settled the way this server settles a login nobody forwarded. A payload
+// that arrives and does not hold up is the other thing entirely, and is let go.
 func HandleLoginPluginResponseServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	response, ok := packet.(*login.LoginPluginResponseServerboundPacket)
 	if !ok {
@@ -38,7 +39,7 @@ func HandleLoginPluginResponseServerboundPacket(client types.Client, packet type
 	}
 
 	if !response.Successful {
-		return refuseForwarding(client, fmt.Errorf("the connection does not speak %s, so no proxy forwarded this login", auth.ModernForwardingChannel))
+		return loginWithoutTheProxy(client, response.MessageId)
 	}
 
 	forwarded, err := client.CompleteModernForwarding(response.MessageId, response.Data)
@@ -58,14 +59,46 @@ func HandleLoginPluginResponseServerboundPacket(client types.Client, packet type
 	return completeLogin(client, profile)
 }
 
+// loginWithoutTheProxy carries on a login the proxy had nothing to say about,
+// which is what a client that has never heard of the channel leaves behind.
+//
+// It is settled from here exactly as it would be on a server nothing was pointed
+// at: Mojang is asked when the connection is to be encrypted, and the client's
+// own word is taken when it is not. What it is never settled from is anything a
+// proxy wrote in plain text -- the fields a BungeeCord proxy puts in a handshake
+// are not read on a server that holds a secret, and are not consulted here
+// either. On a server that asks for signatures, the only account a proxy can name
+// is a signed one.
+func loginWithoutTheProxy(client types.Client, messageId int32) error {
+	// The request has been answered, even though the answer carried nothing, and
+	// a connection with nothing outstanding is one a payload arriving later
+	// cannot settle a second time.
+	if err := client.DeclineModernForwarding(messageId); err != nil {
+		return fmt.Errorf("failed to give up on the forwarded login: %w", err)
+	}
+
+	// Said once per connection that came to the port itself, which on a server
+	// behind a proxy is the thing an operator wants to know about.
+	slog.Info("no proxy forwarded this login", "channel", auth.ModernForwardingChannel, "username", client.Profile().Username)
+
+	if client.EncryptionEnabled() {
+		return askForEncryption(client)
+	}
+
+	// The name the client logged in under, which is all there is: no proxy
+	// answered for it, and an unencrypted connection is one nobody else can be
+	// asked about either.
+	return completeLogin(client, offlineProfile(client.Profile().Username))
+}
+
 // refuseForwarding tells a connection why it is being let go, and reports what
-// was wrong with it. A proxy misconfigured on one side of the secret and a
-// client that arrived at the wrong port both end here, and the log is the only
-// place the two are told apart.
+// was wrong with it. A proxy misconfigured on one side of the secret and
+// something claiming to be one both end here, and the log is the only place the
+// two are told apart.
 func refuseForwarding(client types.Client, reason error) error {
 	if err := client.WritePacket(&clientboundLogin.DisconnectClientboundPacket{Reason: forwardingFailureReason}); err != nil {
 		return errors.Join(reason, err)
 	}
 
-	return fmt.Errorf("refused a login that carried no forwarded account: %w", reason)
+	return fmt.Errorf("refused a login the forwarding secret does not vouch for: %w", reason)
 }

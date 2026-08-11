@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -143,11 +144,56 @@ type sessionServer interface {
 	HasJoined(username, serverHash string) (types.GameProfile, error)
 }
 
+// playerCount is how many clients have reached the play phase, which is the
+// number a server list ping is answered with.
+//
+// One is shared by every connection a server accepts: a ping asks about the
+// server rather than about the connection it arrived on. It is read while a ping
+// is being answered and written as connections join and leave, each on a
+// goroutine of its own, so it is atomic rather than under any one connection's
+// lock.
+type playerCount struct {
+	count atomic.Int64
+}
+
+// join counts a client that has just reached the play phase, leave stops
+// counting one whose connection has ended, and online is what a ping reports.
+//
+// A nil count is one nothing is counted in, which is what a connection with no
+// server behind it has: the number belongs to the server, and there is none here
+// to hold one.
+func (p *playerCount) join() {
+	if p != nil {
+		p.count.Add(1)
+	}
+}
+
+func (p *playerCount) leave() {
+	if p != nil {
+		p.count.Add(-1)
+	}
+}
+
+func (p *playerCount) online() int32 {
+	if p == nil {
+		return 0
+	}
+
+	return int32(p.count.Load())
+}
+
 type MinecraftClient struct {
 	conn           net.Conn
 	stream         *streams.MinecraftStream
 	packetRegistry *registries.PacketRegistry
 	gameRegistries *gamedata.Provider
+
+	// description is what a ping describes this server as, and players is the
+	// count every connection on this server shares. A ping is answered before
+	// anything about the connection has been settled, so both are handed over
+	// when it is accepted and neither changes afterwards.
+	description string
+	players     *playerCount
 
 	// keyPair and sessionServer are shared by every connection: one key is
 	// generated for the process, and one client talks to Mojang for all of them.
@@ -350,6 +396,32 @@ func (c *MinecraftClient) CompleteModernForwarding(messageId int32, payload []by
 	return forwarded, nil
 }
 
+// DeclineModernForwarding records that the connection answered the forwarding
+// request without a login in it, which is what a client that has never heard of
+// the channel answers.
+//
+// The request is answered either way, and a connection with nothing outstanding
+// is one a payload arriving afterwards cannot rewrite the login of. That matters
+// here as much as it does on the answer that worked: the login goes on to be
+// settled without a proxy, and a signed payload turning up behind it would be
+// settling it twice.
+func (c *MinecraftClient) DeclineModernForwarding(messageId int32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.pendingForwardingMessageId == 0 {
+		return errors.New("no forwarding request is waiting on an answer")
+	}
+
+	if messageId != c.pendingForwardingMessageId {
+		return fmt.Errorf("forwarding payload %d answers the wrong request, expected %d", messageId, c.pendingForwardingMessageId)
+	}
+
+	c.pendingForwardingMessageId = 0
+
+	return nil
+}
+
 // BeginEncryption generates the verify token this connection's encryption
 // request goes out with, and hands back what that packet has to carry.
 func (c *MinecraftClient) BeginEncryption() ([]byte, []byte, error) {
@@ -459,11 +531,72 @@ func (c *MinecraftClient) Phase() types.Phase {
 	return c.phase
 }
 
+// SetPhase moves the connection on, and counts a client that has arrived in the
+// play phase among the players a ping reports.
+//
+// Nothing moves a connection back out of play, so the count is joined once, and
+// the connection ending is what leaves it. That is also why the phase alone says
+// whether a connection ever counted, and no second field records it.
 func (c *MinecraftClient) SetPhase(phase types.Phase) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if phase == types.PhasePlay && c.phase != types.PhasePlay {
+		c.players.join()
+	}
+
 	c.phase = phase
+}
+
+// leavePlay stops counting a client whose connection has ended, if it ever got
+// as far as being counted.
+//
+// The phase is the whole of that question: nothing moves a connection back out
+// of play, so one that ends there is a player leaving, and one that ends
+// anywhere else never arrived.
+func (c *MinecraftClient) leavePlay() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.phase == types.PhasePlay {
+		c.players.leave()
+	}
+}
+
+// statusVersion is the version a ping is answered with: the client's own
+// whenever this server speaks it, so that a client on any supported version sees
+// a server it can join rather than one number it has to call incompatible.
+//
+// A client on a version this server does not speak left the connection on
+// protocol zero, and is told the latest instead. That is the answer it came for:
+// it has no use for a version it cannot join at, only for something to draw
+// beside the fact that it cannot.
+func statusVersion(version types.ProtocolVersion) types.ServerVersion {
+	if !types.IsSupportedProtocolVersion(version) {
+		version = types.LatestProtocolVersion
+	}
+
+	return types.ServerVersion{Name: version.Names[0], Protocol: version.ID}
+}
+
+// ServerStatus assembles what a ping on this connection is answered with.
+func (c *MinecraftClient) ServerStatus() types.ServerStatus {
+	online := c.players.online()
+
+	return types.ServerStatus{
+		Version: statusVersion(c.ProtocolVersion()),
+		Players: types.ServerPlayers{
+			Online: online,
+
+			// A limbo turns nobody away, and the protocol has no way of saying
+			// so: the field is a number, and a client draws a server as full when
+			// the two are equal. One more than however many are on is the closest
+			// this can come to the truth, and it is a truth about this server
+			// rather than a number an operator was asked to invent.
+			Max: online + 1,
+		},
+		Description: types.TextComponent{Text: c.description},
+	}
 }
 
 func (c *MinecraftClient) Profile() types.GameProfile {
@@ -682,6 +815,25 @@ func encryptionSetting() bool {
 	return enabled
 }
 
+// defaultDescription is what the server list draws under this server's address
+// when the operator has said nothing about it. It says what the server is, which
+// is the one thing a player looking at a list of them needs to be told.
+const defaultDescription = "A void limbo"
+
+// descriptionSetting reports what a ping describes this server as, read from
+// MOTD.
+//
+// An empty value is treated as nothing said rather than as an empty description,
+// because a blank line in a server list is indistinguishable from a server that
+// failed to answer.
+func descriptionSetting() string {
+	if raw, ok := os.LookupEnv("MOTD"); ok && raw != "" {
+		return raw
+	}
+
+	return defaultDescription
+}
+
 // forwardingSecretFlag is the secret on the command line, which is the one place
 // an operator can put it that does not outlive the process. It wins over the
 // environment when both are set, because it is the more deliberate of the two:
@@ -736,9 +888,9 @@ func (c *MinecraftClient) ConfirmKeepAlive(id int64) error {
 // is still unanswered, which is errKeepAliveTimeout.
 //
 // Only configuration and play have a keep alive packet, so only they get one.
-// The phases before them need none: a handshake and a login are exchanges the
-// client drives from one packet to the next, and a client that stops driving
-// one has stopped connecting rather than gone quiet.
+// The phases before them need none: a handshake, a status ping and a login are
+// exchanges the client drives from one packet to the next, and a client that
+// stops driving one has stopped connecting rather than gone quiet.
 func (c *MinecraftClient) sendKeepAlive() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -790,6 +942,13 @@ type server struct {
 	keyPair        *auth.KeyPair
 	sessionServer  sessionServer
 
+	// description is what a ping describes this server as, and players is the
+	// count every connection joins and leaves. They are the whole of what the
+	// status phase answers with, and the only state this server keeps about more
+	// than one connection at a time.
+	description string
+	players     playerCount
+
 	// encryptionEnabled is what every connection this server accepts is handed,
 	// and it decides what a login is worth: checked with Mojang behind a cipher
 	// of this server's own, or taken on the word of whoever is on the connection
@@ -798,8 +957,10 @@ type server struct {
 
 	// forwardingSecret is what a modern proxy signs the logins it forwards with,
 	// and is empty on a server that no proxy was configured in front of. Holding
-	// one is what turns a login into a question asked of the proxy rather than
-	// of Mojang or of the client.
+	// one puts a question to the proxy in front of every login: the ones it
+	// answers are settled by the signature, and the ones it does not are left to
+	// the setting above, since a secret does not stop anything else reaching the
+	// port.
 	forwardingSecret []byte
 }
 
@@ -829,23 +990,25 @@ func main() {
 
 	encryptionEnabled := encryptionSetting()
 
-	// A proxy holds the connection with the player and did the asking already,
-	// so there is nobody on this side of it to answer an encryption request:
-	// what arrives here is the proxy's own connection, and the login on it is
-	// worth what its signature is worth. A secret therefore settles the
-	// question the encryption setting would otherwise have, and says so rather
-	// than leaving an operator to wonder which of the two took effect.
+	// The two settings answer different questions, so neither overrules the
+	// other. A secret says what a forwarded login is worth: the proxy holds the
+	// connection with the player and asked Mojang there, so nothing on this side
+	// of it is asked to encrypt anything, and the signature is the whole of the
+	// check. Encryption says what a login nobody forwarded is worth, which is
+	// still a login this server has to settle, since holding a secret does not
+	// stop anything else reaching the port.
 	forwardingSecret := forwardingSecretSetting(*forwardingSecretFlag)
 	if len(forwardingSecret) > 0 {
-		slog.Info("a forwarding secret is configured, logins are taken from the proxy that signed them and are not checked with Mojang here")
-		encryptionEnabled = false
-	} else if !encryptionEnabled {
+		slog.Info("a forwarding secret is configured, a login signed with it is taken from the proxy that signed it and is not checked with Mojang here")
+	}
+
+	if !encryptionEnabled {
 		// The one thing this costs is the only thing anyone would want back, so
 		// it is said out loud rather than left to be discovered. A login here is
 		// taken on the word of whoever is on the connection, which is the proxy's
 		// when one forwarded it and the client's when none did, so the port
 		// should be one only what the operator trusts can reach.
-		slog.Warn("encryption is disabled, logins are taken on the word of whoever connects and are not checked with Mojang")
+		slog.Warn("encryption is disabled, logins nobody forwarded are taken on the word of whoever connects and are not checked with Mojang")
 	}
 
 	srv := &server{
@@ -853,6 +1016,7 @@ func main() {
 		gameRegistries:    gameRegistries,
 		keyPair:           keyPair,
 		sessionServer:     auth.NewSessionServer(),
+		description:       descriptionSetting(),
 		encryptionEnabled: encryptionEnabled,
 		forwardingSecret:  forwardingSecret,
 	}
@@ -893,9 +1057,15 @@ func (s *server) handleConnection(conn net.Conn) {
 		gameRegistries:    s.gameRegistries,
 		keyPair:           s.keyPair,
 		sessionServer:     s.sessionServer,
+		description:       s.description,
+		players:           &s.players,
 		encryptionEnabled: s.encryptionEnabled,
 		forwardingSecret:  s.forwardingSecret,
 	}
+
+	// A client that joined stops being counted when its connection ends, and one
+	// that never joined was never counted.
+	defer mc.leavePlay()
 
 	// A limbo has nothing to say to a client that has arrived, and thirty
 	// seconds of having nothing to say is what both ends treat as a dead

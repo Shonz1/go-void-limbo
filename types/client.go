@@ -17,6 +17,16 @@ type Client interface {
 
 	WritePacket(packet ClientboundPacket) error
 
+	// ServerStatus is what a server list ping arriving on this connection is
+	// answered with: what the operator set the server to say about itself, how
+	// many players are on it, and a version.
+	//
+	// The version is the only part of it the connection has a say in, and is why
+	// this is asked of the client rather than of the server: the answer reports
+	// the version the client speaks whenever this server speaks it too, so that
+	// every version it supports sees a server that can be joined.
+	ServerStatus() ServerStatus
+
 	// EncryptionEnabled reports whether this connection is to be encrypted, and
 	// with it whether the login is checked with Mojang at all. The two are one
 	// setting because they are one exchange: the client only encrypts once it
@@ -43,9 +53,12 @@ type Client interface {
 
 	// ModernForwardingEnabled reports whether this server holds a forwarding
 	// secret, which is the whole of what says a modern proxy is in front of it.
-	// A server that holds one asks every login for a payload signed with it and
-	// takes no login without one, so this is not a hint about a connection but a
-	// statement about the server.
+	// A server that holds one asks every login for a payload signed with it, so
+	// this is not a hint about a connection but a statement about the server.
+	//
+	// It says nothing about how a login ends. A connection that produces a signed
+	// payload is settled by it; one that has never heard of the channel is settled
+	// as it would be on a server no proxy was pointed at.
 	ModernForwardingEnabled() bool
 
 	// BeginModernForwarding returns the message id the forwarding request goes
@@ -58,6 +71,16 @@ type Client interface {
 	// vouches for. A payload that fails either is no login at all, which is a
 	// connection that does not come from the proxy.
 	CompleteModernForwarding(messageId int32, payload []byte) (ForwardedLogin, error)
+
+	// DeclineModernForwarding records that the answer to the forwarding request
+	// carried no login, which is what a client that has never heard of the
+	// channel answers. The request stops being outstanding either way, so a
+	// payload arriving after it cannot settle the login a second time.
+	//
+	// It reports an error when nothing was waiting on an answer or when the id is
+	// not the one that was sent, since a connection can only give up on the one
+	// question this server asked it.
+	DeclineModernForwarding(messageId int32) error
 
 	// BeginEncryption starts the encryption handshake and returns what an
 	// encryption request has to carry: the server's public key, and a verify
