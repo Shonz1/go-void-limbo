@@ -8,11 +8,15 @@ type ProtocolVersion struct {
 }
 
 var ProtocolVersions = struct {
-	ZERO           ProtocolVersion
-	MINECRAFT_26_1 ProtocolVersion
-	MINECRAFT_26_2 ProtocolVersion
+	ZERO              ProtocolVersion
+	MINECRAFT_1_21_11 ProtocolVersion
+	MINECRAFT_26_1    ProtocolVersion
+	MINECRAFT_26_2    ProtocolVersion
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
+
+	// 1.21.9 and 1.21.10 stayed on protocol 773; 1.21.11 has 774 to itself.
+	MINECRAFT_1_21_11: ProtocolVersion{ID: 774, Names: []string{"1.21.11"}},
 
 	// The three releases of the 26.1 cycle share a protocol, so a client on any
 	// of them is a client on this version.
@@ -33,6 +37,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_21_11,
 	ProtocolVersions.MINECRAFT_26_1,
 	ProtocolVersions.MINECRAFT_26_2,
 }
@@ -44,9 +49,10 @@ var SupportedProtocolVersions = []ProtocolVersion{
 var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersions)-1]
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
-	ProtocolVersions.ZERO.ID:           ProtocolVersions.ZERO,
-	ProtocolVersions.MINECRAFT_26_1.ID: ProtocolVersions.MINECRAFT_26_1,
-	ProtocolVersions.MINECRAFT_26_2.ID: ProtocolVersions.MINECRAFT_26_2,
+	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_21_11.ID: ProtocolVersions.MINECRAFT_1_21_11,
+	ProtocolVersions.MINECRAFT_26_1.ID:    ProtocolVersions.MINECRAFT_26_1,
+	ProtocolVersions.MINECRAFT_26_2.ID:    ProtocolVersions.MINECRAFT_26_2,
 }
 
 func GetProtocolVersionById(id ProtocolId) ProtocolVersion {

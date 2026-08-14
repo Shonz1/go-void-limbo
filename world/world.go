@@ -138,7 +138,11 @@ func Load(dir string) (*World, error) {
 			return nil, err
 		}
 
-		builder := &chunkBuilder{blockStates: blockStates, version: version}
+		builder := &chunkBuilder{
+			blockStates: blockStates,
+			version:     version,
+			fluidCounts: version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
+		}
 
 		packets := make([]types.ClientboundPacket, 0, len(chunks)+1)
 		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
@@ -180,6 +184,11 @@ func (w *World) Spawn() (x, y, z float64) {
 type chunkBuilder struct {
 	blockStates *gamedata.BlockStates
 	version     types.ProtocolVersion
+
+	// fluidCounts is whether sections carry a fluid count after the block
+	// count, which 26.1 added: a 1.21.11 section is the block count and the
+	// two containers, and a 26.x section has the fluid count between them.
+	fluidCounts bool
 
 	// substituted is every stored state this version had no number for, warned
 	// about once each rather than once per block.
@@ -253,7 +262,8 @@ func (b *chunkBuilder) build(chunk *anvil.Chunk) (*clientboundPlay.LevelChunkWit
 }
 
 // appendSection appends one stored section in wire form: block count, fluid
-// count, the block state container, the biome container.
+// count on the versions that carry one, the block state container, the biome
+// container.
 func (b *chunkBuilder) appendSection(data []byte, section *anvil.Section) ([]byte, error) {
 	// The palette, translated. What this version cannot name becomes the
 	// block's own default state when the block exists and air when it does
@@ -311,7 +321,9 @@ func (b *chunkBuilder) appendSection(data []byte, section *anvil.Section) ([]byt
 	}
 
 	data = appendShort(data, blockCount)
-	data = appendShort(data, fluidCount)
+	if b.fluidCounts {
+		data = appendShort(data, fluidCount)
+	}
 
 	// The block container. Up to 256 entries the stored packing is exactly the
 	// wire packing -- the same bit widths over the same indices -- so the
@@ -359,7 +371,9 @@ func (b *chunkBuilder) appendSingleValueSection(data []byte, id int32, air, flui
 	}
 
 	data = appendShort(data, blockCount)
-	data = appendShort(data, fluidCount)
+	if b.fluidCounts {
+		data = appendShort(data, fluidCount)
+	}
 
 	data = append(data, 0)
 	data = streams.AppendVarInt(data, id)
