@@ -16,11 +16,19 @@ import (
 )
 
 // Config is what an operator decides about a server before it starts.
+// WorldProvider is the world every joined connection is shown. The connection
+// is what asks for it, so the connection's package is where it is defined.
+type WorldProvider = client.WorldProvider
+
 type Config struct {
 	PacketRegistry *protocol.Registry
 	GameData       *gamedata.Provider
 	KeyPair        *auth.KeyPair
 	SessionServer  client.SessionServer
+
+	// World is the world a joined connection is shown, and nil on a server
+	// that has none, which shows the void instead.
+	World WorldProvider
 
 	// Description is what a ping describes this server as.
 	Description string
@@ -45,6 +53,7 @@ type Config struct {
 type Server struct {
 	packetRegistry *protocol.Registry
 	gameRegistries *gamedata.Provider
+	world          client.WorldProvider
 	keyPair        *auth.KeyPair
 	sessionServer  client.SessionServer
 
@@ -72,6 +81,7 @@ func New(cfg Config) *Server {
 	return &Server{
 		packetRegistry:    cfg.PacketRegistry,
 		gameRegistries:    cfg.GameData,
+		world:             cfg.World,
 		keyPair:           cfg.KeyPair,
 		sessionServer:     cfg.SessionServer,
 		status:            status{description: cfg.Description},
@@ -130,6 +140,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	c := client.New(conn, client.Config{
 		PacketRegistry:    s.packetRegistry,
 		GameData:          s.gameRegistries,
+		World:             s.world,
 		KeyPair:           s.keyPair,
 		SessionServer:     s.sessionServer,
 		Status:            &s.status,

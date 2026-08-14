@@ -161,6 +161,19 @@ type GameDataSource interface {
 	RegistryPackets() []ClientboundPacket
 }
 
+// WorldSource hands out the world a joined client is shown, when the server
+// has one.
+type WorldSource interface {
+	// WorldPackets returns the packets that put the world on this client's
+	// wire, in sending order, and nothing on a server with no world. The slice
+	// is shared across connections and must not be modified.
+	WorldPackets() []ClientboundPacket
+
+	// WorldSpawn is where the world puts a joining player. It reports false on
+	// a server with no world, whose spawn is nowhere in particular.
+	WorldSpawn() (x, y, z float64, ok bool)
+}
+
 // Client is the connection state a packet handler is allowed to observe and
 // mutate: every role above, on one connection.
 type Client interface {
@@ -172,6 +185,7 @@ type Client interface {
 	Compressing
 	KeepAliveConfirmer
 	GameDataSource
+	WorldSource
 }
 
 // PacketHandler reacts to a decoded serverbound packet.

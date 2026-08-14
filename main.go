@@ -9,6 +9,7 @@ import (
 	"github.com/Shonz1/go-void-limbo/gamedata"
 	"github.com/Shonz1/go-void-limbo/protocol"
 	"github.com/Shonz1/go-void-limbo/server"
+	"github.com/Shonz1/go-void-limbo/world"
 )
 
 // forwardingSecretFlag is the secret on the command line, which is the one place
@@ -24,6 +25,21 @@ func main() {
 	if err != nil {
 		slog.Error("failed to encode game registries", "err", err)
 		return
+	}
+
+	// The world is optional: without one the server is the empty limbo it
+	// always was. With one named and unreadable, the server stops rather than
+	// starts empty, because an operator who pointed at a world wants that
+	// world or the reason there is none.
+	var lobby server.WorldProvider
+	if dir, ok := config.WorldDir(); ok {
+		loaded, err := world.Load(dir)
+		if err != nil {
+			slog.Error("failed to load the world", "dir", dir, "err", err)
+			return
+		}
+
+		lobby = loaded
 	}
 
 	// One key for the process, generated before the first client can ask for it.
@@ -72,6 +88,7 @@ func main() {
 	srv := server.New(server.Config{
 		PacketRegistry:    protocol.NewDefaultRegistry(),
 		GameData:          gameData,
+		World:             lobby,
 		KeyPair:           keyPair,
 		SessionServer:     auth.NewSessionServer(),
 		Description:       config.Description(),

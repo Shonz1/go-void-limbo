@@ -57,10 +57,27 @@ type StatusProvider interface {
 	PlayerLeft()
 }
 
+// WorldProvider is the world every joined connection is shown, prebuilt per
+// protocol version. It is an interface here for the same reason StatusProvider
+// is: the world belongs to the server, and the connection only ever asks.
+type WorldProvider interface {
+	// PacketsFor returns the packets that put the world on the wire of a
+	// client speaking version, in sending order. The slice is shared across
+	// connections and must not be modified.
+	PacketsFor(version types.ProtocolVersion) []types.ClientboundPacket
+
+	// Spawn is where the world puts a joining player.
+	Spawn() (x, y, z float64)
+}
+
 // Config is everything a connection shares with the rest of its server.
 type Config struct {
 	PacketRegistry *protocol.Registry
 	GameData       *gamedata.Provider
+
+	// World is the world a joined connection is shown, and nil on a server
+	// that has none to show, which is the void this server is named for.
+	World WorldProvider
 
 	// KeyPair and SessionServer are shared by every connection: one key is
 	// generated for the process, and one client talks to Mojang for all of them.
@@ -90,6 +107,11 @@ type Client struct {
 	stream         *streams.MinecraftStream
 	packetRegistry *protocol.Registry
 	gameRegistries *gamedata.Provider
+
+	// world is what a joined connection is shown, and nil on a server with
+	// none. The pointer is handed over when the connection is accepted and
+	// never changes.
+	world WorldProvider
 
 	// status is what a ping on this connection is answered from. The pointer is
 	// handed over when the connection is accepted and never changes.
@@ -189,6 +211,7 @@ func New(conn net.Conn, cfg Config) *Client {
 		stream:            streams.NewMinecraftStreamFromNetConn(conn),
 		packetRegistry:    cfg.PacketRegistry,
 		gameRegistries:    cfg.GameData,
+		world:             cfg.World,
 		keyPair:           cfg.KeyPair,
 		sessionServer:     cfg.SessionServer,
 		status:            cfg.Status,
@@ -470,6 +493,24 @@ func (c *Client) Authenticate() (types.GameProfile, error) {
 
 func (c *Client) RegistryPackets() []types.ClientboundPacket {
 	return c.gameRegistries.PacketsFor(c.ProtocolVersion())
+}
+
+func (c *Client) WorldPackets() []types.ClientboundPacket {
+	if c.world == nil {
+		return nil
+	}
+
+	return c.world.PacketsFor(c.ProtocolVersion())
+}
+
+func (c *Client) WorldSpawn() (x, y, z float64, ok bool) {
+	if c.world == nil {
+		return 0, 0, 0, false
+	}
+
+	x, y, z = c.world.Spawn()
+
+	return x, y, z, true
 }
 
 func (c *Client) ProtocolVersion() types.ProtocolVersion {

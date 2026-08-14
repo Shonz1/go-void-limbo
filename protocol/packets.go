@@ -274,6 +274,16 @@ var clientboundPackets = []clientboundPacket{
 		packet: reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}),
 		ids:    packetIds{protocol26_1: 0x2C, protocol26_2: 0x2C},
 	},
+	// The chunk packet's shape is identical in the two versions, so no
+	// transformer carries it between them, even though a body for one is wrong
+	// for the other: sections name block states by each version's own
+	// numbering, and package world resolves that before the packet exists by
+	// building a packet per version.
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{}),
+		ids:    packetIds{protocol26_1: 0x2D, protocol26_2: 0x2D},
+	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}),
@@ -288,6 +298,11 @@ var clientboundPackets = []clientboundPacket{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}),
 		ids:    packetIds{protocol26_1: 0x48, protocol26_2: 0x48},
+	},
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.SetChunkCacheCenterClientboundPacket{}),
+		ids:    packetIds{protocol26_1: 0x5E, protocol26_2: 0x5E},
 	},
 }
 
