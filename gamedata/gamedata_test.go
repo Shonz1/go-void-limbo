@@ -370,6 +370,75 @@ func TestRegistriesFor26_1LeaveOutWhat26_2Added(t *testing.T) {
 	}
 }
 
+func TestRegistriesFor1_21_11LeaveOutWhat26_1Added(t *testing.T) {
+	registries := map[string]int{}
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_21_11) {
+		registries[registry.Name] = len(registry.Entries)
+	}
+
+	// 26.1 synchronizes the four animal sound variant registries and
+	// world_clock, none of which 1.21.11 has ever heard of. A registry the
+	// client is sent and does not expect is rejected along with everything
+	// after it.
+	for _, added := range []string{
+		"minecraft:cat_sound_variant", "minecraft:chicken_sound_variant",
+		"minecraft:cow_sound_variant", "minecraft:pig_sound_variant",
+		"minecraft:world_clock",
+	} {
+		if _, ok := registries[added]; ok {
+			t.Errorf("1.21.11 is sent %s, which it does not synchronize", added)
+		}
+	}
+
+	// All 23 of its own SYNCHRONIZED_REGISTRIES are there: the twenty-one
+	// generated from its jar and the two written here.
+	if len(registries) != 23 {
+		t.Errorf("1.21.11 is sent %d registries, want 23", len(registries))
+	}
+
+	if registries["minecraft:damage_type"] == 0 || registries["minecraft:enchantment"] == 0 {
+		t.Error("1.21.11 was sent an empty damage_type or enchantment")
+	}
+}
+
+// 26.1 added has_ender_dragon_fight to the dimension type codec, and requires
+// it. 1.21.11's codec has no such field -- an unknown field would merely be
+// ignored, but the entry documents itself as exactly what the codec requires,
+// so the field 1.21.11 cannot read is the field it is not sent.
+func TestDimensionTypeFor1_21_11DropsTheEnderDragonFight(t *testing.T) {
+	var dimensionType nbt.Compound
+
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_21_11) {
+		if registry.Name != "minecraft:dimension_type" {
+			continue
+		}
+
+		if len(registry.Entries) != 1 {
+			t.Fatalf("expected one dimension type, got %d", len(registry.Entries))
+		}
+
+		dimensionType = registry.Entries[0].Data.(nbt.Compound)
+	}
+
+	if dimensionType == nil {
+		t.Fatal("1.21.11 is sent no dimension type at all")
+	}
+
+	if _, ok := dimensionType["has_ender_dragon_fight"]; ok {
+		t.Error("1.21.11 is sent has_ender_dragon_fight, which its codec has no field for")
+	}
+
+	// Everything else reads as 26.1 does, infiniburn as a tag name included:
+	// the reworked schema predates the 26.x versions.
+	if infiniburn, ok := dimensionType["infiniburn"].(nbt.String); !ok || infiniburn != "#minecraft:infiniburn_overworld" {
+		t.Errorf("1.21.11 infiniburn is %v, want the block tag the client's own overworld names", dimensionType["infiniburn"])
+	}
+
+	if _, ok := overworldDimensionType26_1["has_ender_dragon_fight"]; !ok {
+		t.Error("26.1 lost has_ender_dragon_fight, which its codec requires")
+	}
+}
+
 // 26.2 rewrote the entity predicates inside eleven enchantments. An entry in the
 // new shape is one 26.1 reads as a predicate with no type constraint at best, so
 // the 26.1 content has to come from 26.1's own data rather than from 26.2's.
@@ -414,11 +483,16 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(older) == 0 {
-		t.Fatal("26.1 was sent no packets at all, which is a client that never reaches the world")
+	if len(oldest) == 0 || len(older) == 0 {
+		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	if len(oldest) >= len(older) {
+		t.Errorf("1.21.11 was sent %d packets and 26.1 %d, want fewer for 1.21.11", len(oldest), len(older))
 	}
 
 	if len(older) >= len(newer) {

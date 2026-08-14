@@ -111,7 +111,7 @@ func TestLoad(t *testing.T) {
 				t.Fatal("this version cannot name a grass block")
 			}
 
-			sections := decodeSections(t, chunk.SectionData, blockStates.StateCount())
+			sections := decodeSections(t, version, chunk.SectionData, blockStates.StateCount())
 
 			for i, section := range sections {
 				wantCount := int32(0)
@@ -249,7 +249,7 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 			}
 
 			chunk := world.PacketsFor(version)[1].(*clientboundPlay.LevelChunkWithLightClientboundPacket)
-			sections := decodeSections(t, chunk.SectionData, blockStates.StateCount())
+			sections := decodeSections(t, version, chunk.SectionData, blockStates.StateCount())
 
 			section := sections[4]
 			if section.blockCount != 4096 {
@@ -272,16 +272,21 @@ type decodedSection struct {
 }
 
 // decodeSections reads a section buffer by the client's rules: a count, a
-// fluid count, a block container whose declared bits pick the palette form,
-// and a biome container.
-func decodeSections(t *testing.T, data []byte, stateCount int32) []decodedSection {
+// fluid count on the versions whose sections carry one, a block container
+// whose declared bits pick the palette form, and a biome container.
+func decodeSections(t *testing.T, version types.ProtocolVersion, data []byte, stateCount int32) []decodedSection {
 	t.Helper()
+
+	fluidCounts := version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID
 
 	r := &sectionReader{t: t, data: data}
 
 	var sections []decodedSection
 	for i := 0; i < sectionCount; i++ {
-		section := decodedSection{blockCount: r.short(), fluidCount: r.short()}
+		section := decodedSection{blockCount: r.short()}
+		if fluidCounts {
+			section.fluidCount = r.short()
+		}
 		section.blocks = r.container(4096, stateCount)
 
 		// The biome container, which this server always writes as a single

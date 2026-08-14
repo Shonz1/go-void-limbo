@@ -49,8 +49,9 @@ type blockStateProperty struct {
 // blockStatesFiles is the table each version loads, keyed the way the registry
 // data files are.
 var blockStatesFiles = map[types.ProtocolId]string{
-	types.ProtocolVersions.MINECRAFT_26_1.ID: "blockstates_minecraft_26_1.json",
-	types.ProtocolVersions.MINECRAFT_26_2.ID: "blockstates_minecraft_26_2.json",
+	types.ProtocolVersions.MINECRAFT_1_21_11.ID: "blockstates_minecraft_1_21_11.json",
+	types.ProtocolVersions.MINECRAFT_26_1.ID:    "blockstates_minecraft_26_1.json",
+	types.ProtocolVersions.MINECRAFT_26_2.ID:    "blockstates_minecraft_26_2.json",
 }
 
 // The JSON shape of one version's table.
