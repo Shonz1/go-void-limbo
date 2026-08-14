@@ -48,7 +48,13 @@ type blockStateProperty struct {
 
 // blockStatesFiles is the table each version loads, keyed the way the registry
 // data files are.
+//
+// 1.21.9 names the 1.21.11 file rather than a copy because the two versions
+// number every state identically: 774 added no block and reordered nothing,
+// which the generation checked by producing both tables from the two jars'
+// own reports and comparing them byte for byte.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_21_9.ID:  "blockstates_minecraft_1_21_11.json",
 	types.ProtocolVersions.MINECRAFT_1_21_11.ID: "blockstates_minecraft_1_21_11.json",
 	types.ProtocolVersions.MINECRAFT_26_1.ID:    "blockstates_minecraft_26_1.json",
 	types.ProtocolVersions.MINECRAFT_26_2.ID:    "blockstates_minecraft_26_2.json",

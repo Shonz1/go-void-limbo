@@ -186,7 +186,7 @@ type chunkBuilder struct {
 	version     types.ProtocolVersion
 
 	// fluidCounts is whether sections carry a fluid count after the block
-	// count, which 26.1 added: a 1.21.11 section is the block count and the
+	// count, which 26.1 added: a 1.21.x section is the block count and the
 	// two containers, and a 26.x section has the fluid count between them.
 	fluidCounts bool
 

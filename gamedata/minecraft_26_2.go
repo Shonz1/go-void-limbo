@@ -12,6 +12,16 @@ import (
 // versions, so a chain of shared bases becomes harder to read than the
 // duplication it saves.
 func NewDefaultProvider() (*Provider, error) {
+	registries1_21_9, err := registriesMinecraft1_21_9()
+	if err != nil {
+		return nil, err
+	}
+
+	tags1_21_9, err := tagsMinecraft1_21_9()
+	if err != nil {
+		return nil, err
+	}
+
 	registries1_21_11, err := registriesMinecraft1_21_11()
 	if err != nil {
 		return nil, err
@@ -43,6 +53,11 @@ func NewDefaultProvider() (*Provider, error) {
 	}
 
 	return NewProvider(
+		Set{
+			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_9.ID,
+			Registries:  registries1_21_9,
+			Tags:        tags1_21_9,
+		},
 		Set{
 			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_11.ID,
 			Registries:  registries1_21_11,

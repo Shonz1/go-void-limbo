@@ -439,6 +439,82 @@ func TestDimensionTypeFor1_21_11DropsTheEnderDragonFight(t *testing.T) {
 	}
 }
 
+func TestRegistriesFor1_21_9LeaveOutWhat1_21_11Added(t *testing.T) {
+	registries := map[string]int{}
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_21_9) {
+		registries[registry.Name] = len(registry.Entries)
+	}
+
+	// 1.21.11 synchronizes zombie_nautilus_variant and timeline, neither of
+	// which 1.21.9 has ever heard of. A registry the client is sent and does
+	// not expect is rejected along with everything after it.
+	for _, added := range []string{
+		"minecraft:zombie_nautilus_variant", "minecraft:timeline",
+	} {
+		if _, ok := registries[added]; ok {
+			t.Errorf("1.21.9 is sent %s, which it does not synchronize", added)
+		}
+	}
+
+	// All 21 of its own SYNCHRONIZED_REGISTRIES are there: the nineteen
+	// generated from its jar and the two written here.
+	if len(registries) != 21 {
+		t.Errorf("1.21.9 is sent %d registries, want 21", len(registries))
+	}
+
+	if registries["minecraft:damage_type"] == 0 || registries["minecraft:enchantment"] == 0 {
+		t.Error("1.21.9 was sent an empty damage_type or enchantment")
+	}
+}
+
+// 1.21.11 reworked the dimension type and biome schema; 1.21.9 is the last
+// supported version that reads the shape before it. The entries document
+// themselves as exactly what each codec requires, so what the rework removed
+// is what 1.21.9 must still be sent, and what it added is what 1.21.9 must
+// not be.
+func TestDimensionTypeFor1_21_9KeepsThePreReworkSchema(t *testing.T) {
+	var dimensionType nbt.Compound
+
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_21_9) {
+		if registry.Name != "minecraft:dimension_type" {
+			continue
+		}
+
+		if len(registry.Entries) != 1 {
+			t.Fatalf("expected one dimension type, got %d", len(registry.Entries))
+		}
+
+		dimensionType = registry.Entries[0].Data.(nbt.Compound)
+	}
+
+	if dimensionType == nil {
+		t.Fatal("1.21.9 is sent no dimension type at all")
+	}
+
+	// The behaviour booleans and the effects identifier the rework removed are
+	// fields 1.21.9's codec requires.
+	for _, required := range []string{
+		"ultrawarm", "natural", "bed_works", "respawn_anchor_works",
+		"piglin_safe", "has_raids", "effects",
+	} {
+		if _, ok := dimensionType[required]; !ok {
+			t.Errorf("1.21.9 is not sent %s, which its codec requires", required)
+		}
+	}
+
+	// Infiniburn is the name of a block tag here too: the rework changed it to
+	// a set of blocks only in 26.2.
+	if infiniburn, ok := dimensionType["infiniburn"].(nbt.String); !ok || infiniburn != "#minecraft:infiniburn_overworld" {
+		t.Errorf("1.21.9 infiniburn is %v, want the block tag the client's own overworld names", dimensionType["infiniburn"])
+	}
+
+	// The vertical bounds still have to agree with the chunks the play phase
+	// sends, whatever else the schema does.
+	if dimensionType["min_y"] != nbt.Int(-64) || dimensionType["height"] != nbt.Int(384) {
+		t.Errorf("1.21.9 bounds are %v..%v, want -64 and 384", dimensionType["min_y"], dimensionType["height"])
+	}
+}
+
 // 26.2 rewrote the entity predicates inside eleven enchantments. An entry in the
 // new shape is one 26.1 reads as a predicate with no type constraint at best, so
 // the 26.1 content has to come from 26.1's own data rather than from 26.2's.
@@ -483,16 +559,21 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
+	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_9)
+	old := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest) == 0 || len(older) == 0 {
+	if len(oldest) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
-	if len(oldest) >= len(older) {
-		t.Errorf("1.21.11 was sent %d packets and 26.1 %d, want fewer for 1.21.11", len(oldest), len(older))
+	if len(oldest) >= len(old) {
+		t.Errorf("1.21.9 was sent %d packets and 1.21.11 %d, want fewer for 1.21.9", len(oldest), len(old))
+	}
+
+	if len(old) >= len(older) {
+		t.Errorf("1.21.11 was sent %d packets and 26.1 %d, want fewer for 1.21.11", len(old), len(older))
 	}
 
 	if len(older) >= len(newer) {
