@@ -26,10 +26,15 @@ const (
 	// player per connection there is nothing for it to collide with.
 	playerEntityId = 1
 
-	// viewDistance and simulationDistance are the smallest the client will
-	// hold, since a limbo that sends no chunks has nothing to fill a larger
-	// cache with. The client raises anything below two to two anyway.
-	viewDistance       = 2
+	// viewDistance is how far the client is told it will be shown, in chunks.
+	// Package world sends one ring more than this around the spawn, because
+	// the client only renders a chunk whose neighbours it also holds; the two
+	// numbers move together. A server with no world fills none of the cache
+	// this asks the client to hold, which costs nothing.
+	//
+	// simulationDistance stays the smallest the client accepts, since nothing
+	// here ticks either way. The client raises anything below two to two.
+	viewDistance       = 8
 	simulationDistance = 2
 
 	// spawnTeleportId identifies the teleport that places a joining player, so
@@ -42,8 +47,10 @@ const (
 // from both. They have to agree.
 const spawnGameMode = clientboundPlay.GameModeSpectator
 
-// Where a joining player is put. Any position inside the dimension's vertical
-// bounds works, since there is nothing to stand on or fall through.
+// Where a joining player is put when no world says otherwise. Any position
+// inside the dimension's vertical bounds works, since with no world there is
+// nothing to stand on or fall through. A server with a world uses the spawn
+// the world's own level.dat names instead.
 const (
 	spawnX = 0.5
 	spawnY = 64.0
@@ -51,14 +58,15 @@ const (
 )
 
 // HandleAcknowledgeFinishConfigurationServerboundPacket moves a client that is
-// done configuring into play and sends it the join.
+// done configuring into play and sends it the join, and after the join the
+// world, when the server holds one.
 //
-// Four packets are what a join needs, and this sends exactly those. What a
-// vanilla server also sends -- difficulty, abilities, held slot, recipes,
-// world border, time, spawn position -- is either a value the client already
-// defaults to or a fact about a world this one does not have. Keep alives are
-// what a joined client needs after this, and they are not sent from here: they
-// belong to a clock rather than to a packet that arrived.
+// Four packets are what the join itself needs, and this sends exactly those
+// before the world. What a vanilla server also sends -- difficulty, abilities,
+// held slot, recipes, world border, time, spawn position -- is either a value
+// the client already defaults to or a fact this server does not track. Keep
+// alives are what a joined client needs after this, and they are not sent from
+// here: they belong to a clock rather than to a packet that arrived.
 func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	_, ok := packet.(*configuration.AcknowledgeFinishConfigurationServerboundPacket)
 	if !ok {
@@ -113,12 +121,19 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 	}
 
 	// The login packet says nothing about where the player is, so a teleport is
-	// what puts it at the spawn. The client replies acknowledging this id.
+	// what puts it at the spawn: the world's own when there is one, and a spot
+	// as good as any other when there is not. The client replies acknowledging
+	// this id.
+	x, y, z, hasWorld := client.WorldSpawn()
+	if !hasWorld {
+		x, y, z = spawnX, spawnY, spawnZ
+	}
+
 	position := clientboundPlay.PlayerPositionClientboundPacket{
 		TeleportId: spawnTeleportId,
-		X:          spawnX,
-		Y:          spawnY,
-		Z:          spawnZ,
+		X:          x,
+		Y:          y,
+		Z:          z,
 	}
 
 	if err := client.WritePacket(&position); err != nil {
@@ -161,9 +176,22 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		return err
 	}
 
-	// Last, because it means the join is over and chunks are next. The client
-	// waits on its loading screen with no timeout until it arrives.
+	// Last of the join, because it means the join is over and chunks are next.
+	// The client waits on its loading screen with no timeout until it arrives.
 	chunksNext := clientboundPlay.GameEventClientboundPacket{Event: clientboundPlay.GameEventStartWaitingForChunks}
 
-	return client.WritePacket(&chunksNext)
+	if err := client.WritePacket(&chunksNext); err != nil {
+		return err
+	}
+
+	// And then the chunks themselves, prebuilt for this client's version:
+	// nothing on a server with no world, and the chunk cache centre followed
+	// by every chunk around the spawn on one that has it.
+	for _, packet := range client.WorldPackets() {
+		if err := client.WritePacket(packet); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

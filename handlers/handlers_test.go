@@ -29,6 +29,13 @@ type fakeClient struct {
 	writePhases     []types.Phase
 	registryPackets []types.ClientboundPacket
 
+	// worldPackets is what the real client would send a joined player of a
+	// server with a world, and empty is a server with none. worldSpawn and
+	// hasWorldSpawn are the spawn that world names.
+	worldPackets  []types.ClientboundPacket
+	worldSpawn    [3]float64
+	hasWorldSpawn bool
+
 	// confirmedKeepAlives records the ids answered, and keepAliveErr is what the
 	// real client would report for an answer that matches nothing.
 	confirmedKeepAlives []int64
@@ -111,6 +118,12 @@ type fakeClient struct {
 }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
+
+func (c *fakeClient) WorldPackets() []types.ClientboundPacket { return c.worldPackets }
+
+func (c *fakeClient) WorldSpawn() (x, y, z float64, ok bool) {
+	return c.worldSpawn[0], c.worldSpawn[1], c.worldSpawn[2], c.hasWorldSpawn
+}
 
 func (c *fakeClient) ProtocolVersion() types.ProtocolVersion { return c.protocolVersion }
 
@@ -1262,6 +1275,54 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 
 	if chunksNext.Event != clientboundPlay.GameEventStartWaitingForChunks {
 		t.Errorf("game event = %s, want start_waiting_for_chunks", chunksNext.Event)
+	}
+}
+
+// TestHandleAcknowledgeFinishConfigurationServerboundPacketSendsTheWorld pins
+// where the world goes when the server holds one: after the whole join, and at
+// the spawn the world names rather than the built-in one.
+func TestHandleAcknowledgeFinishConfigurationServerboundPacketSendsTheWorld(t *testing.T) {
+	worldPackets := []types.ClientboundPacket{
+		&clientboundPlay.SetChunkCacheCenterClientboundPacket{X: 1, Z: 2},
+		&clientboundPlay.LevelChunkWithLightClientboundPacket{X: 1, Z: 2},
+	}
+
+	client := &fakeClient{
+		phase:         types.PhaseConfiguration,
+		worldPackets:  worldPackets,
+		worldSpawn:    [3]float64{16.5, 65, -16.5},
+		hasWorldSpawn: true,
+	}
+
+	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.written) != 4+len(worldPackets) {
+		t.Fatalf("expected %d written packets, got %d", 4+len(worldPackets), len(client.written))
+	}
+
+	// The teleport puts the player at the world's spawn, since the world is
+	// where they now stand.
+	position, ok := client.written[1].(*clientboundPlay.PlayerPositionClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *play.PlayerPositionClientboundPacket second, got %T", client.written[1])
+	}
+
+	if position.X != 16.5 || position.Y != 65 || position.Z != -16.5 {
+		t.Errorf("spawned at %v,%v,%v, want the world spawn 16.5,65,-16.5", position.X, position.Y, position.Z)
+	}
+
+	// The world follows the game event that ends the join, in the order the
+	// world provider gave it, which put the chunk cache centre first.
+	if _, ok := client.written[3].(*clientboundPlay.GameEventClientboundPacket); !ok {
+		t.Fatalf("expected the game event to end the join, got %T", client.written[3])
+	}
+
+	for i, packet := range worldPackets {
+		if client.written[4+i] != packet {
+			t.Errorf("world packet %d = %v, want %v", i, client.written[4+i], packet)
+		}
 	}
 }
 

@@ -89,6 +89,30 @@ func Description() string {
 	return defaultDescription
 }
 
+// defaultWorldDir is where a world is looked for when the operator has said
+// nothing about it, relative to wherever the server was started.
+const defaultWorldDir = "worlds/Lobby"
+
+// WorldDir reports where the world to show joined players is saved, read from
+// WORLD as a directory holding a level.dat and a region folder.
+//
+// It reports false for no world at all, which is what this server shows
+// without one: the void it is named for. An operator who set WORLD gets that
+// directory and whatever loading it says; one who set nothing gets the default
+// only if it exists, because a server that has always started against an empty
+// directory should go on starting against one.
+func WorldDir() (string, bool) {
+	if raw, ok := os.LookupEnv("WORLD"); ok && raw != "" {
+		return raw, true
+	}
+
+	if _, err := os.Stat(defaultWorldDir); err == nil {
+		return defaultWorldDir, true
+	}
+
+	return "", false
+}
+
 // ForwardingSecret reports the secret a modern proxy shares with this server,
 // taken from the -forwarding-secret argument when it has one and from
 // FORWARDING_SECRET otherwise. The flag wins over the environment when both are
