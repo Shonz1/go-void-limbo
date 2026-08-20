@@ -9,12 +9,17 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_21_7  ProtocolVersion
 	MINECRAFT_1_21_9  ProtocolVersion
 	MINECRAFT_1_21_11 ProtocolVersion
 	MINECRAFT_26_1    ProtocolVersion
 	MINECRAFT_26_2    ProtocolVersion
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
+
+	// 1.21.8 stayed on 1.21.7's protocol, so a client on either of them is a
+	// client on this version.
+	MINECRAFT_1_21_7: ProtocolVersion{ID: 772, Names: []string{"1.21.7", "1.21.8"}},
 
 	// 1.21.10 stayed on 1.21.9's protocol, so a client on either of them is a
 	// client on this version; 1.21.11 has 774 to itself.
@@ -40,6 +45,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_21_7,
 	ProtocolVersions.MINECRAFT_1_21_9,
 	ProtocolVersions.MINECRAFT_1_21_11,
 	ProtocolVersions.MINECRAFT_26_1,
@@ -54,6 +60,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_21_7.ID:  ProtocolVersions.MINECRAFT_1_21_7,
 	ProtocolVersions.MINECRAFT_1_21_9.ID:  ProtocolVersions.MINECRAFT_1_21_9,
 	ProtocolVersions.MINECRAFT_1_21_11.ID: ProtocolVersions.MINECRAFT_1_21_11,
 	ProtocolVersions.MINECRAFT_26_1.ID:    ProtocolVersions.MINECRAFT_26_1,
