@@ -467,6 +467,57 @@ func TestRegistriesFor1_21_9LeaveOutWhat1_21_11Added(t *testing.T) {
 	}
 }
 
+// 1.21.7 synchronizes the same 21 registries as 1.21.9 -- 773 added no
+// registry -- but their contents are each version's own: the copper additions
+// 773 landed reach into trim_material and enchantment, and into the block,
+// item and entity tags. A tag the client asks for that was never declared
+// throws, and the reverse -- declaring what 1.21.9 has and 1.21.7 does not --
+// would ship content no 1.21.7 client was built against.
+func TestRegistriesFor1_21_7AreItsOwnAndNot1_21_9s(t *testing.T) {
+	registries := map[string]int{}
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_21_7) {
+		registries[registry.Name] = len(registry.Entries)
+	}
+
+	if len(registries) != 21 {
+		t.Errorf("1.21.7 is sent %d registries, want 21", len(registries))
+	}
+
+	if registries["minecraft:damage_type"] == 0 || registries["minecraft:enchantment"] == 0 {
+		t.Error("1.21.7 was sent an empty damage_type or enchantment")
+	}
+
+	blockTags := func(load func() ([]TagSet, error)) map[string]bool {
+		sets, err := load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		names := map[string]bool{}
+		for _, set := range sets {
+			if set.Registry != "minecraft:block" {
+				continue
+			}
+
+			for _, tag := range set.Tags {
+				names[tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	older, newer := blockTags(tagsMinecraft1_21_7), blockTags(tagsMinecraft1_21_9)
+
+	if older["minecraft:copper_chests"] {
+		t.Error("1.21.7 declares copper_chests, a block tag 773 introduced")
+	}
+
+	if !newer["minecraft:copper_chests"] {
+		t.Error("1.21.9 no longer declares copper_chests, which its jar does")
+	}
+}
+
 // 1.21.11 reworked the dimension type and biome schema; 1.21.9 is the last
 // supported version that reads the shape before it. The entries document
 // themselves as exactly what each codec requires, so what the rework removed
@@ -559,17 +610,24 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_9)
+	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_7)
+	old9 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_9)
 	old := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
-	if len(oldest) >= len(old) {
-		t.Errorf("1.21.9 was sent %d packets and 1.21.11 %d, want fewer for 1.21.9", len(oldest), len(old))
+	// 1.21.7 and 1.21.9 synchronize the same 21 registries, so the count
+	// cannot tell them apart; the content test above does.
+	if len(oldest) != len(old9) {
+		t.Errorf("1.21.7 was sent %d packets and 1.21.9 %d, want the same count for the same registry list", len(oldest), len(old9))
+	}
+
+	if len(old9) >= len(old) {
+		t.Errorf("1.21.9 was sent %d packets and 1.21.11 %d, want fewer for 1.21.9", len(old9), len(old))
 	}
 
 	if len(old) >= len(older) {
