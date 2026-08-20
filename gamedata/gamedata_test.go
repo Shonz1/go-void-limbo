@@ -518,6 +518,51 @@ func TestRegistriesFor1_21_7AreItsOwnAndNot1_21_9s(t *testing.T) {
 	}
 }
 
+// 1.21.6 synchronizes the same 21 registries as 1.21.7 -- 772 added no
+// registry, and their jars declare byte-identical tags -- but the contents
+// are each version's own: 772 is where the lava_chicken jukebox song and the
+// dennis painting variant landed. Sending either to a 1.21.6 client would
+// ship content no such client was built against.
+func TestRegistriesFor1_21_6AreItsOwnAndNot1_21_7s(t *testing.T) {
+	entries := func(load func() ([]Registry, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			names[registry.Name] = map[string]bool{}
+			for _, entry := range registry.Entries {
+				names[registry.Name][entry.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	older, newer := entries(registriesMinecraft1_21_6), entries(registriesMinecraft1_21_7)
+
+	if len(older) != 21 {
+		t.Errorf("1.21.6 is sent %d registries, want 21", len(older))
+	}
+
+	if len(older["minecraft:damage_type"]) == 0 || len(older["minecraft:enchantment"]) == 0 {
+		t.Error("1.21.6 was sent an empty damage_type or enchantment")
+	}
+
+	if older["minecraft:jukebox_song"]["minecraft:lava_chicken"] {
+		t.Error("1.21.6 is sent the lava_chicken jukebox song, which 772 introduced")
+	}
+
+	if !newer["minecraft:jukebox_song"]["minecraft:lava_chicken"] {
+		t.Error("1.21.7 no longer has the lava_chicken jukebox song, which its jar does")
+	}
+
+	if older["minecraft:painting_variant"]["minecraft:dennis"] {
+		t.Error("1.21.6 is sent the dennis painting variant, which 772 introduced")
+	}
+
+	if !newer["minecraft:painting_variant"]["minecraft:dennis"] {
+		t.Error("1.21.7 no longer has the dennis painting variant, which its jar does")
+	}
+}
+
 // 1.21.11 reworked the dimension type and biome schema; 1.21.9 is the last
 // supported version that reads the shape before it. The entries document
 // themselves as exactly what each codec requires, so what the rework removed
@@ -610,20 +655,25 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_7)
+	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_6)
+	old7 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_7)
 	old9 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_9)
 	old := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
-	// 1.21.7 and 1.21.9 synchronize the same 21 registries, so the count
-	// cannot tell them apart; the content test above does.
-	if len(oldest) != len(old9) {
-		t.Errorf("1.21.7 was sent %d packets and 1.21.9 %d, want the same count for the same registry list", len(oldest), len(old9))
+	// 1.21.6, 1.21.7 and 1.21.9 synchronize the same 21 registries, so the
+	// count cannot tell them apart; the content tests above do.
+	if len(oldest) != len(old7) {
+		t.Errorf("1.21.6 was sent %d packets and 1.21.7 %d, want the same count for the same registry list", len(oldest), len(old7))
+	}
+
+	if len(old7) != len(old9) {
+		t.Errorf("1.21.7 was sent %d packets and 1.21.9 %d, want the same count for the same registry list", len(old7), len(old9))
 	}
 
 	if len(old9) >= len(old) {
