@@ -76,6 +76,22 @@ const (
 // just parks with it, so the recovery is a fresh game, not a second ask.
 const connectAttempts = 3
 
+// What the position sync test waits for and settles for.
+//
+// A joined client waits thirty seconds for its spawn chunk before giving its
+// player to gravity, so playersTimeout has to reach past that wait as well as
+// the polling in front of it. The fall itself covers about seventy-eight
+// blocks a second at terminal velocity, which is what makes the two bounds
+// below undemanding: a relayed fall sails past minObservedFall inside a
+// second, and a frozen view misses positionTolerance by thousands after the
+// minutes a session runs.
+const (
+	playersTimeout    = 2 * time.Minute
+	fallWindow        = 15 * time.Second
+	minObservedFall   = 10.0
+	positionTolerance = 256.0
+)
+
 // TestEveryVersionJoinsWithARealClient walks every name a supported version
 // answers to -- each is a Mojang release identifier -- and has the real client
 // of that release join the limbo and stay. A version that shares its protocol
@@ -93,33 +109,7 @@ func TestEveryVersionJoinsWithARealClient(t *testing.T) {
 				// it, pass or fail: the container runs one game at a time.
 				t.Cleanup(func() { client.ensureStopped(t) })
 
-				joined := false
-				for attempt := 1; attempt <= connectAttempts && !joined; attempt++ {
-					client.ensureStopped(t)
-
-					client.post(t, "/api/game/start/vanilla", map[string]any{
-						"version":   name,
-						"arguments": []string{"--username", usernameFor(name)},
-					})
-					client.awaitState(t, "ready", launchTimeout)
-
-					// Dropping the request is what cancels a connect the
-					// container has wedged on, which is why this one call
-					// carries its own deadline rather than the client's.
-					err := client.tryConnect(serverHostFromContainer, port, connectTimeout)
-					if err == nil {
-						joined = true
-						break
-					}
-
-					t.Logf("connect attempt %d of %d: %v", attempt, connectAttempts, err)
-				}
-
-				if !joined {
-					t.Fatalf("no game session joined in %d attempts; last status: %s", connectAttempts, describe(client.status(t)))
-				}
-
-				client.awaitState(t, "connected", connectTimeout)
+				client.joinLimbo(t, name, usernameFor(name), port)
 
 				// A client that failed the configuration phase, choked on a
 				// mistransformed packet, or missed its keep alives would be
@@ -132,6 +122,91 @@ func TestEveryVersionJoinsWithARealClient(t *testing.T) {
 					t.Fatalf("the client did not stay connected: %s", describe(status))
 				}
 			})
+		}
+	}
+}
+
+// TestPositionSyncsBetweenTwoRealClients has two genuine clients join the same
+// limbo -- the oldest and the newest release it speaks, so every transformer
+// step is crossed in both directions -- and reads each client's own picture of
+// the world back over the live players API. Each must see the other, by name
+// and at a position.
+//
+// The movement half needs nobody at the controls: this limbo serves no world,
+// so once a client's wait for its spawn chunk times out, its player falls into
+// the void, streaming genuine move packets the whole way down. The other
+// client's view of that player falling is the position sync demonstrably
+// relaying; were it broken, the view would sit frozen wherever the spawn
+// packet put it.
+//
+// Two containers, because each runs one game at a time.
+func TestPositionSyncsBetweenTwoRealClients(t *testing.T) {
+	port := startLimbo(t)
+
+	elder := startClientContainer(t)
+	younger := startClientContainer(t)
+
+	t.Cleanup(func() { elder.ensureStopped(t) })
+	t.Cleanup(func() { younger.ensureStopped(t) })
+
+	const (
+		elderName   = "e2eSyncElder"
+		youngerName = "e2eSyncYoung"
+	)
+
+	elder.joinLimbo(t, "1.21.6", elderName, port)
+	younger.joinLimbo(t, "26.2", youngerName, port)
+
+	// Each side is shown exactly the other: the join that worked puts one
+	// remote player on each client's list, under the name the other logged in
+	// as. What the name proves is the player info entry; the position beside
+	// it is the spawn.
+	elderView := elder.awaitRemotePlayer(t, youngerName, playersTimeout)
+	youngerView := younger.awaitRemotePlayer(t, elderName, playersTimeout)
+
+	t.Logf("the 1.21.6 client sees %q at %+v; the 26.2 client sees %q at %+v",
+		youngerName, elderView.Position, elderName, youngerView.Position)
+
+	// The elder joined first and has been falling since its chunk wait timed
+	// out, so its position sinks on the younger's screen from one look to the
+	// next. Ten blocks over this window is a fraction of a real fall and far
+	// beyond any jitter, and a relay that stopped would show exactly zero.
+	before := younger.remotePlayer(t, elderName)
+	time.Sleep(fallWindow)
+	after := younger.remotePlayer(t, elderName)
+
+	if drop := before.Position.Y - after.Position.Y; drop < minObservedFall {
+		t.Errorf("the elder player fell %g blocks on the younger's screen over %v, want at least %g: moves are not being relayed",
+			drop, fallWindow, minObservedFall)
+	}
+
+	// And what each client shows is where the other actually is, read
+	// back-to-back from both APIs. The tolerance covers the moments between
+	// the two reads -- a falling player covers ground quickly -- while staying
+	// far under the thousands of blocks a frozen view would be off by.
+	for _, side := range []struct {
+		name     string
+		observer *voidClient
+		subject  *voidClient
+	}{
+		{name: elderName, observer: younger, subject: elder},
+		{name: youngerName, observer: elder, subject: younger},
+	} {
+		seen := side.observer.remotePlayer(t, side.name).Position
+		actual := side.subject.localPlayer(t).Position
+
+		if diff := seen.Y - actual.Y; diff > positionTolerance || diff < -positionTolerance {
+			t.Errorf("%s is shown at y=%g but stands at y=%g", side.name, seen.Y, actual.Y)
+		}
+
+		// Nothing moves a falling player sideways, so the horizontal
+		// coordinates are the spawn's to within a step.
+		if dx := seen.X - actual.X; dx > 1 || dx < -1 {
+			t.Errorf("%s is shown at x=%g but stands at x=%g", side.name, seen.X, actual.X)
+		}
+
+		if dz := seen.Z - actual.Z; dz > 1 || dz < -1 {
+			t.Errorf("%s is shown at z=%g but stands at z=%g", side.name, seen.Z, actual.Z)
 		}
 	}
 }
@@ -341,6 +416,146 @@ func (c *voidClient) tryConnect(host string, port int, timeout time.Duration) er
 	}
 
 	return nil
+}
+
+// joinLimbo drives one full join: launch the named release, connect it to the
+// limbo on port, and wait until the session reports connected. The menu-driving
+// flake and its recovery -- a fresh game, not a second ask -- live here so
+// every test joins the same way.
+func (c *voidClient) joinLimbo(t *testing.T, version, username string, port int) {
+	t.Helper()
+
+	joined := false
+	for attempt := 1; attempt <= connectAttempts && !joined; attempt++ {
+		c.ensureStopped(t)
+
+		c.post(t, "/api/game/start/vanilla", map[string]any{
+			"version":   version,
+			"arguments": []string{"--username", username},
+		})
+		c.awaitState(t, "ready", launchTimeout)
+
+		// Dropping the request is what cancels a connect the container has
+		// wedged on, which is why this one call carries its own deadline
+		// rather than the client's.
+		err := c.tryConnect(serverHostFromContainer, port, connectTimeout)
+		if err == nil {
+			joined = true
+			break
+		}
+
+		t.Logf("connect attempt %d of %d: %v", attempt, connectAttempts, err)
+	}
+
+	if !joined {
+		t.Fatalf("no game session joined in %d attempts; last status: %s", connectAttempts, describe(c.status(t)))
+	}
+
+	c.awaitState(t, "connected", connectTimeout)
+}
+
+// The shapes /api/game/players answers with, down to the fields the tests
+// read: the client's own player, and everyone else it can see in its world.
+type playerPosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	Z float64 `json:"z"`
+}
+
+type livePlayer struct {
+	Uuid     string         `json:"uuid"`
+	Name     string         `json:"name"`
+	Position playerPosition `json:"position"`
+}
+
+type livePlayers struct {
+	Local  livePlayer   `json:"local"`
+	Remote []livePlayer `json:"remote"`
+}
+
+// players asks the client who is in its world right now. It reports an error
+// rather than failing the test, because the API refuses the question for a
+// moment around a join, and the callers that poll want to ride that out.
+func (c *voidClient) players() (livePlayers, error) {
+	resp, err := c.http.Get(c.baseURL + "/api/game/players")
+	if err != nil {
+		return livePlayers{}, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		answer, _ := io.ReadAll(resp.Body)
+		return livePlayers{}, fmt.Errorf("players answered %s: %s", resp.Status, answer)
+	}
+
+	var players livePlayers
+	if err := json.NewDecoder(resp.Body).Decode(&players); err != nil {
+		return livePlayers{}, fmt.Errorf("decoding the players: %w", err)
+	}
+
+	return players, nil
+}
+
+// localPlayer is the client's own player, right now.
+func (c *voidClient) localPlayer(t *testing.T) livePlayer {
+	t.Helper()
+
+	players, err := c.players()
+	if err != nil {
+		t.Fatalf("asking the client about its world: %v", err)
+	}
+
+	return players.Local
+}
+
+// remotePlayer is the one player named name in the client's world, right now.
+// Any other crowd -- nobody, somebody else, or more than one -- is a failure,
+// because the tests using this put exactly two players on the server.
+func (c *voidClient) remotePlayer(t *testing.T, name string) livePlayer {
+	t.Helper()
+
+	players, err := c.players()
+	if err != nil {
+		t.Fatalf("asking the client about its world: %v", err)
+	}
+
+	if len(players.Remote) != 1 || players.Remote[0].Name != name {
+		t.Fatalf("the client sees %+v, want exactly %q", players.Remote, name)
+	}
+
+	return players.Remote[0]
+}
+
+// awaitRemotePlayer polls until the client sees exactly one other player,
+// named name, and returns that sighting. On the way to it the API may refuse
+// the question, know of nobody, or -- briefly, around the spawn packets --
+// hold an entry whose entity has not appeared yet; all of that is waited out,
+// and only the deadline turns it into an answer about the sync being broken.
+func (c *voidClient) awaitRemotePlayer(t *testing.T, name string, timeout time.Duration) livePlayer {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	last := "no answer yet"
+
+	for time.Now().Before(deadline) {
+		players, err := c.players()
+
+		switch {
+		case err != nil:
+			last = err.Error()
+		case len(players.Remote) == 1 && players.Remote[0].Name == name:
+			return players.Remote[0]
+		default:
+			last = fmt.Sprintf("sees %+v", players.Remote)
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	t.Fatalf("the client never saw %q within %v; last: %s", name, timeout, last)
+
+	return livePlayer{}
 }
 
 func (c *voidClient) status(t *testing.T) gameStatus {
