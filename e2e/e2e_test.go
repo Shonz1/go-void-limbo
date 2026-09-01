@@ -79,15 +79,16 @@ const connectAttempts = 3
 // What the position sync test waits for and settles for.
 //
 // A joined client waits thirty seconds for its spawn chunk before giving its
-// player to gravity, so playersTimeout has to reach past that wait as well as
-// the polling in front of it. The fall itself covers about seventy-eight
-// blocks a second at terminal velocity, which is what makes the two bounds
-// below undemanding: a relayed fall sails past minObservedFall inside a
-// second, and a frozen view misses positionTolerance by thousands after the
-// minutes a session runs.
+// player to gravity, which is what roamerFallTimeout has to sit through and
+// what the anchor -- falling since the suite began -- never makes anyone
+// wait for again. The fall covers about seventy-eight blocks a second at
+// terminal velocity, which is what makes the bounds undemanding: a relayed
+// fall sails past minObservedFall inside a second, and a frozen view misses
+// positionTolerance by thousands after the minutes a session runs.
 const (
 	playersTimeout    = 2 * time.Minute
-	fallWindow        = 15 * time.Second
+	anchorFallTimeout = time.Minute
+	roamerFallTimeout = 2 * time.Minute
 	minObservedFall   = 10.0
 	positionTolerance = 256.0
 )
@@ -126,87 +127,106 @@ func TestEveryVersionJoinsWithARealClient(t *testing.T) {
 	}
 }
 
-// TestPositionSyncsBetweenTwoRealClients has two genuine clients join the same
-// limbo -- the oldest and the newest release it speaks, so every transformer
-// step is crossed in both directions -- and reads each client's own picture of
-// the world back over the live players API. Each must see the other, by name
-// and at a position.
+// anchorUsername is the name the position sync test's fixed observer logs in
+// under, distinct from anything usernameFor produces.
+const anchorUsername = "e2eSyncAnchor"
+
+// TestPositionSyncsWithEveryVersion proves the player sync against the real
+// client of every release this server speaks. One client on the latest
+// release -- the anchor -- joins once and stays; the genuine client of each
+// version then joins beside it, and each side's own picture of the world is
+// read back over the live players API. Both directions are checked for every
+// version: the version under test must see the anchor by name and watch it
+// move, the anchor must see the version's player and watch it move, each must
+// be shown where the other actually is, and the version leaving must take its
+// player back off the anchor's screen.
 //
-// The movement half needs nobody at the controls: this limbo serves no world,
-// so once a client's wait for its spawn chunk times out, its player falls into
-// the void, streaming genuine move packets the whole way down. The other
-// client's view of that player falling is the position sync demonstrably
-// relaying; were it broken, the view would sit frozen wherever the spawn
-// packet put it.
+// The movement needs nobody at the controls: this limbo serves no world, so
+// once a client's wait for its spawn chunk times out, its player falls into
+// the void, streaming genuine move packets the whole way down. The anchor has
+// been falling since the suite began, so its motion shows on a fresh client's
+// screen at once; the fresh client's own fall starts once its chunk wait
+// times out, which is what the longer of the two timeouts sits through. Were
+// the relay broken, a view would sit frozen wherever the spawn packet put it.
 //
-// Two containers, because each runs one game at a time.
-func TestPositionSyncsBetweenTwoRealClients(t *testing.T) {
+// Two containers, because each runs one game at a time: the anchor holds one,
+// and every version under test cycles through the other.
+func TestPositionSyncsWithEveryVersion(t *testing.T) {
 	port := startLimbo(t)
 
-	elder := startClientContainer(t)
-	younger := startClientContainer(t)
+	anchor := startClientContainer(t)
+	roamer := startClientContainer(t)
 
-	t.Cleanup(func() { elder.ensureStopped(t) })
-	t.Cleanup(func() { younger.ensureStopped(t) })
+	t.Cleanup(func() { anchor.ensureStopped(t) })
+	t.Cleanup(func() { roamer.ensureStopped(t) })
 
-	const (
-		elderName   = "e2eSyncElder"
-		youngerName = "e2eSyncYoung"
-	)
+	anchor.joinLimbo(t, types.LatestProtocolVersion.Names[len(types.LatestProtocolVersion.Names)-1], anchorUsername, port)
 
-	elder.joinLimbo(t, "1.21.6", elderName, port)
-	younger.joinLimbo(t, "26.2", youngerName, port)
+	for _, version := range types.SupportedProtocolVersions {
+		for _, name := range version.Names {
+			t.Run(name, func(t *testing.T) {
+				t.Cleanup(func() { roamer.ensureStopped(t) })
 
-	// Each side is shown exactly the other: the join that worked puts one
-	// remote player on each client's list, under the name the other logged in
-	// as. What the name proves is the player info entry; the position beside
-	// it is the spawn.
-	elderView := elder.awaitRemotePlayer(t, youngerName, playersTimeout)
-	youngerView := younger.awaitRemotePlayer(t, elderName, playersTimeout)
+				// Every subtest leans on the one anchor, so an anchor that
+				// fell off the server fails loudly here rather than as ten
+				// mysteries.
+				if status := anchor.status(t); status.State != "connected" {
+					t.Fatalf("the anchor is no longer connected: %s", describe(status))
+				}
 
-	t.Logf("the 1.21.6 client sees %q at %+v; the 26.2 client sees %q at %+v",
-		youngerName, elderView.Position, elderName, youngerView.Position)
+				username := usernameFor(name)
+				roamer.joinLimbo(t, name, username, port)
 
-	// The elder joined first and has been falling since its chunk wait timed
-	// out, so its position sinks on the younger's screen from one look to the
-	// next. Ten blocks over this window is a fraction of a real fall and far
-	// beyond any jitter, and a relay that stopped would show exactly zero.
-	before := younger.remotePlayer(t, elderName)
-	time.Sleep(fallWindow)
-	after := younger.remotePlayer(t, elderName)
+				// Each side is shown exactly the other, under the name it
+				// logged in as. The name proves the player info entry; the
+				// position beside it is the spawn.
+				roamer.awaitRemotePlayer(t, anchorUsername, playersTimeout)
+				anchor.awaitRemotePlayer(t, username, playersTimeout)
 
-	if drop := before.Position.Y - after.Position.Y; drop < minObservedFall {
-		t.Errorf("the elder player fell %g blocks on the younger's screen over %v, want at least %g: moves are not being relayed",
-			drop, fallWindow, minObservedFall)
-	}
+				// The anchor's endless fall shows on this version's screen
+				// almost at once, and this version's own fall shows on the
+				// anchor's once its chunk wait times out.
+				roamer.awaitRemoteFall(t, anchorUsername, anchorFallTimeout)
+				anchor.awaitRemoteFall(t, username, roamerFallTimeout)
 
-	// And what each client shows is where the other actually is, read
-	// back-to-back from both APIs. The tolerance covers the moments between
-	// the two reads -- a falling player covers ground quickly -- while staying
-	// far under the thousands of blocks a frozen view would be off by.
-	for _, side := range []struct {
-		name     string
-		observer *voidClient
-		subject  *voidClient
-	}{
-		{name: elderName, observer: younger, subject: elder},
-		{name: youngerName, observer: elder, subject: younger},
-	} {
-		seen := side.observer.remotePlayer(t, side.name).Position
-		actual := side.subject.localPlayer(t).Position
+				// And what each client shows is where the other actually is,
+				// read back-to-back from both APIs. The tolerance covers the
+				// moments between the two reads -- a falling player covers
+				// ground quickly -- while staying far under the thousands of
+				// blocks a frozen view would be off by.
+				for _, side := range []struct {
+					name     string
+					observer *voidClient
+					subject  *voidClient
+				}{
+					{name: anchorUsername, observer: roamer, subject: anchor},
+					{name: username, observer: anchor, subject: roamer},
+				} {
+					seen := side.observer.remotePlayer(t, side.name).Position
+					actual := side.subject.localPlayer(t).Position
 
-		if diff := seen.Y - actual.Y; diff > positionTolerance || diff < -positionTolerance {
-			t.Errorf("%s is shown at y=%g but stands at y=%g", side.name, seen.Y, actual.Y)
-		}
+					t.Logf("%s is shown at %+v and stands at %+v", side.name, seen, actual)
 
-		// Nothing moves a falling player sideways, so the horizontal
-		// coordinates are the spawn's to within a step.
-		if dx := seen.X - actual.X; dx > 1 || dx < -1 {
-			t.Errorf("%s is shown at x=%g but stands at x=%g", side.name, seen.X, actual.X)
-		}
+					if diff := seen.Y - actual.Y; diff > positionTolerance || diff < -positionTolerance {
+						t.Errorf("%s is shown at y=%g but stands at y=%g", side.name, seen.Y, actual.Y)
+					}
 
-		if dz := seen.Z - actual.Z; dz > 1 || dz < -1 {
-			t.Errorf("%s is shown at z=%g but stands at z=%g", side.name, seen.Z, actual.Z)
+					// Nothing moves a falling player sideways, so the
+					// horizontal coordinates are the spawn's to within a step.
+					if dx := seen.X - actual.X; dx > 1 || dx < -1 {
+						t.Errorf("%s is shown at x=%g but stands at x=%g", side.name, seen.X, actual.X)
+					}
+
+					if dz := seen.Z - actual.Z; dz > 1 || dz < -1 {
+						t.Errorf("%s is shown at z=%g but stands at z=%g", side.name, seen.Z, actual.Z)
+					}
+				}
+
+				// Leaving is half the sync too: the player has to come back
+				// off the anchor's screen, list and world both.
+				roamer.ensureStopped(t)
+				anchor.awaitAlone(t, playersTimeout)
+			})
 		}
 	}
 }
@@ -556,6 +576,71 @@ func (c *voidClient) awaitRemotePlayer(t *testing.T, name string, timeout time.D
 	t.Fatalf("the client never saw %q within %v; last: %s", name, timeout, last)
 
 	return livePlayer{}
+}
+
+// awaitRemoteFall polls until the player named name has sunk minObservedFall
+// blocks below where this client first showed it. That drop appearing on this
+// client's screen is another client's move packets demonstrably crossing the
+// relay; a view that never sinks is a relay that stopped at the spawn packet.
+func (c *voidClient) awaitRemoteFall(t *testing.T, name string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	baseline, sighted := 0.0, false
+	last := "no sighting yet"
+
+	for time.Now().Before(deadline) {
+		players, err := c.players()
+
+		switch {
+		case err != nil:
+			last = err.Error()
+		case len(players.Remote) == 1 && players.Remote[0].Name == name:
+			y := players.Remote[0].Position.Y
+
+			if !sighted {
+				baseline, sighted = y, true
+			}
+
+			if baseline-y >= minObservedFall {
+				return
+			}
+
+			last = fmt.Sprintf("fallen %g of %g blocks", baseline-y, minObservedFall)
+		default:
+			last = fmt.Sprintf("sees %+v", players.Remote)
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	t.Fatalf("%q never fell %g blocks on this client's screen within %v; last: %s", name, minObservedFall, timeout, last)
+}
+
+// awaitAlone polls until the client sees no other players at all, which is
+// what a departed player has to leave behind.
+func (c *voidClient) awaitAlone(t *testing.T, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	last := "no answer yet"
+
+	for time.Now().Before(deadline) {
+		players, err := c.players()
+
+		switch {
+		case err != nil:
+			last = err.Error()
+		case len(players.Remote) == 0:
+			return
+		default:
+			last = fmt.Sprintf("still sees %+v", players.Remote)
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	t.Fatalf("the client was never alone again within %v; last: %s", timeout, last)
 }
 
 func (c *voidClient) status(t *testing.T) gameStatus {
