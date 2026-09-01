@@ -4,6 +4,7 @@
 package server
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"sync"
@@ -98,9 +99,17 @@ func (s *Server) ListenAndServe(address string) error {
 		return err
 	}
 
+	return s.Serve(listener)
+}
+
+// Serve serves every connection that arrives on listener, each on a goroutine
+// of its own, until the listener fails or is closed. Taking the listener rather
+// than an address lets the caller be the one that chose the port -- a test
+// binds port zero and reads back what it got before the server is asked to run.
+func (s *Server) Serve(listener net.Listener) error {
 	defer listener.Close()
 
-	slog.Info("TCP server is running", "address", address)
+	slog.Info("TCP server is running", "address", listener.Addr().String())
 
 	// One clock serves every connection its keep alives. A ticker and a
 	// goroutine per connection would each wake the scheduler once per interval,
@@ -126,6 +135,13 @@ func (s *Server) ListenAndServe(address string) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			// A closed listener is the caller ending the serving, not a
+			// connection that failed to arrive, and every Accept after it
+			// would fail the same way forever.
+			if errors.Is(err, net.ErrClosed) {
+				return err
+			}
+
 			slog.Error("failed to accept connection", "err", err)
 			continue
 		}
