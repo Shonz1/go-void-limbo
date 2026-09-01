@@ -79,6 +79,22 @@ type Config struct {
 	// that has none to show, which is the void this server is named for.
 	World WorldProvider
 
+	// EntityId is the id the play phase gives this connection's player, unique
+	// among every connection the server accepts for as long as it runs.
+	EntityId int32
+
+	// GameMode is the mode this connection's player is put in, which the
+	// operator chose for the server. The zero value is survival, the way the
+	// protocol numbers the modes; the creative default this server ships with
+	// comes from package config rather than from here.
+	GameMode types.GameMode
+
+	// PlayerSync is the roster this player joins on reaching the world, shared
+	// by every connection so the players on it can be shown each other. Nil
+	// leaves each player alone in the world, which is what a test that built a
+	// client by hand gets.
+	PlayerSync *PlayerSync
+
 	// KeyPair and SessionServer are shared by every connection: one key is
 	// generated for the process, and one client talks to Mojang for all of them.
 	KeyPair       *auth.KeyPair
@@ -112,6 +128,14 @@ type Client struct {
 	// none. The pointer is handed over when the connection is accepted and
 	// never changes.
 	world WorldProvider
+
+	// entityId, gameMode and playerSync are this player's standing among the
+	// others: the id everything names its entity by, the mode it plays in,
+	// and the roster it joins on reaching the world. All are handed over when
+	// the connection is accepted and never change.
+	entityId   int32
+	gameMode   types.GameMode
+	playerSync *PlayerSync
 
 	// status is what a ping on this connection is answered from. The pointer is
 	// handed over when the connection is accepted and never changes.
@@ -147,6 +171,21 @@ type Client struct {
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
 	profile         types.GameProfile
+
+	// Where this connection's player is and how it stands, per the move and
+	// input packets it sent, so a player joining later can be shown everyone
+	// mid-pose rather than piled at the spawn.
+	x, y, z    float64
+	yaw, pitch float32
+	onGround   bool
+	sneaking   bool
+	sprinting  bool
+
+	// shownPlayers is the other players this connection has been shown, by
+	// entity id. It is this connection's record rather than anything global,
+	// and every spawn, removal and relay checks it under the same lock the
+	// packets go out under, so what the client was told always matches it.
+	shownPlayers map[int32]struct{}
 
 	// forwardedLogin is the account a proxy vouched for, and forwarded says
 	// whether one arrived at all. A BungeeCord proxy writes it into the
@@ -212,6 +251,9 @@ func New(conn net.Conn, cfg Config) *Client {
 		packetRegistry:    cfg.PacketRegistry,
 		gameRegistries:    cfg.GameData,
 		world:             cfg.World,
+		entityId:          cfg.EntityId,
+		gameMode:          cfg.GameMode,
+		playerSync:        cfg.PlayerSync,
 		keyPair:           cfg.KeyPair,
 		sessionServer:     cfg.SessionServer,
 		status:            cfg.Status,
@@ -561,10 +603,17 @@ func (c *Client) SetPhase(phase types.Phase) {
 // anywhere else never arrived.
 func (c *Client) LeavePlay() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.phase == types.PhasePlay {
+	left := c.phase == types.PhasePlay
+	if left {
 		c.status.PlayerLeft()
+	}
+	c.mu.Unlock()
+
+	// The roster is left off this connection's lock: taking a player off it
+	// writes to every other connection, and each of those writes takes the
+	// other connection's lock of its own.
+	if left {
+		c.leavePlayerSync()
 	}
 }
 

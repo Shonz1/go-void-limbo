@@ -877,8 +877,8 @@ func TestWritePacketCarriesTheBodyDownToTheClientVersion(t *testing.T) {
 			OnlineMode:         true,
 			SpawnInfo: clientboundPlay.SpawnInfo{
 				Dimension:        "minecraft:overworld",
-				GameMode:         clientboundPlay.GameModeSpectator,
-				PreviousGameMode: clientboundPlay.GameModeNone,
+				GameMode:         types.GameModeSpectator,
+				PreviousGameMode: types.GameModeNone,
 			},
 		}
 	}

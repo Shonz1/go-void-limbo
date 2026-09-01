@@ -176,29 +176,49 @@ var serverboundPackets = []serverboundPacket{
 		decoder: serverboundPlay.DecodeClientTickEndServerboundPacket,
 		ids:     packetIds{protocol1_21_6: 0x0C, protocol1_21_7: 0x0C, protocol1_21_9: 0x0C, protocol1_21_11: 0x0C, protocol26_1: 0x0D, protocol26_2: 0x0D},
 	},
+	// The move player packets feed the player sync: what each one reports is
+	// recorded and relayed to the other players.
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerPositionServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerPositionServerboundPacket,
+		handler: handlers.HandleMovePlayerPositionServerboundPacket,
 		ids:     packetIds{protocol1_21_6: 0x1D, protocol1_21_7: 0x1D, protocol1_21_9: 0x1D, protocol1_21_11: 0x1D, protocol26_1: 0x1E, protocol26_2: 0x1E},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerPositionRotationServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerPositionRotationServerboundPacket,
+		handler: handlers.HandleMovePlayerPositionRotationServerboundPacket,
 		ids:     packetIds{protocol1_21_6: 0x1E, protocol1_21_7: 0x1E, protocol1_21_9: 0x1E, protocol1_21_11: 0x1E, protocol26_1: 0x1F, protocol26_2: 0x1F},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerRotationServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerRotationServerboundPacket,
+		handler: handlers.HandleMovePlayerRotationServerboundPacket,
 		ids:     packetIds{protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x1F, protocol1_21_11: 0x1F, protocol26_1: 0x20, protocol26_2: 0x20},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerStatusServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerStatusServerboundPacket,
+		handler: handlers.HandleMovePlayerStatusServerboundPacket,
 		ids:     packetIds{protocol1_21_6: 0x20, protocol1_21_7: 0x20, protocol1_21_9: 0x20, protocol1_21_11: 0x20, protocol26_1: 0x21, protocol26_2: 0x21},
+	},
+	{
+		phase:   types.PhasePlay,
+		packet:  reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}),
+		decoder: serverboundPlay.DecodePlayerInputServerboundPacket,
+		handler: handlers.HandlePlayerInputServerboundPacket,
+		ids:     packetIds{protocol1_21_6: 0x2A, protocol1_21_7: 0x2A, protocol1_21_9: 0x2A, protocol1_21_11: 0x2A, protocol26_1: 0x2B, protocol26_2: 0x2B},
+	},
+	{
+		phase:   types.PhasePlay,
+		packet:  reflect.TypeOf(serverboundPlay.SwingServerboundPacket{}),
+		decoder: serverboundPlay.DecodeSwingServerboundPacket,
+		handler: handlers.HandleSwingServerboundPacket,
+		ids:     packetIds{protocol1_21_6: 0x3C, protocol1_21_7: 0x3C, protocol1_21_9: 0x3C, protocol1_21_11: 0x3C, protocol26_1: 0x3F, protocol26_2: 0x3F},
 	},
 	{
 		phase:   types.PhasePlay,
@@ -273,6 +293,21 @@ var clientboundPackets = []clientboundPacket{
 
 	{
 		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01},
+	},
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.AnimateClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02},
+	},
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.EntityPositionSyncClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x23, protocol1_21_11: 0x23, protocol26_1: 0x23, protocol26_2: 0x23},
+	},
+	{
+		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}),
 		ids:    packetIds{protocol1_21_6: 0x22, protocol1_21_7: 0x22, protocol1_21_9: 0x26, protocol1_21_11: 0x26, protocol26_1: 0x26, protocol26_2: 0x26},
 	},
@@ -298,6 +333,11 @@ var clientboundPackets = []clientboundPacket{
 	},
 	{
 		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.PlayerInfoRemoveClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x3E, protocol1_21_7: 0x3E, protocol1_21_9: 0x43, protocol1_21_11: 0x43, protocol26_1: 0x45, protocol26_2: 0x45},
+	},
+	{
+		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}),
 		ids:    packetIds{protocol1_21_6: 0x3F, protocol1_21_7: 0x3F, protocol1_21_9: 0x44, protocol1_21_11: 0x44, protocol26_1: 0x46, protocol26_2: 0x46},
 	},
@@ -308,8 +348,23 @@ var clientboundPackets = []clientboundPacket{
 	},
 	{
 		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x46, protocol1_21_7: 0x46, protocol1_21_9: 0x4B, protocol1_21_11: 0x4B, protocol26_1: 0x4D, protocol26_2: 0x4D},
+	},
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.RotateHeadClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x4C, protocol1_21_7: 0x4C, protocol1_21_9: 0x51, protocol1_21_11: 0x51, protocol26_1: 0x53, protocol26_2: 0x53},
+	},
+	{
+		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.SetChunkCacheCenterClientboundPacket{}),
 		ids:    packetIds{protocol1_21_6: 0x57, protocol1_21_7: 0x57, protocol1_21_9: 0x5C, protocol1_21_11: 0x5C, protocol26_1: 0x5E, protocol26_2: 0x5E},
+	},
+	{
+		phase:  types.PhasePlay,
+		packet: reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}),
+		ids:    packetIds{protocol1_21_6: 0x5C, protocol1_21_7: 0x5C, protocol1_21_9: 0x61, protocol1_21_11: 0x61, protocol26_1: 0x63, protocol26_2: 0x63},
 	},
 }
 
@@ -341,35 +396,40 @@ func registerPackets(packetRegistry *Registry) {
 	registerTransformers(packetRegistry)
 }
 
-// registerTransformers records every packet whose shape differs between two
+// registerTransformers records every packet whose body differs between two
 // neighbouring versions, and how to carry it across.
 //
 // A transformer is registered against the version its input is at: an upgrade
 // from the version the client sent, and a downgrade from the version the server
 // encoded at. A packet with nothing registered for a step crosses it untouched,
-// which is what all but the one below do.
-// Two packets differ in shape between 26.1 and 26.2, and both are 26.2 adding a
-// field to the end of something. Every other packet this server speaks is
-// identical in the two, which is checked against the client's own classes rather
-// than assumed.
+// which is what all but the few below do.
 //
-// The 1.21.11 step registers nothing at all: of everything this server speaks,
-// checked the same way, the only shape 26.1 changed is inside the chunk
-// packet's section data -- 26.1 added a fluid count to each section -- and
-// chunk packets never cross versions, because package world builds one per
-// version before anything is sent.
+// The 26.2 step carries three packets. Two are 26.2 adding a field to the end
+// of something -- the login success and the play login -- and the third is the
+// add entity packet, whose entity type field 26.2's registry additions
+// renumbered. Every other packet this server speaks is identical in the two,
+// which is checked against the client's own classes rather than assumed.
 //
-// The 1.21.9 step registers nothing either, and does not even renumber: 774
-// changed no shape and no id this server touches. What earned 774 its bump is
-// all data -- the reworked dimension type and biome schema, and two new
-// synchronized registries -- which is package gamedata's job, not a
-// transformer's.
+// The 1.21.11 step carries only the add entity packet, for the registry
+// renumbering again: 26.1 numbers entity types as 1.21.11 does, and 1.21.9
+// does not. Of everything else this server speaks, the only shape 26.1
+// changed is inside the chunk packet's section data -- 26.1 added a fluid
+// count to each section -- and chunk packets never cross versions, because
+// package world builds one per version before anything is sent. The rest of
+// 774's bump is all data -- the reworked dimension type and biome schema, and
+// two new synchronized registries -- which is package gamedata's job.
 //
-// The 1.21.7 step registers nothing as well, checked the same way: every
-// packet this server speaks is wire-identical in 772 and 773. It does
-// renumber, though -- the clientbound play packets 773 added shifted seven
-// ids this server sends -- and the rest of the bump is data again, all of it
-// from 1.21.7's own jar.
+// The 1.21.9 step carries two. The add entity packet changed shape there --
+// 1.21.9 turned the three velocity shorts at the end into a quantized vector
+// in the middle -- on top of the registry renumbering. And the set entity
+// data packet names the pose serializer by its spot in a registry 1.21.9
+// removed an entry from, so the number moves back up on the way down.
+//
+// The 1.21.7 step registers nothing, checked the same way: every packet this
+// server speaks is wire-identical in 772 and 773, entity packets included. It
+// does renumber packet ids, though -- the clientbound play packets 773 added
+// shifted seven ids this server sends -- and the rest of the bump is data
+// again, all of it from 1.21.7's own jar.
 func registerTransformers(packetRegistry *Registry) {
 	// 26.2 appended a session id to the login success packet.
 	packetRegistry.RegisterDowngrade(
@@ -385,5 +445,39 @@ func registerTransformers(packetRegistry *Registry) {
 		types.ProtocolVersions.MINECRAFT_26_2,
 		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}),
 		transformers.DowngradePlayLoginTo26_1,
+	)
+
+	// The add entity packet names the player in each version's own entity type
+	// registry, which 26.2's additions renumbered.
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_26_2,
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}),
+		transformers.DowngradeAddEntityTo26_1,
+	)
+
+	// 1.21.11's registry additions renumbered the player too; 26.1 numbers it
+	// as 1.21.11 does.
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_21_11,
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}),
+		transformers.DowngradeAddEntityTo1_21_9,
+	)
+
+	// 1.21.9 reworked the add entity packet's velocity on top of renumbering
+	// the player, and removed a metadata serializer that sat before the pose.
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_21_9,
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}),
+		transformers.DowngradeAddEntityTo1_21_7,
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_21_9,
+		reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}),
+		transformers.DowngradeSetEntityDataTo1_21_7,
 	)
 }

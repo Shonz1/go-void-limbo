@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/Shonz1/go-void-limbo/types"
 )
 
 func TestEncryptionEnabled(t *testing.T) {
@@ -113,6 +115,42 @@ func TestForwardingSecret(t *testing.T) {
 			// what the connection reads as having no proxy in front of it.
 			if test.want == "" && got != nil {
 				t.Errorf("ForwardingSecret(%q) = %q, want no secret at all", test.argument, got)
+			}
+		})
+	}
+}
+
+func TestGameMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  types.GameMode
+	}{
+		// Nothing said is creative: a limbo is a place to wait, and creative
+		// is the mode that lets a player fly around while doing it.
+		{name: "unset", set: false, want: types.GameModeCreative},
+		{name: "survival", value: "survival", set: true, want: types.GameModeSurvival},
+		{name: "creative", value: "creative", set: true, want: types.GameModeCreative},
+		{name: "adventure", value: "adventure", set: true, want: types.GameModeAdventure},
+		{name: "spectator", value: "spectator", set: true, want: types.GameModeSpectator},
+		// The name however the operator capitalized it.
+		{name: "uppercase", value: "SPECTATOR", set: true, want: types.GameModeSpectator},
+		// A value nobody can read falls back rather than refusing to start.
+		{name: "nonsense", value: "hardcore", set: true, want: types.GameModeCreative},
+		{name: "empty", value: "", set: true, want: types.GameModeCreative},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GAME_MODE", test.value)
+
+			if !test.set {
+				os.Unsetenv("GAME_MODE")
+			}
+
+			if got := GameMode(); got != test.want {
+				t.Errorf("GameMode() = %s, want %s", got, test.want)
 			}
 		})
 	}

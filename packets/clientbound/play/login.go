@@ -4,40 +4,9 @@ package play
 import (
 	"fmt"
 	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
 	"strings"
 )
-
-// GameMode is how the client is allowed to interact with the world.
-type GameMode int8
-
-const (
-	GameModeSurvival  GameMode = 0
-	GameModeCreative  GameMode = 1
-	GameModeAdventure GameMode = 2
-	GameModeSpectator GameMode = 3
-
-	// GameModeNone is the absent value, which the previous game mode takes when
-	// the client has not been in one yet. It is not a mode the client can be
-	// put into: the client reads it as null and leaves its previous mode unset.
-	GameModeNone GameMode = -1
-)
-
-func (g GameMode) String() string {
-	switch g {
-	case GameModeSurvival:
-		return "survival"
-	case GameModeCreative:
-		return "creative"
-	case GameModeAdventure:
-		return "adventure"
-	case GameModeSpectator:
-		return "spectator"
-	case GameModeNone:
-		return "none"
-	default:
-		return fmt.Sprintf("GameMode(%d)", int8(g))
-	}
-}
 
 // BlockPos is a block coordinate.
 type BlockPos struct {
@@ -94,11 +63,11 @@ type SpawnInfo struct {
 	// limbo without terrain has none of.
 	HashedSeed int64
 
-	GameMode GameMode
+	GameMode types.GameMode
 
 	// PreviousGameMode is GameModeNone on a fresh join, since there is no
 	// earlier mode to return to.
-	PreviousGameMode GameMode
+	PreviousGameMode types.GameMode
 
 	IsDebug bool
 	IsFlat  bool

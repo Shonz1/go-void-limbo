@@ -59,6 +59,17 @@ func DowngradeLoginSuccessTo26_1(in *streams.MinecraftStream, out *streams.Minec
 	return err
 }
 
+// DowngradeAddEntityTo26_1 rewrites the add entity packet from what 26.2 sends
+// into what 26.1 reads.
+//
+// The packet's shape is identical in the two; what moved is the entity type
+// registry behind one of its fields, where 26.2's additions renumbered the
+// player. The only entity this server ever spawns is a player, so the one id
+// is the whole mapping.
+func DowngradeAddEntityTo26_1(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	return downgradeAddEntityType(in, out, playerEntityType26_2, playerEntityType26_1)
+}
+
 // DowngradePlayLoginTo26_1 rewrites the play phase login packet from what 26.2
 // sends into what 26.1 reads.
 //

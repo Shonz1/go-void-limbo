@@ -39,7 +39,7 @@ func TestPlayerInfoUpdateClientboundPacketEncodeJoin(t *testing.T) {
 		Entries: []PlayerInfoEntry{
 			{
 				Profile:  types.GameProfile{Uuid: "01020304-0506-0708-090a-0b0c0d0e0f10", Username: "Steve"},
-				GameMode: GameModeSpectator,
+				GameMode: types.GameModeSpectator,
 				Listed:   true,
 			},
 		},
@@ -77,7 +77,7 @@ func TestPlayerInfoUpdateClientboundPacketEncodeEveryAction(t *testing.T) {
 						{Name: "textures", Value: "skin", Signature: &signature},
 					},
 				},
-				GameMode:  GameModeAdventure,
+				GameMode:  types.GameModeAdventure,
 				Listed:    true,
 				Latency:   130,
 				ListOrder: 2,

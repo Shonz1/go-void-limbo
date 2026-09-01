@@ -115,6 +115,57 @@ type fakeClient struct {
 	authenticateCalls int
 	authenticateAfter int
 	authenticateErr   error
+
+	// entityId is the id the play phase gives this connection's player, and
+	// gameMode the mode it is put in.
+	// joinedPlayerSync counts the handler putting it among the other players.
+	// The synced fields record what the move and input handlers passed along,
+	// syncedSwings which arms they swung, and syncedAfter how many packets had
+	// been written when the join happened: the other players may only be shown
+	// a player that has already been sent its world.
+	entityId         int32
+	gameMode         types.GameMode
+	joinedPlayerSync int
+	syncedAfter      int
+	syncedX          float64
+	syncedY          float64
+	syncedZ          float64
+	syncedYaw        float32
+	syncedPitch      float32
+	syncedOnGround   bool
+	syncedSneaking   bool
+	syncedSprinting  bool
+	syncedSwings     []bool
+}
+
+func (c *fakeClient) EntityId() int32 { return c.entityId }
+
+func (c *fakeClient) GameMode() types.GameMode { return c.gameMode }
+
+func (c *fakeClient) JoinPlayerSync() {
+	c.joinedPlayerSync++
+	c.syncedAfter = len(c.written)
+}
+
+func (c *fakeClient) SyncPosition(x, y, z float64, onGround bool) {
+	c.syncedX, c.syncedY, c.syncedZ, c.syncedOnGround = x, y, z, onGround
+}
+
+func (c *fakeClient) SyncPositionRotation(x, y, z float64, yaw, pitch float32, onGround bool) {
+	c.syncedX, c.syncedY, c.syncedZ, c.syncedOnGround = x, y, z, onGround
+	c.syncedYaw, c.syncedPitch = yaw, pitch
+}
+
+func (c *fakeClient) SyncRotation(yaw, pitch float32, onGround bool) {
+	c.syncedYaw, c.syncedPitch, c.syncedOnGround = yaw, pitch, onGround
+}
+
+func (c *fakeClient) SyncGround(onGround bool) { c.syncedOnGround = onGround }
+
+func (c *fakeClient) SyncSwing(offHand bool) { c.syncedSwings = append(c.syncedSwings, offHand) }
+
+func (c *fakeClient) SyncInput(sneaking, sprinting bool) {
+	c.syncedSneaking, c.syncedSprinting = sneaking, sprinting
 }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
@@ -1167,7 +1218,7 @@ func TestHandleLoginAcknowledgedServerboundPacketFinishesConfiguration(t *testin
 
 func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *testing.T) {
 	profile := types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "Notch"}
-	client := &fakeClient{phase: types.PhaseConfiguration, profile: profile, encryptionEnabled: true}
+	client := &fakeClient{phase: types.PhaseConfiguration, profile: profile, encryptionEnabled: true, gameMode: types.GameModeAdventure}
 
 	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1200,13 +1251,14 @@ func TestHandleAcknowledgeFinishConfigurationServerboundPacketEntersPlay(t *test
 		t.Errorf("spawn dimension %q is not among the listed dimensions %v", login.SpawnInfo.Dimension, login.Dimensions)
 	}
 
-	// Any other mode leaves the client waiting for the chunk it stands in,
-	// which a limbo that sends no chunks never provides.
-	if login.SpawnInfo.GameMode != clientboundPlay.GameModeSpectator {
-		t.Errorf("game mode = %s, want spectator", login.SpawnInfo.GameMode)
+	// The mode is the connection's own -- whatever the operator configured --
+	// and the fake above was given one no default would pick, so a hardcoded
+	// mode would show here.
+	if login.SpawnInfo.GameMode != types.GameModeAdventure {
+		t.Errorf("game mode = %s, want the connection's own adventure", login.SpawnInfo.GameMode)
 	}
 
-	if login.SpawnInfo.PreviousGameMode != clientboundPlay.GameModeNone {
+	if login.SpawnInfo.PreviousGameMode != types.GameModeNone {
 		t.Errorf("previous game mode = %s, want none", login.SpawnInfo.PreviousGameMode)
 	}
 
