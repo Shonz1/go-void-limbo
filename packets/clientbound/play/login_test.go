@@ -3,6 +3,7 @@ package play
 import (
 	"bytes"
 	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
 	"testing"
 )
 
@@ -62,8 +63,8 @@ func TestLoginClientboundPacketEncode(t *testing.T) {
 			DimensionTypeId:  1,
 			Dimension:        "a:b",
 			HashedSeed:       0x0102030405060708,
-			GameMode:         GameModeSpectator,
-			PreviousGameMode: GameModeAdventure,
+			GameMode:         types.GameModeSpectator,
+			PreviousGameMode: types.GameModeAdventure,
 			IsDebug:          true,
 			IsFlat:           false,
 			DeathLocation:    &GlobalPos{Dimension: "c:d", Position: BlockPos{X: 1, Y: 2, Z: 3}},
@@ -112,8 +113,8 @@ func TestLoginClientboundPacketEncodeWithoutDeathLocation(t *testing.T) {
 		Dimensions: []string{"a:b"},
 		SpawnInfo: SpawnInfo{
 			Dimension:        "a:b",
-			GameMode:         GameModeSpectator,
-			PreviousGameMode: GameModeNone,
+			GameMode:         types.GameModeSpectator,
+			PreviousGameMode: types.GameModeNone,
 		},
 	}
 
@@ -155,8 +156,8 @@ func TestLoginClientboundPacketString(t *testing.T) {
 		ViewDistance: 2,
 		SpawnInfo: SpawnInfo{
 			Dimension:        "minecraft:overworld",
-			GameMode:         GameModeSpectator,
-			PreviousGameMode: GameModeNone,
+			GameMode:         types.GameModeSpectator,
+			PreviousGameMode: types.GameModeNone,
 		},
 	}
 

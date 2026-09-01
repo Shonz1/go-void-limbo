@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Shonz1/go-void-limbo/auth"
 	"github.com/Shonz1/go-void-limbo/client"
 	"github.com/Shonz1/go-void-limbo/gamedata"
 	"github.com/Shonz1/go-void-limbo/protocol"
+	"github.com/Shonz1/go-void-limbo/types"
 )
 
 // Config is what an operator decides about a server before it starts.
@@ -33,6 +35,12 @@ type Config struct {
 
 	// Description is what a ping describes this server as.
 	Description string
+
+	// GameMode is the mode every joining player is put in. The zero value is
+	// survival, the way the protocol numbers the modes; the creative default
+	// this server ships with is package config's, applied where the
+	// environment is read rather than here.
+	GameMode types.GameMode
 
 	// EncryptionEnabled decides what a login is worth: checked with Mojang
 	// behind a cipher of this server's own, or taken on the word of whoever is
@@ -61,6 +69,15 @@ type Server struct {
 	// status is the whole of what the status phase answers with.
 	status status
 
+	// playerSync is the roster the joined players see each other through, one
+	// for every connection like the status above it.
+	playerSync *client.PlayerSync
+
+	// entityIds hands each connection the id the play phase gives its player.
+	// It only ever counts up, so a player that left never has its entity
+	// confused with one that joined after it.
+	entityIds atomic.Int32
+
 	// clients, under clientsMu, is every connection currently being served,
 	// held so the keep alive sweep can reach them all from one goroutine. The
 	// map is made on first use, so a server built field by field works too.
@@ -72,6 +89,9 @@ type Server struct {
 	// asked of it declines gracefully: joined connections then stay on
 	// goroutines of their own.
 	reactor *reactor
+
+	// gameMode is the mode every joining player is put in.
+	gameMode types.GameMode
 
 	encryptionEnabled bool
 	forwardingSecret  []byte
@@ -86,6 +106,8 @@ func New(cfg Config) *Server {
 		keyPair:           cfg.KeyPair,
 		sessionServer:     cfg.SessionServer,
 		status:            status{description: cfg.Description},
+		playerSync:        client.NewPlayerSync(),
+		gameMode:          cfg.GameMode,
 		encryptionEnabled: cfg.EncryptionEnabled,
 		forwardingSecret:  cfg.ForwardingSecret,
 	}
@@ -157,6 +179,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		PacketRegistry:    s.packetRegistry,
 		GameData:          s.gameRegistries,
 		World:             s.world,
+		EntityId:          s.entityIds.Add(1),
+		GameMode:          s.gameMode,
+		PlayerSync:        s.playerSync,
 		KeyPair:           s.keyPair,
 		SessionServer:     s.sessionServer,
 		Status:            &s.status,

@@ -73,7 +73,7 @@ func (a PlayerInfoAction) String() string {
 type PlayerInfoEntry struct {
 	Profile types.GameProfile
 
-	GameMode GameMode
+	GameMode types.GameMode
 	Listed   bool
 
 	// Latency is the round trip in milliseconds, which decides how many bars

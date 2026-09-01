@@ -92,6 +92,7 @@ func main() {
 		KeyPair:           keyPair,
 		SessionServer:     auth.NewSessionServer(),
 		Description:       config.Description(),
+		GameMode:          config.GameMode(),
 		EncryptionEnabled: encryptionEnabled,
 		ForwardingSecret:  forwardingSecret,
 	})

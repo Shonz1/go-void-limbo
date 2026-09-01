@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+
+	"github.com/Shonz1/go-void-limbo/types"
 )
 
 // ConfigureLogging sets the level the default logger keeps, read from LOG_LEVEL
@@ -87,6 +89,36 @@ func Description() string {
 	}
 
 	return defaultDescription
+}
+
+// defaultGameMode is the mode joining players are put in when the operator
+// has said nothing about it. Creative, because a limbo is a place to wait
+// and look around, and creative is the mode that lets a player fly around
+// what there is to look at.
+const defaultGameMode = types.GameModeCreative
+
+// GameMode reports the mode every joining player is put in, read from
+// GAME_MODE as one of the modes' names: survival, creative, adventure or
+// spectator, case aside.
+//
+// An unrecognized value falls back to the default rather than being refused,
+// like every other setting here -- with one thing worth knowing when choosing:
+// only a spectator skips the wait for the chunk it stands in to render, so on
+// a server with no world any other mode leaves a joining client on its
+// loading screen for that wait's thirty second timeout.
+func GameMode() types.GameMode {
+	raw, ok := os.LookupEnv("GAME_MODE")
+	if !ok || raw == "" {
+		return defaultGameMode
+	}
+
+	mode, ok := types.ParseGameMode(raw)
+	if !ok {
+		slog.Warn("unrecognized GAME_MODE, falling back to creative", "value", raw)
+		return defaultGameMode
+	}
+
+	return mode
 }
 
 // defaultWorldDir is where a world is looked for when the operator has said

@@ -74,8 +74,8 @@ func TestDowngradePlayLoginTo26_1(t *testing.T) {
 				OnlineMode:         true,
 				SpawnInfo: play.SpawnInfo{
 					Dimension:        "minecraft:overworld",
-					GameMode:         play.GameModeSpectator,
-					PreviousGameMode: play.GameModeNone,
+					GameMode:         types.GameModeSpectator,
+					PreviousGameMode: types.GameModeNone,
 				},
 			},
 		},
@@ -96,7 +96,7 @@ func TestDowngradePlayLoginTo26_1(t *testing.T) {
 					DimensionTypeId: 3,
 					Dimension:       "minecraft:the_nether",
 					HashedSeed:      -1,
-					GameMode:        play.GameModeCreative,
+					GameMode:        types.GameModeCreative,
 					IsFlat:          true,
 					DeathLocation: &play.GlobalPos{
 						Dimension: "minecraft:overworld",
@@ -116,7 +116,7 @@ func TestDowngradePlayLoginTo26_1(t *testing.T) {
 				EnforcesSecureChat: true,
 				SpawnInfo: play.SpawnInfo{
 					Dimension:        "minecraft:overworld",
-					PreviousGameMode: play.GameModeNone,
+					PreviousGameMode: types.GameModeNone,
 				},
 			},
 		},

@@ -174,6 +174,48 @@ type WorldSource interface {
 	WorldSpawn() (x, y, z float64, ok bool)
 }
 
+// PlayerSync is a joined player's presence among the other players: the
+// entity the rest of them see, and the movements and stances it mirrors.
+// Everything here is told to the connection rather than asked of it, and
+// reaches the other players from there, so none of it returns an error: a
+// relay that fails is some other connection dying, which that connection's own
+// loops notice, and never a fact about the packet that was being relayed.
+type PlayerSync interface {
+	// EntityId is the id everything in the play phase names this player's
+	// entity by, on this connection and every other one. It is this
+	// connection's for as long as the server runs, so a player that left never
+	// has its entity confused with a player that joined after it.
+	EntityId() int32
+
+	// GameMode is the mode this player is in, which the operator chose for
+	// the server. It is a fact about the player rather than about the join:
+	// the join handler sends it to the client itself, and the sync repeats it
+	// in the player list entry everyone else keeps about this player.
+	GameMode() GameMode
+
+	// JoinPlayerSync puts this player among the others, once it is in the play
+	// phase and has been sent its world: everyone already there appears on
+	// this connection, and this player appears on theirs.
+	JoinPlayerSync()
+
+	// SyncPosition through SyncGround record what this player's move packets
+	// report, and pass the parts other players can see along to them. Each
+	// carries the fields the client actually sent, so the ones it left out
+	// keep their last reported value.
+	SyncPosition(x, y, z float64, onGround bool)
+	SyncPositionRotation(x, y, z float64, yaw, pitch float32, onGround bool)
+	SyncRotation(yaw, pitch float32, onGround bool)
+	SyncGround(onGround bool)
+
+	// SyncSwing plays this player's arm swing on everyone else's view of it.
+	SyncSwing(offHand bool)
+
+	// SyncInput records the movement keys this player is holding and shows the
+	// two stances other players can see -- sneaking and sprinting -- when they
+	// change.
+	SyncInput(sneaking, sprinting bool)
+}
+
 // Client is the connection state a packet handler is allowed to observe and
 // mutate: every role above, on one connection.
 type Client interface {
@@ -186,6 +228,7 @@ type Client interface {
 	KeepAliveConfirmer
 	GameDataSource
 	WorldSource
+	PlayerSync
 }
 
 // PacketHandler reacts to a decoded serverbound packet.

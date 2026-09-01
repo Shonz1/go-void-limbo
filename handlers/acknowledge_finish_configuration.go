@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+
 	clientboundPlay "github.com/Shonz1/go-void-limbo/packets/clientbound/play"
 	"github.com/Shonz1/go-void-limbo/packets/serverbound/configuration"
 	"github.com/Shonz1/go-void-limbo/types"
@@ -21,11 +22,6 @@ const (
 	// none at all, and the client leaves rather than guess.
 	overworldDimensionTypeId = 0
 
-	// playerEntityId is the id of the joining player's own entity. Anything the
-	// play phase later says about that player names this number, and with one
-	// player per connection there is nothing for it to collide with.
-	playerEntityId = 1
-
 	// viewDistance is how far the client is told it will be shown, in chunks.
 	// Package world sends one ring more than this around the spawn, because
 	// the client only renders a chunk whose neighbours it also holds; the two
@@ -41,11 +37,6 @@ const (
 	// its acknowledgement can be told from later ones.
 	spawnTeleportId = 1
 )
-
-// spawnGameMode is sent twice, in the login packet and again in the player
-// list entry the client keeps about itself, and the client reads its own mode
-// from both. They have to agree.
-const spawnGameMode = clientboundPlay.GameModeSpectator
 
 // Where a joining player is put when no world says otherwise. Any position
 // inside the dimension's vertical bounds works, since with no world there is
@@ -80,8 +71,11 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 
 	_, forwarded := client.ForwardedLogin()
 
+	// The entity id is the connection's own, unique among every connection the
+	// server accepts: anything the play phase says about this player names it,
+	// including what the other players are told.
 	login := clientboundPlay.LoginClientboundPacket{
-		EntityId:   playerEntityId,
+		EntityId:   client.EntityId(),
 		Dimensions: []string{overworldDimension},
 		// The client only shows this on the player list, and shows nothing when
 		// it is zero.
@@ -105,14 +99,15 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		SpawnInfo: clientboundPlay.SpawnInfo{
 			DimensionTypeId: overworldDimensionTypeId,
 			Dimension:       overworldDimension,
-			// The spectator mode is what lets a player into a world with no
-			// chunks in it: a client that cannot be standing in a chunk does
-			// not wait for one to render, so the loading screen closes as soon
-			// as the join is through instead of after its thirty second
-			// timeout. It also settles what a player does in a world with
-			// nothing to stand on, which is float.
-			GameMode:         spawnGameMode,
-			PreviousGameMode: clientboundPlay.GameModeNone,
+			// The mode is the connection's, which the operator chose for the
+			// server; the same value goes into the player list entry below,
+			// because the client reads its own mode from both and they have to
+			// agree. One thing to know when choosing it: only a spectator
+			// skips the wait for the chunk it stands in to render, so on a
+			// server with no world any other mode leaves a joining client on
+			// its loading screen for that wait's thirty second timeout.
+			GameMode:         client.GameMode(),
+			PreviousGameMode: types.GameModeNone,
 		},
 	}
 
@@ -140,6 +135,12 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		return err
 	}
 
+	// The teleport is also where this player is until its own move packets say
+	// otherwise, and the sync state has to agree before the join below shows
+	// it to anyone. Nothing is relayed by this: the player is not on the
+	// roster yet, and nobody has been shown an entity to apply it to.
+	client.SyncPositionRotation(x, y, z, 0, 0, false)
+
 	// The client holds a player list entry about itself, which is where it
 	// reads its own name, skin and game mode from, and which it has none of
 	// until it is told. Only one player exists here, so the entry is its own.
@@ -153,7 +154,7 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 		Entries: []clientboundPlay.PlayerInfoEntry{
 			{
 				Profile:  client.Profile(),
-				GameMode: spawnGameMode,
+				GameMode: client.GameMode(),
 				// An entry the client is not told to list is one it keeps but
 				// does not draw, and a player that cannot see itself on the
 				// list is the one thing about a limbo a player checks.
@@ -192,6 +193,11 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 			return err
 		}
 	}
+
+	// Last of all, the other players -- and this player to them. The client
+	// accepts entities as soon as the join is through, so nothing has to wait
+	// for it to acknowledge the teleport above.
+	client.JoinPlayerSync()
 
 	return nil
 }
