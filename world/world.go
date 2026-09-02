@@ -142,6 +142,7 @@ func Load(dir string) (*World, error) {
 			blockStates: blockStates,
 			version:     version,
 			fluidCounts: version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
+			dataLengths: version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
 		}
 
 		packets := make([]types.ClientboundPacket, 0, len(chunks)+1)
@@ -189,6 +190,14 @@ type chunkBuilder struct {
 	// count, which 26.1 added: a 1.21.x section is the block count and the
 	// two containers, and a 26.x section has the fluid count between them.
 	fluidCounts bool
+
+	// dataLengths is whether a paletted container's data comes with its
+	// length in front, which 1.21.5 dropped: a 1.21.4 container is the bits,
+	// the palette, a var int count of longs and the longs, and a later one
+	// leaves the count out because the bits already say how many longs
+	// follow. A single value container has no longs, and on 1.21.4 says so
+	// with a count of zero.
+	dataLengths bool
 
 	// substituted is every stored state this version had no number for, warned
 	// about once each rather than once per block.
@@ -338,7 +347,7 @@ func (b *chunkBuilder) appendSection(data []byte, section *anvil.Section) ([]byt
 			data = streams.AppendVarInt(data, id)
 		}
 
-		data = appendLongs(data, section.BlockData)
+		data = b.appendData(data, section.BlockData)
 	} else {
 		data = b.appendGlobalBlockData(data, section.BlockData, ids, storedBits)
 	}
@@ -378,7 +387,7 @@ func (b *chunkBuilder) appendSingleValueSection(data []byte, id int32, air, flui
 	data = append(data, 0)
 	data = streams.AppendVarInt(data, id)
 
-	return b.appendBiomes(data)
+	return b.appendBiomes(b.appendData(data, nil))
 }
 
 // appendBiomes appends the section's biome container: every block the first
@@ -387,7 +396,19 @@ func (b *chunkBuilder) appendSingleValueSection(data []byte, id int32, air, flui
 // biome is whatever the client was told the numbers mean.
 func (b *chunkBuilder) appendBiomes(data []byte) []byte {
 	data = append(data, 0)
-	return streams.AppendVarInt(data, 0)
+	data = streams.AppendVarInt(data, 0)
+
+	return b.appendData(data, nil)
+}
+
+// appendData appends a container's packed longs, with the count in front on
+// the versions that want it.
+func (b *chunkBuilder) appendData(data []byte, longs []int64) []byte {
+	if b.dataLengths {
+		data = streams.AppendVarInt(data, int32(len(longs)))
+	}
+
+	return appendLongs(data, longs)
 }
 
 // appendGlobalBlockData repacks a section too varied for a palette: the wire
@@ -408,7 +429,7 @@ func (b *chunkBuilder) appendGlobalBlockData(data []byte, packed []int64, ids []
 		longs[i/wirePerLong] |= int64(ids[index]) << ((i % wirePerLong) * wireBits)
 	}
 
-	return appendLongs(data, longs)
+	return b.appendData(data, longs)
 }
 
 func (b *chunkBuilder) warnSubstituted(state anvil.BlockState) {

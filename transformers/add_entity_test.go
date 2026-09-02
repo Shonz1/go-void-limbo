@@ -125,6 +125,16 @@ func TestDowngradeAddEntityTo1_21_7MovesTheVelocityBack(t *testing.T) {
 	if !bytes.Equal(to1_21_5, want5) {
 		t.Errorf("to 1.21.5 = % x, want % x", to1_21_5, want5)
 	}
+
+	// And 1.21.4 the same shape once more, with the player at 147.
+	to1_21_4 := runTransformer(t, DowngradeAddEntityTo1_21_4, to1_21_5)
+
+	want4 := append(append([]byte{}, want[:17]...), 0x93, 0x01)
+	want4 = append(want4, want[19:]...)
+
+	if !bytes.Equal(to1_21_4, want4) {
+		t.Errorf("to 1.21.4 = % x, want % x", to1_21_4, want4)
+	}
 }
 
 func TestDowngradeAddEntityRefusesAnEntityItDoesNotKnow(t *testing.T) {

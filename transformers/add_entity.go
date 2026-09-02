@@ -18,6 +18,7 @@ const (
 	playerEntityType1_21_7  = 149
 	playerEntityType1_21_6  = 149
 	playerEntityType1_21_5  = 148
+	playerEntityType1_21_4  = 147
 )
 
 // downgradeAddEntityType rewrites the entity type field of an add entity

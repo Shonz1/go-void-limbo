@@ -36,8 +36,10 @@ type Heightmap struct {
 // same version -- and it is per version, since sections name block states by
 // number and the versions number them differently. Whoever builds this packet
 // has already chosen the numbering the receiving client reads by, which is why
-// no transformer carries it between versions: the shape is the same on all of
-// them, and the one thing that differs is settled before the packet exists.
+// no transformer carries the sections between versions: everything that
+// differs inside them is settled before the packet exists. The packet's own
+// fields are another matter -- 1.21.4 reads the heightmaps in an older shape,
+// and a transformer carries them there the way it would for any packet.
 type LevelChunkWithLightClientboundPacket struct {
 	// X and Z are in chunks.
 	X, Z int32
