@@ -1025,3 +1025,151 @@ func TestWritePacketDropsTheSessionIdForAnOlderClient(t *testing.T) {
 		t.Errorf("26.1 body is\n%v\nwant\n%v", olderBody, want)
 	}
 }
+
+// preparedKeepAlive is a keep alive put in wire form ahead of time for phase
+// on version, the way the world prepares its chunks.
+func preparedKeepAlive(t *testing.T, phase types.Phase, version types.ProtocolVersion) (*types.PreparedPacket, []byte) {
+	t.Helper()
+
+	body, err := protocol.NewDefaultRegistry().EncodeClientbound(phase, version, &clientboundCommon.KeepAliveClientboundPacket{Id: 7})
+	if err != nil {
+		t.Fatalf("EncodeClientbound() error: %v", err)
+	}
+
+	prepared, err := types.PrepareClientbound(phase, version, "KeepAliveClientboundPacket", body)
+	if err != nil {
+		t.Fatalf("PrepareClientbound() error: %v", err)
+	}
+
+	return prepared, body
+}
+
+func TestWritePacketWritesAPreparedPacketAsItStandsWhenItWouldHaveDeflatedIt(t *testing.T) {
+	client, buf := newTestClient(types.PhasePlay)
+	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+
+	// A threshold the nine byte body reaches, so the connection would have
+	// deflated it itself and the deflated bytes go out as they are.
+	enableCompressionOn(client, int32(len(body)))
+
+	if err := client.WritePacket(prepared); err != nil {
+		t.Fatalf("WritePacket() error: %v", err)
+	}
+
+	dataLength, deflated := testutil.FramedBody(t, buf.Bytes())
+
+	if dataLength != prepared.Size {
+		t.Errorf("data length = %d, want the %d bytes the body inflates to", dataLength, prepared.Size)
+	}
+
+	if !bytes.Equal(deflated, prepared.Deflated) {
+		t.Errorf("wrote % x, want the deflated bytes as prepared, % x", deflated, prepared.Deflated)
+	}
+
+	if got := testutil.Inflate(t, deflated); !bytes.Equal(got, body) {
+		t.Errorf("body inflates to % x, want % x", got, body)
+	}
+}
+
+func TestWritePacketInflatesAPreparedPacketTheConnectionWouldNotHaveDeflated(t *testing.T) {
+	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+
+	// Told a threshold the body falls short of, the connection frames the body
+	// in full behind a data length of zero, the way it frames any other.
+	client, buf := newTestClient(types.PhasePlay)
+	enableCompressionOn(client, 256)
+
+	if err := client.WritePacket(prepared); err != nil {
+		t.Fatalf("WritePacket() error: %v", err)
+	}
+
+	if want := testutil.CompressedFrame(t, body, 0); !bytes.Equal(buf.Bytes(), want) {
+		t.Errorf("under the threshold wrote % x, want % x", buf.Bytes(), want)
+	}
+
+	// Told no threshold at all, it writes the plain framing.
+	client, buf = newTestClient(types.PhasePlay)
+
+	if err := client.WritePacket(prepared); err != nil {
+		t.Fatalf("WritePacket() error: %v", err)
+	}
+
+	if want := testutil.Frame(t, body); !bytes.Equal(buf.Bytes(), want) {
+		t.Errorf("without a threshold wrote % x, want % x", buf.Bytes(), want)
+	}
+}
+
+func TestWritePacketRefusesAPacketPreparedForAnotherPhaseOrVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		phase   types.Phase
+		version types.ProtocolVersion
+	}{
+		{name: "another version", phase: types.PhasePlay, version: types.ProtocolVersions.MINECRAFT_26_1},
+		{name: "another phase", phase: types.PhaseConfiguration, version: types.ProtocolVersions.MINECRAFT_26_2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client, buf := newTestClient(types.PhasePlay)
+			prepared, _ := preparedKeepAlive(t, test.phase, test.version)
+
+			if err := client.WritePacket(prepared); err == nil {
+				t.Error("WritePacket() succeeded, want a refusal")
+			}
+
+			if buf.Len() != 0 {
+				t.Errorf("wrote % x, want nothing", buf.Bytes())
+			}
+		})
+	}
+}
+
+// TestWritePacketLeavesAPreparedPacketUntouchedAcrossConnections pins what
+// sharing a prepared packet between every connection on a version rests on:
+// nothing on the way to a connection writes into its bytes, on the path that
+// sends them as they are or the one that inflates them, however many
+// connections take either at once.
+func TestWritePacketLeavesAPreparedPacketUntouchedAcrossConnections(t *testing.T) {
+	prepared, _ := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+	deflated := append([]byte(nil), prepared.Deflated...)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+
+		go func(deflate bool) {
+			defer wg.Done()
+
+			client, _ := newTestClient(types.PhasePlay)
+			if deflate {
+				enableCompressionOn(client, 1)
+			}
+
+			for range 16 {
+				if err := client.WritePacket(prepared); err != nil {
+					t.Errorf("WritePacket() error: %v", err)
+				}
+			}
+		}(i%2 == 0)
+	}
+
+	wg.Wait()
+
+	if !bytes.Equal(prepared.Deflated, deflated) || prepared.Size != int32(len(keepAliveBodyOf(t, prepared))) {
+		t.Error("the prepared packet was changed by being written")
+	}
+}
+
+// keepAliveBodyOf inflates a prepared packet, for a check that its size still
+// says what it inflates to.
+func keepAliveBodyOf(t *testing.T, prepared *types.PreparedPacket) []byte {
+	t.Helper()
+
+	body, err := prepared.Body()
+	if err != nil {
+		t.Fatalf("Body() error: %v", err)
+	}
+
+	return body
+}

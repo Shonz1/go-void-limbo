@@ -38,44 +38,61 @@ func NewProvider(sets ...Set) (*Provider, error) {
 	buckets := make([]bucket, 0, len(sets))
 
 	for _, set := range sets {
-		packets := make([]types.ClientboundPacket, 0, len(set.Registries)+1)
-
-		// The shape is the set's version's own. A set that starts below 1.20.5
-		// is read by clients that take every registry in one packet, which is
-		// the one difference in this package's output between the versions:
-		// the content of a set is what varies, and the shape only once.
-		if set.MinProtocol < combinedRegistryDataProtocol {
-			body, err := encodeCombined(set.Registries)
-			if err != nil {
-				return nil, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
-			}
-
-			packets = append(packets, configuration.NewRegistryDataClientboundPacket(combinedRegistryName(set.Registries), body))
-		} else {
-			for _, registry := range set.Registries {
-				body, err := registry.encode()
-				if err != nil {
-					return nil, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
-				}
-
-				packets = append(packets, configuration.NewRegistryDataClientboundPacket(registry.Name, body))
-			}
+		encoded, err := encodeSet(set)
+		if err != nil {
+			return nil, err
 		}
 
-		// Tags go out after the registries they point into, since a tag names
-		// its entries by registry id.
-		if len(set.Tags) > 0 {
-			body, err := encodeTags(set.Tags)
-			if err != nil {
-				return nil, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
-			}
-
-			packets = append(packets, configuration.NewUpdateTagsClientboundPacket(len(set.Tags), countTags(set.Tags), body))
-		}
-
-		buckets = append(buckets, bucket{minProtocol: set.MinProtocol, packets: packets})
+		buckets = append(buckets, encoded)
 	}
 
+	return newProvider(buckets)
+}
+
+// encodeSet encodes one set's packets, after which the set itself is no
+// longer needed.
+func encodeSet(set Set) (bucket, error) {
+	packets := make([]types.ClientboundPacket, 0, len(set.Registries)+1)
+
+	// The shape is the set's version's own. A set that starts below 1.20.5
+	// is read by clients that take every registry in one packet, which is
+	// the one difference in this package's output between the versions:
+	// the content of a set is what varies, and the shape only once.
+	if set.MinProtocol < combinedRegistryDataProtocol {
+		body, err := encodeCombined(set.Registries)
+		if err != nil {
+			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+		}
+
+		packets = append(packets, configuration.NewRegistryDataClientboundPacket(combinedRegistryName(set.Registries), body))
+	} else {
+		for _, registry := range set.Registries {
+			body, err := registry.encode()
+			if err != nil {
+				return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+			}
+
+			packets = append(packets, configuration.NewRegistryDataClientboundPacket(registry.Name, body))
+		}
+	}
+
+	// Tags go out after the registries they point into, since a tag names
+	// its entries by registry id.
+	if len(set.Tags) > 0 {
+		body, err := encodeTags(set.Tags)
+		if err != nil {
+			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+		}
+
+		packets = append(packets, configuration.NewUpdateTagsClientboundPacket(len(set.Tags), countTags(set.Tags), body))
+	}
+
+	return bucket{minProtocol: set.MinProtocol, packets: packets}, nil
+}
+
+// newProvider orders encoded buckets by version and refuses two that start at
+// the same one.
+func newProvider(buckets []bucket) (*Provider, error) {
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].minProtocol < buckets[j].minProtocol })
 
 	for i := 1; i < len(buckets); i++ {

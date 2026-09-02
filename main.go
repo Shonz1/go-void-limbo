@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/Shonz1/go-void-limbo/auth"
 	"github.com/Shonz1/go-void-limbo/config"
@@ -12,6 +13,11 @@ import (
 	"github.com/Shonz1/go-void-limbo/world"
 )
 
+// startupGCPercent is how far the heap may grow past what is live while the
+// server is being built, as a percentage. Lower is a lower peak and more
+// collections; below this the peak stops falling.
+const startupGCPercent = 25
+
 // forwardingSecretFlag is the secret on the command line, which is the one place
 // an operator can put it that does not outlive the process.
 var forwardingSecretFlag = flag.String("forwarding-secret", "", "the secret a modern proxy signs the logins it forwards with, taken from FORWARDING_SECRET when this is empty")
@@ -20,6 +26,15 @@ func main() {
 	config.ConfigureLogging()
 
 	flag.Parse()
+
+	// Starting up is the one time this process allocates in earnest: every
+	// registry and every chunk is parsed, translated and encoded, and nearly
+	// all of it is garbage a moment later. The collector's default lets that
+	// garbage pile up to the size of everything live before it runs, which is
+	// the right trade for a server on a tick and the wrong one here, where it
+	// only sets how high the process peaks before the first connection. The
+	// default is put back once the server is built, along with the peak.
+	gcPercent := debug.SetGCPercent(startupGCPercent)
 
 	gameData, err := gamedata.NewDefaultProvider()
 	if err != nil {
@@ -31,9 +46,11 @@ func main() {
 	// always was. With one named and unreadable, the server stops rather than
 	// starts empty, because an operator who pointed at a world wants that
 	// world or the reason there is none.
+	packetRegistry := protocol.NewDefaultRegistry()
+
 	var lobby server.WorldProvider
 	if dir, ok := config.WorldDir(); ok {
-		loaded, err := world.Load(dir)
+		loaded, err := world.Load(dir, packetRegistry)
 		if err != nil {
 			slog.Error("failed to load the world", "dir", dir, "err", err)
 			return
@@ -86,7 +103,7 @@ func main() {
 	}
 
 	srv := server.New(server.Config{
-		PacketRegistry:    protocol.NewDefaultRegistry(),
+		PacketRegistry:    packetRegistry,
 		GameData:          gameData,
 		World:             lobby,
 		KeyPair:           keyPair,
@@ -96,6 +113,13 @@ func main() {
 		EncryptionEnabled: encryptionEnabled,
 		ForwardingSecret:  forwardingSecret,
 	})
+
+	// What starting up left behind is garbage the runtime would otherwise
+	// hand back to the system over the following minutes, if at all. Handed
+	// back now, the process settles at what it holds before the first
+	// connection arrives.
+	debug.SetGCPercent(gcPercent)
+	debug.FreeOSMemory()
 
 	if err := srv.ListenAndServe(config.Address()); err != nil {
 		slog.Error("failed to start server", "err", err)

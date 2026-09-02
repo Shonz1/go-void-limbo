@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"bytes"
+	clientboundCommon "github.com/Shonz1/go-void-limbo/packets/clientbound/common"
+	clientboundConfiguration "github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 	"reflect"
@@ -214,5 +216,57 @@ func TestUnsupportedVersionIsLeftAlone(t *testing.T) {
 
 	if !bytes.Equal(body, []byte{0x01}) {
 		t.Errorf("expected the body to be left alone, got %v", body)
+	}
+}
+
+func TestEncodeClientboundPutsTheVersionsIdInFrontOfTheBody(t *testing.T) {
+	registry := NewDefaultRegistry()
+	keepAlive := &clientboundCommon.KeepAliveClientboundPacket{Id: 1}
+
+	latest, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, keepAlive)
+	if err != nil {
+		t.Fatalf("EncodeClientbound() error: %v", err)
+	}
+
+	older, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_20_2, keepAlive)
+	if err != nil {
+		t.Fatalf("EncodeClientbound() error: %v", err)
+	}
+
+	body := []byte{0, 0, 0, 0, 0, 0, 0, 1}
+
+	for _, version := range []struct {
+		version types.ProtocolVersion
+		encoded []byte
+	}{
+		{types.ProtocolVersions.MINECRAFT_26_2, latest},
+		{types.ProtocolVersions.MINECRAFT_1_20_2, older},
+	} {
+		wantId := registry.GetClientboundId(types.PhasePlay, reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}), version.version)
+		want := append([]byte{byte(wantId)}, body...)
+
+		if !bytes.Equal(version.encoded, want) {
+			t.Errorf("protocol %d: encoded % x, want % x", version.version.ID, version.encoded, want)
+		}
+	}
+
+	// The two versions number the keep alive differently, which is the whole
+	// reason the id is resolved per version.
+	if latest[0] == older[0] {
+		t.Errorf("both versions encode the keep alive under id %#x, want the ids to differ", latest[0])
+	}
+}
+
+func TestEncodeClientboundRefusesWhatTheVersionDoesNotCarry(t *testing.T) {
+	registry := NewDefaultRegistry()
+
+	if _, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, nil); err == nil {
+		t.Error("EncodeClientbound(nil) succeeded, want an error")
+	}
+
+	// A configuration packet has no id in the play phase.
+	packet := clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:dimension_type", []byte{1})
+	if _, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, packet); err == nil {
+		t.Error("EncodeClientbound() of a configuration packet in play succeeded, want an error")
 	}
 }

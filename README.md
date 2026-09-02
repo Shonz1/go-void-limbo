@@ -103,7 +103,9 @@ A world is a normal Java Edition save: the server reads its `level.dat` for
 the spawn and the region files around it, and sends the chunks within nine
 chunks of spawn. The rest of the world is never loaded. Loading happens once,
 at startup, for every protocol version, so the cost of a world is paid before
-the first player connects.
+the first player connects: every chunk is translated, encoded and compressed
+then, and held compressed, so a join sends bytes that are already on hand and
+a world costs a few megabytes to keep.
 
 If `WORLD` names a directory that cannot be loaded, the server stops rather
 than starting empty: an operator who pointed at a world wants that world or

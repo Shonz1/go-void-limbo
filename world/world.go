@@ -5,7 +5,11 @@
 // the network numbers them, differently per version, so the work of a chunk
 // packet is translation -- and with the world read-only and the same for every
 // client, there is no reason to translate later than load or more than once
-// per version.
+// per version. The same goes for what comes after translation: each chunk is
+// encoded, carried down to its version and deflated here, and held that way,
+// so a join writes bytes that are already on hand rather than building the
+// biggest packets the server sends over again, and the world costs a tenth of
+// what it would in memory if it were held as packets.
 package world
 
 import (
@@ -14,6 +18,7 @@ import (
 	"log/slog"
 	"math/bits"
 	"path/filepath"
+	"reflect"
 
 	"github.com/Shonz1/go-void-limbo/anvil"
 	"github.com/Shonz1/go-void-limbo/gamedata"
@@ -21,6 +26,14 @@ import (
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 )
+
+// A PacketEncoder puts a packet in the form it goes out in on a version -- its
+// id at that version and its body carried down to it -- which is what the
+// packet registry does for a connection, and what the world asks of it once
+// per chunk and version instead.
+type PacketEncoder interface {
+	EncodeClientbound(phase types.Phase, version types.ProtocolVersion, packet types.ClientboundPacket) ([]byte, error)
+}
 
 // The world's vertical bounds, in sections. These are the bounds the
 // dimension type in package gamedata announces (min_y -64, height 384), and
@@ -40,8 +53,24 @@ const lightSectionCount = sectionCount + 2
 // holds: the last ring is sent to be leaned on, not seen.
 const chunkRadius = 9
 
+// maxChunks is how many chunks the radius holds.
+const maxChunks = (2*chunkRadius + 1) * (2*chunkRadius + 1)
+
 // blocksPerSection is the entries a section's block container packs, 16x16x16.
 const blocksPerSection = 4096
+
+// sectionOverhead and paletteSizeEstimate size a chunk's section buffer
+// before it is built. Every section costs the counts (two shorts), a block
+// container of bits, a palette length and a single entry, and a biome
+// container of the same shape: sixteen bytes covers that on every version. A
+// stored section adds its longs, counted exactly, and a palette whose entries
+// are var ints of one to three bytes: sixty-four covers the few dozen entries
+// a section of terrain usually holds. Neither is a bound, only a size the
+// buffer grows past when a section is richer than that.
+const (
+	sectionOverhead     = 16
+	paletteSizeEstimate = 64
+)
 
 const fullChunkStatus = "minecraft:full"
 
@@ -87,20 +116,20 @@ type World struct {
 	spawn anvil.Spawn
 
 	// packets starts with the chunk cache centre and carries the chunks after
-	// it, for each version this server speaks. The slices are shared by every
-	// client on the version and must not be modified.
+	// it, prepared, for each version this server speaks. The slices are
+	// shared by every client on the version and must not be modified.
 	packets map[types.ProtocolId][]types.ClientboundPacket
 }
 
 // Load reads the world saved in dir and prebuilds its packets for every
-// supported protocol version.
+// supported protocol version, put in wire form by encoder.
 //
 // A chunk that was never generated, or that generation never finished, is
 // skipped: the client shows void there, which is what this server used to show
 // everywhere. A chunk that exists but cannot be translated is an error, since
 // a world that loads with holes torn by mistranslation would look like damage
 // and read like success.
-func Load(dir string) (*World, error) {
+func Load(dir string, encoder PacketEncoder) (*World, error) {
 	spawn, err := anvil.ReadSpawn(dir)
 	if err != nil {
 		return nil, err
@@ -110,7 +139,40 @@ func Load(dir string) (*World, error) {
 
 	regionDir := filepath.Join(dir, "region")
 
-	var chunks []*anvil.Chunk
+	// One loader for every version, so the versions that number states alike
+	// share a table rather than each parsing its own.
+	var blockStatesLoader gamedata.BlockStatesLoader
+
+	builders := make([]*chunkBuilder, 0, len(types.SupportedProtocolVersions))
+	for _, version := range types.SupportedProtocolVersions {
+		blockStates, err := blockStatesLoader.For(version)
+		if err != nil {
+			return nil, err
+		}
+
+		builders = append(builders, &chunkBuilder{
+			blockStates: blockStates,
+			version:     version,
+			fluidCounts: version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
+			dataLengths: version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
+		})
+	}
+
+	// Room for the centre and every chunk within the radius, which is the
+	// most a world sends and what a plausible one comes close to.
+	world := &World{spawn: spawn, packets: make(map[types.ProtocolId][]types.ClientboundPacket, len(builders))}
+	for _, builder := range builders {
+		packets := make([]types.ClientboundPacket, 0, maxChunks+1)
+		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
+
+		world.packets[builder.version.ID] = packets
+	}
+
+	// Each chunk is read, translated for every version and let go before
+	// the next is read. Held all at once, the chunks as stored would be the
+	// biggest thing in memory while the world loads, and would outlast their
+	// use by however long the versions after the first take.
+	chunkCount := 0
 	for z := centerZ - chunkRadius; z <= centerZ+chunkRadius; z++ {
 		for x := centerX - chunkRadius; x <= centerX+chunkRadius; x++ {
 			chunk, err := anvil.ReadChunk(regionDir, x, z)
@@ -126,41 +188,20 @@ func Load(dir string) (*World, error) {
 				continue
 			}
 
-			chunks = append(chunks, chunk)
-		}
-	}
+			chunkCount++
 
-	world := &World{spawn: spawn, packets: make(map[types.ProtocolId][]types.ClientboundPacket)}
+			for _, builder := range builders {
+				prepared, err := builder.prepare(chunk, encoder)
+				if err != nil {
+					return nil, fmt.Errorf("world: chunk %d,%d for protocol %d: %w", chunk.X, chunk.Z, builder.version.ID, err)
+				}
 
-	for _, version := range types.SupportedProtocolVersions {
-		blockStates, err := gamedata.BlockStatesFor(version)
-		if err != nil {
-			return nil, err
-		}
-
-		builder := &chunkBuilder{
-			blockStates: blockStates,
-			version:     version,
-			fluidCounts: version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
-			dataLengths: version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
-		}
-
-		packets := make([]types.ClientboundPacket, 0, len(chunks)+1)
-		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
-
-		for _, chunk := range chunks {
-			packet, err := builder.build(chunk)
-			if err != nil {
-				return nil, fmt.Errorf("world: chunk %d,%d for protocol %d: %w", chunk.X, chunk.Z, version.ID, err)
+				world.packets[builder.version.ID] = append(world.packets[builder.version.ID], prepared)
 			}
-
-			packets = append(packets, packet)
 		}
-
-		world.packets[version.ID] = packets
 	}
 
-	slog.Info("world loaded", "dir", dir, "chunks", len(chunks),
+	slog.Info("world loaded", "dir", dir, "chunks", chunkCount,
 		"spawn", fmt.Sprintf("%d,%d,%d", spawn.X, spawn.Y, spawn.Z))
 
 	return world, nil
@@ -204,6 +245,30 @@ type chunkBuilder struct {
 	substituted map[string]bool
 }
 
+// prepare builds the chunk packet for this version and puts it in wire form:
+// encoded, carried down to the version, and deflated. The chunk is the one
+// packet worth preparing: it is most of what a join sends and all of what a
+// world costs to hold, and what it deflates to is a fraction of the sections
+// and light it is built from. The centre stays a packet of a few bytes.
+func (b *chunkBuilder) prepare(chunk *anvil.Chunk, encoder PacketEncoder) (*types.PreparedPacket, error) {
+	packet, err := b.build(chunk)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := encoder.EncodeClientbound(types.PhasePlay, b.version, packet)
+	if err != nil {
+		return nil, err
+	}
+
+	// The prepared packet is named the way the packet would have named
+	// itself, with the coordinates kept: a join at debug level is a few
+	// hundred chunk lines, and which chunk each is stays worth knowing.
+	name := fmt.Sprintf("%s{X:%d Z:%d}", reflect.TypeOf(packet).Elem().Name(), chunk.X, chunk.Z)
+
+	return types.PrepareClientbound(types.PhasePlay, b.version, name, body)
+}
+
 func (b *chunkBuilder) build(chunk *anvil.Chunk) (*clientboundPlay.LevelChunkWithLightClientboundPacket, error) {
 	if chunk.MinSectionY != minSectionY {
 		return nil, fmt.Errorf("world starts at section %d, want %d", chunk.MinSectionY, minSectionY)
@@ -223,7 +288,18 @@ func (b *chunkBuilder) build(chunk *anvil.Chunk) (*clientboundPlay.LevelChunkWit
 		stored[chunk.Sections[i].Y] = &chunk.Sections[i]
 	}
 
-	var sectionData []byte
+	// The buffer is sized up front from what the stored sections pack: the
+	// data travels as stored, so its longs are most of every section, and a
+	// buffer grown from nothing would be allocated over again for each
+	// doubling on the way to that size, on every chunk, for every version.
+	sectionSize := sectionCount * sectionOverhead
+	for i := range chunk.Sections {
+		if chunk.Sections[i].BlockPalette != nil {
+			sectionSize += 8*len(chunk.Sections[i].BlockData) + paletteSizeEstimate
+		}
+	}
+
+	sectionData := make([]byte, 0, sectionSize)
 	for y := int32(minSectionY); y < minSectionY+sectionCount; y++ {
 		var err error
 

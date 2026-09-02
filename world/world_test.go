@@ -9,11 +9,13 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/Shonz1/go-void-limbo/gamedata"
 	"github.com/Shonz1/go-void-limbo/nbt"
 	clientboundPlay "github.com/Shonz1/go-void-limbo/packets/clientbound/play"
+	"github.com/Shonz1/go-void-limbo/protocol"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 )
@@ -71,7 +73,7 @@ func TestLoad(t *testing.T) {
 		},
 	})
 
-	world, err := Load(dir)
+	world, err := Load(dir, testRegistry)
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -92,8 +94,8 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("packets[0] = %v, want the cache centred on 0,0", packets[0])
 			}
 
-			chunk, ok := packets[1].(*clientboundPlay.LevelChunkWithLightClientboundPacket)
-			if !ok || chunk.X != 0 || chunk.Z != 0 {
+			chunk := decodeChunk(t, version, packets[1])
+			if chunk.X != 0 || chunk.Z != 0 {
 				t.Fatalf("packets[1] = %v, want chunk 0,0", packets[1])
 			}
 
@@ -226,7 +228,7 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 		},
 	})
 
-	world, err := Load(dir)
+	world, err := Load(dir, testRegistry)
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -248,7 +250,7 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 				want[i] = id
 			}
 
-			chunk := world.PacketsFor(version)[1].(*clientboundPlay.LevelChunkWithLightClientboundPacket)
+			chunk := decodeChunk(t, version, world.PacketsFor(version)[1])
 			sections := decodeSections(t, version, chunk.SectionData, blockStates.StateCount())
 
 			section := sections[4]
@@ -263,6 +265,171 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testRegistry is the one registry every test loads and decodes through: it
+// is the same table each time, and building it is not free.
+var testRegistry = protocol.NewDefaultRegistry()
+
+// heightmapKinds maps the names the heightmaps travel under before 1.21.5,
+// as keys of an NBT compound, back to the numbers they travel as after it.
+var heightmapKinds = map[string]int32{
+	"WORLD_SURFACE":   clientboundPlay.HeightmapWorldSurface,
+	"MOTION_BLOCKING": clientboundPlay.HeightmapMotionBlocking,
+}
+
+// decodeChunk reads a prepared chunk back into the packet it was built from,
+// by the client's rules for version: the frame inflated, the id checked
+// against the one the registry gives the packet on that version, and the
+// fields read in the shape the version reads them -- the heightmaps as an NBT
+// compound before 1.21.5 and as a counted map from it.
+func decodeChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
+	t.Helper()
+
+	prepared, ok := packet.(*types.PreparedPacket)
+	if !ok {
+		t.Fatalf("packet is %T, want a prepared chunk", packet)
+	}
+
+	if prepared.Phase != types.PhasePlay || prepared.Version != version.ID {
+		t.Fatalf("chunk is prepared for phase %d on protocol %d, want play on %d", prepared.Phase, prepared.Version, version.ID)
+	}
+
+	body, err := prepared.Body()
+	if err != nil {
+		t.Fatalf("Body() error: %v", err)
+	}
+
+	if len(body) != int(prepared.Size) {
+		t.Fatalf("chunk inflates to %d bytes, claims %d", len(body), prepared.Size)
+	}
+
+	ms := streams.NewMinecraftStreamFromBytesReader(bytes.NewReader(body))
+
+	packetId, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading packet id: %v", err)
+	}
+
+	chunkType := reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{})
+	if want := testRegistry.GetClientboundId(types.PhasePlay, chunkType, version); packetId != want {
+		t.Fatalf("chunk goes out under id %#x, want %#x", packetId, want)
+	}
+
+	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
+
+	if chunk.X, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading x: %v", err)
+	}
+
+	if chunk.Z, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading z: %v", err)
+	}
+
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID {
+		tag, err := nbt.Read(ms)
+		if err != nil {
+			t.Fatalf("reading heightmaps: %v", err)
+		}
+
+		compound, ok := tag.(nbt.Compound)
+		if !ok {
+			t.Fatalf("heightmaps are %T, want a compound", tag)
+		}
+
+		for name, data := range compound {
+			kind, ok := heightmapKinds[name]
+			if !ok {
+				t.Fatalf("heightmap %q is not one the client keeps", name)
+			}
+
+			longs, ok := data.(nbt.LongArray)
+			if !ok {
+				t.Fatalf("heightmap %q is %T, want a long array", name, data)
+			}
+
+			chunk.Heightmaps = append(chunk.Heightmaps, clientboundPlay.Heightmap{Type: kind, Data: longs})
+		}
+	} else {
+		count, err := ms.ReadVarInt()
+		if err != nil {
+			t.Fatalf("reading heightmap count: %v", err)
+		}
+
+		for range count {
+			kind, err := ms.ReadVarInt()
+			if err != nil {
+				t.Fatalf("reading heightmap kind: %v", err)
+			}
+
+			chunk.Heightmaps = append(chunk.Heightmaps, clientboundPlay.Heightmap{Type: kind, Data: readLongArray(t, ms)})
+		}
+	}
+
+	if chunk.SectionData, err = ms.ReadByteArray(streams.MaxPacketSize); err != nil {
+		t.Fatalf("reading sections: %v", err)
+	}
+
+	blockEntities, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading block entity count: %v", err)
+	}
+
+	if blockEntities != 0 {
+		t.Fatalf("chunk carries %d block entities, want none", blockEntities)
+	}
+
+	chunk.SkyLightMask = readLongArray(t, ms)
+	chunk.BlockLightMask = readLongArray(t, ms)
+	chunk.EmptySkyLightMask = readLongArray(t, ms)
+	chunk.EmptyBlockLightMask = readLongArray(t, ms)
+	chunk.SkyLight = readByteArrays(t, ms)
+	chunk.BlockLight = readByteArrays(t, ms)
+
+	if rest, _ := ms.ReadRest(); len(rest) != 0 {
+		t.Fatalf("chunk holds %d bytes past its light", len(rest))
+	}
+
+	return chunk
+}
+
+func readLongArray(t *testing.T, ms *streams.MinecraftStream) []int64 {
+	t.Helper()
+
+	count, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading long array length: %v", err)
+	}
+
+	values := make([]int64, count)
+	for i := range values {
+		if values[i], err = ms.ReadLong(); err != nil {
+			t.Fatalf("reading long array: %v", err)
+		}
+	}
+
+	return values
+}
+
+func readByteArrays(t *testing.T, ms *streams.MinecraftStream) [][]byte {
+	t.Helper()
+
+	count, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading byte array count: %v", err)
+	}
+
+	var arrays [][]byte
+	for range count {
+		array, err := ms.ReadByteArray(streams.MaxPacketSize)
+		if err != nil {
+			t.Fatalf("reading byte array: %v", err)
+		}
+
+		arrays = append(arrays, array)
+	}
+
+	return arrays
 }
 
 // decodedSection is one section as the test's own decoder reads it back.
