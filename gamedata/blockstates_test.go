@@ -15,6 +15,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	// the table to the version: a table missing a block, or holding another
 	// version's, lands somewhere else.
 	stateCounts := map[types.ProtocolId]int32{
+		types.ProtocolVersions.MINECRAFT_1_20_2.ID:  24276,
 		types.ProtocolVersions.MINECRAFT_1_20_3.ID:  26644,
 		types.ProtocolVersions.MINECRAFT_1_20_5.ID:  26684,
 		types.ProtocolVersions.MINECRAFT_1_21.ID:    26684,
@@ -117,6 +118,39 @@ func TestBlockStatesIdUnknown(t *testing.T) {
 
 	if _, ok := states.Id("minecraft:grass_block", map[string]string{"snowy": "maybe"}); ok {
 		t.Error("Id() resolved a property value that does not exist")
+	}
+}
+
+// 1.20.3 renamed grass to short grass, so a world saved by a later version
+// stores a block 1.20.2 numbers under the older name. The table answers to
+// both, with the number the older name has, and only where the rename holds:
+// 1.20.3 numbers short grass itself.
+func TestBlockStatesIdFollowsARename(t *testing.T) {
+	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20_2)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	older, ok := states.Id("minecraft:grass", nil)
+	if !ok {
+		t.Fatal("Id(grass) did not resolve on 1.20.2, whose jar names it")
+	}
+
+	if newer, ok := states.Id("minecraft:short_grass", nil); !ok || newer != older {
+		t.Errorf("Id(short_grass) = %d, %t on 1.20.2, want grass's %d, true", newer, ok, older)
+	}
+
+	states, err = BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20_3)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	if _, ok := states.Id("minecraft:grass", nil); ok {
+		t.Error("Id(grass) resolved on 1.20.3, which is where the block became short grass")
+	}
+
+	if _, ok := states.Id("minecraft:short_grass", nil); !ok {
+		t.Error("Id(short_grass) did not resolve on 1.20.3, whose jar names it")
 	}
 }
 

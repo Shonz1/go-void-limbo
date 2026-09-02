@@ -18,7 +18,8 @@ import (
 // 1.20.5 numbers the player as 1.21 does and needs no rewrite there. 1.20.5
 // itself added four that sort before the player -- the armadillo, the bogged,
 // the breeze's wind charge and the ominous item spawner -- so 1.20.3 sits
-// four lower.
+// four lower. And 1.20.3 added two of its own, the breeze and its wind
+// charge, both before the player, so 1.20.2 sits two lower again.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
@@ -32,6 +33,7 @@ const (
 	playerEntityType1_21    = 128
 	playerEntityType1_20_5  = 128
 	playerEntityType1_20_3  = 124
+	playerEntityType1_20_2  = 122
 )
 
 // downgradeAddEntityType rewrites the entity type field of an add entity

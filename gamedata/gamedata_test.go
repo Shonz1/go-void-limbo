@@ -1257,6 +1257,110 @@ func TestRegistriesFor1_20_3AreItsOwnAndNot1_20_5s(t *testing.T) {
 	}
 }
 
+// 1.20.2 synchronizes the same six registries as 1.20.3, and the same
+// content in each of them, read off the two jars: 1.20.3 added no trim, no
+// damage type and no chat type. The tag sets cover the same eleven
+// registries, and differ by the four tags 1.20.3 introduced -- three entity
+// type tags and one damage type tag -- since each version declares the tags
+// of its own jar.
+func TestRegistriesFor1_20_2AreItsOwnAndNot1_20_3s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_20_2), registries(registriesMinecraft1_20_3)
+
+	if len(older) != 6 {
+		t.Errorf("1.20.2 is sent %d registries, want 6", len(older))
+	}
+
+	if len(older) != len(newer) {
+		t.Errorf("1.20.2 is sent %d registries and 1.20.3 %d, want the same six", len(older), len(newer))
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.20.2 was sent an empty %s", name)
+		}
+
+		newerEntries, ok := newer[name]
+		if !ok {
+			t.Errorf("1.20.2 is sent %s, which 1.20.3 is not", name)
+
+			continue
+		}
+
+		if len(entries) != len(newerEntries) {
+			t.Errorf("1.20.2's %s holds %d entries and 1.20.3's %d, want the same: 1.20.3 added nothing to it", name, len(entries), len(newerEntries))
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.20.2's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+
+			if _, ok := newerEntries[entryName]; !ok {
+				t.Errorf("1.20.2's %s holds %s, which 1.20.3's does not", name, entryName)
+			}
+		}
+	}
+
+	// The dimension type the play login names outright on both sides of the
+	// 1.20.3 step, so first is where it has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_20_2)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.20.2's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_20_2), tags(tagsMinecraft1_20_3)
+
+	if len(olderTags) != len(newerTags) {
+		t.Errorf("1.20.2 declares tags for %d registries and 1.20.3 for %d, want the same eleven", len(olderTags), len(newerTags))
+	}
+
+	for _, name := range []string{"minecraft:undead", "minecraft:zombies", "minecraft:can_breathe_under_water"} {
+		if olderTags["minecraft:entity_type"][name] {
+			t.Errorf("1.20.2 declares %s, an entity type tag 765 introduced", name)
+		}
+
+		if !newerTags["minecraft:entity_type"][name] {
+			t.Errorf("1.20.3 no longer declares %s, an entity type tag its jar does declare", name)
+		}
+	}
+
+	if olderTags["minecraft:damage_type"]["minecraft:can_break_armor_stand"] {
+		t.Error("1.20.2 declares can_break_armor_stand, a damage type tag 765 introduced")
+	}
+
+	if !olderTags["minecraft:item"]["minecraft:tools"] {
+		t.Error("1.20.2 no longer declares tools, an item tag its jar does declare")
+	}
+
+	if !olderTags["minecraft:block"]["minecraft:enchantment_power_provider"] {
+		t.Error("1.20.2 no longer declares enchantment_power_provider, a block tag its jar does declare")
+	}
+}
+
 // 1.20.3's dimension type is 1.21.9's but for the monster spawn light level,
 // whose int provider 1.20.4 reads with its fields nested under value, the
 // way a dispatch lays out a plain codec; the flat shape is 1.20.5's, where
@@ -1401,6 +1505,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_2)
 	oldest00 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_3)
 	oldest0 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_5)
 	oldest1 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21)
@@ -1414,7 +1519,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -1422,6 +1527,11 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	// tags: two packets, however many registries it synchronizes.
 	if len(oldest00) != 2 {
 		t.Errorf("1.20.3 was sent %d packets, want the one holding every registry and the tags", len(oldest00))
+	}
+
+	// And so does 1.20.2, which is where that shape came from.
+	if len(oldest000) != 2 {
+		t.Errorf("1.20.2 was sent %d packets, want the one holding every registry and the tags", len(oldest000))
 	}
 
 	// 1.20.5 synchronizes three registries fewer than 1.21, which the count sees.
