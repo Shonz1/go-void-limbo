@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"github.com/Shonz1/go-void-limbo/nbt"
 	"github.com/Shonz1/go-void-limbo/streams"
+	"github.com/Shonz1/go-void-limbo/types"
+	"strings"
 )
 
 // Entry is one element of a registry.
@@ -35,6 +37,72 @@ type Entry struct {
 type Registry struct {
 	Name    string
 	Entries []Entry
+}
+
+// combinedRegistryDataProtocol is the first version to read one registry data
+// packet per registry. Every version below it reads a single packet holding
+// every registry at once, in the shape encodeCombined writes.
+var combinedRegistryDataProtocol = types.ProtocolVersions.MINECRAFT_1_20_5.ID
+
+// encodeCombined writes the one packet body a client before 1.20.5 reads every
+// registry from: a compound keyed by registry name, holding for each registry
+// its name again under "type" and under "value" a list of its entries, each
+// an entry's name, its id and its definition under "element".
+//
+// The id is explicit here where the per-registry packets leave it to the
+// entry's position, and it is written as that position, so the two shapes
+// number every entry alike and the play phase can name a dimension or a biome
+// by the same index on either side of 1.20.5. A definition is not optional in
+// this shape: nothing before 1.20.5 knows a pack to fall back on, so an entry
+// with no data is refused rather than sent as a name the client cannot fill.
+func encodeCombined(registries []Registry) ([]byte, error) {
+	compound := nbt.Compound{}
+
+	for _, registry := range registries {
+		entries := make([]nbt.Tag, 0, len(registry.Entries))
+
+		for id, entry := range registry.Entries {
+			if entry.Data == nil || entry.Data.Type() == nbt.TagEnd {
+				return nil, fmt.Errorf("registry %s: entry %s has no definition, which the combined shape cannot leave out", registry.Name, entry.Name)
+			}
+
+			entries = append(entries, nbt.Compound{
+				"name":    nbt.String(entry.Name),
+				"id":      nbt.Int(int32(id)),
+				"element": entry.Data,
+			})
+		}
+
+		compound[registry.Name] = nbt.Compound{
+			"type":  nbt.String(registry.Name),
+			"value": nbt.List{ElementType: nbt.TagCompound, Elements: entries},
+		}
+	}
+
+	buf := new(bytes.Buffer)
+	ms := streams.NewMinecraftStreamFromBuffer(buf)
+
+	if err := nbt.Write(ms, compound); err != nil {
+		return nil, err
+	}
+
+	if err := ms.Flush(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// combinedRegistryName is what the one packet holding every registry is
+// called where a packet is named for logging: every registry in it, in the
+// order the set lists them.
+func combinedRegistryName(registries []Registry) string {
+	names := make([]string, 0, len(registries))
+	for _, registry := range registries {
+		names = append(names, registry.Name)
+	}
+
+	return strings.Join(names, ",")
 }
 
 // encode writes the packet body: the registry name, the entry count, then each

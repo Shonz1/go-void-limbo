@@ -15,6 +15,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	// the table to the version: a table missing a block, or holding another
 	// version's, lands somewhere else.
 	stateCounts := map[types.ProtocolId]int32{
+		types.ProtocolVersions.MINECRAFT_1_20_3.ID:  26644,
 		types.ProtocolVersions.MINECRAFT_1_20_5.ID:  26684,
 		types.ProtocolVersions.MINECRAFT_1_21.ID:    26684,
 		types.ProtocolVersions.MINECRAFT_1_21_2.ID:  27318,

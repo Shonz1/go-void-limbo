@@ -139,6 +139,14 @@ func copySpawnInfo(in *streams.MinecraftStream, out *streams.MinecraftStream) er
 		return err
 	}
 
+	return copySpawnInfoAfterDimensionType(in, out)
+}
+
+// copySpawnInfoAfterDimensionType moves the spawn info across from the
+// dimension name on, for the step that has to rewrite the dimension type in
+// front of it: 1.20.5 is where the type became a registry index rather than a
+// name, and nothing behind it has moved in any version this server speaks.
+func copySpawnInfoAfterDimensionType(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
 	// Dimension name.
 	if err := copyString(in, out); err != nil {
 		return err
