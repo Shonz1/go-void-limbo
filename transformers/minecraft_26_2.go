@@ -28,33 +28,12 @@ func DowngradeLoginSuccessTo26_1(in *streams.MinecraftStream, out *streams.Minec
 		return err
 	}
 
-	properties, err := copyVarInt(in, out)
-	if err != nil {
+	if err := copyProfileProperties(in, out); err != nil {
 		return err
 	}
 
-	for i := int32(0); i < properties; i++ {
-		// The property's name and value.
-		for j := 0; j < 2; j++ {
-			if err := copyString(in, out); err != nil {
-				return err
-			}
-		}
-
-		signed, err := copyBoolean(in, out)
-		if err != nil {
-			return err
-		}
-
-		if signed {
-			if err := copyString(in, out); err != nil {
-				return err
-			}
-		}
-	}
-
 	// The session id, read so that it is consumed and never written.
-	_, err = in.ReadBytes(uuidSize)
+	_, err := in.ReadBytes(uuidSize)
 
 	return err
 }

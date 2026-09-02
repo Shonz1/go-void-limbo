@@ -9,7 +9,9 @@ import (
 // registry gains entries almost every version, and the ones that sort before
 // the player shift its number, so the add entity packet -- encoded once, with
 // the latest id -- has its type field rewritten at every step where the number
-// moved. Each id here is read out of that version's own registry report.
+// moved. Each id here is read out of that version's own registry report. The
+// number is not monotonic: 1.21.2 still had the transient creaking, which
+// 1.21.4 retired, so the player sits one higher there than on 1.21.4.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
@@ -19,6 +21,7 @@ const (
 	playerEntityType1_21_6  = 149
 	playerEntityType1_21_5  = 148
 	playerEntityType1_21_4  = 147
+	playerEntityType1_21_2  = 148
 )
 
 // downgradeAddEntityType rewrites the entity type field of an add entity

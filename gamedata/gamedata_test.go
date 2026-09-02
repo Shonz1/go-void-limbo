@@ -746,6 +746,110 @@ func TestRegistriesFor1_21_4AreItsOwnAndNot1_21_5s(t *testing.T) {
 	}
 }
 
+// 1.21.2 synchronizes the same twelve registries as 1.21.4, holding the same
+// entries but one, and the content is its own: 1.21.4 is where the resin
+// trim material landed, where the trim material lost the item model index
+// that 1.21.4's item model rework made redundant, and where the power
+// enchantment's damage was retuned. The tag sets are the same twelve
+// registries too, and each version declares the tags of its own jar.
+func TestRegistriesFor1_21_2AreItsOwnAndNot1_21_4s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_21_2), registries(registriesMinecraft1_21_4)
+
+	if len(older) != 12 {
+		t.Errorf("1.21.2 is sent %d registries, want 12", len(older))
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.21.2 was sent an empty %s", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.21.2 is sent %s, which 1.21.4 is not", name)
+		}
+	}
+
+	for name := range newer {
+		if _, ok := older[name]; !ok {
+			t.Errorf("1.21.4 is sent %s, which 1.21.2 is not", name)
+		}
+	}
+
+	if _, ok := older["minecraft:trim_material"]["minecraft:resin"]; ok {
+		t.Error("1.21.2 is sent the resin trim material, which 769 introduced")
+	}
+
+	if _, ok := newer["minecraft:trim_material"]["minecraft:resin"]; !ok {
+		t.Error("1.21.4 is no longer sent the resin trim material, which its jar holds")
+	}
+
+	amethyst, ok := older["minecraft:trim_material"]["minecraft:amethyst"].(nbt.Compound)
+	if !ok {
+		t.Fatal("1.21.2 has no amethyst trim material")
+	}
+
+	if _, ok := amethyst["item_model_index"]; !ok {
+		t.Error("1.21.2's trim material lost the item_model_index its codec requires")
+	}
+
+	if _, ok := newer["minecraft:trim_material"]["minecraft:amethyst"].(nbt.Compound)["item_model_index"]; ok {
+		t.Error("1.21.4's trim material carries an item_model_index, which 769 dropped")
+	}
+
+	// The wolf variant's biomes go out empty on 1.21.2 for the reason they do
+	// on 1.21.4: its codec is the same set of biome references.
+	wolf, ok := older["minecraft:wolf_variant"]["minecraft:pale"].(nbt.Compound)
+	if !ok {
+		t.Fatal("1.21.2 has no pale wolf variant")
+	}
+
+	if biomes, ok := wolf["biomes"].(nbt.List); !ok || len(biomes.Elements) != 0 {
+		t.Errorf("1.21.2's wolf variant biomes = %v, want an empty list", wolf["biomes"])
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_21_2), tags(tagsMinecraft1_21_4)
+
+	if len(olderTags) != len(newerTags) {
+		t.Errorf("1.21.2 declares tags for %d registries and 1.21.4 for %d, want the same registries", len(olderTags), len(newerTags))
+	}
+
+	if olderTags["minecraft:block"]["minecraft:pale_oak_logs"] {
+		t.Error("1.21.2 declares pale_oak_logs, a block tag 769 introduced")
+	}
+
+	if !newerTags["minecraft:block"]["minecraft:pale_oak_logs"] {
+		t.Error("1.21.4 no longer declares pale_oak_logs, which its jar does")
+	}
+
+	if !olderTags["minecraft:item"]["minecraft:tall_flowers"] {
+		t.Error("1.21.2 no longer declares tall_flowers, which its jar does and 769 retired")
+	}
+}
+
 // 1.21.11 reworked the dimension type and biome schema; 1.21.9 is the last
 // supported version that reads the shape before it. The entries document
 // themselves as exactly what each codec requires, so what the rework removed
@@ -838,6 +942,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest2 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_2)
 	earliest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_4)
 	first := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_5)
 	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_6)
@@ -847,8 +952,14 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	// 1.21.2 and 1.21.4 synchronize the same 12 registries, so the count
+	// cannot tell them apart; the content test above does.
+	if len(oldest2) != len(earliest) {
+		t.Errorf("1.21.2 was sent %d packets and 1.21.4 %d, want the same count for the same registry list", len(oldest2), len(earliest))
 	}
 
 	// 1.21.4 synchronizes eight registries fewer than 1.21.5, which the count

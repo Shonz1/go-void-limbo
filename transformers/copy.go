@@ -56,6 +56,38 @@ func copyBoolean(in *streams.MinecraftStream, out *streams.MinecraftStream) (boo
 	return value, out.WriteBoolean(value)
 }
 
+// copyProfileProperties moves a game profile's property block across: a
+// counted array of name, value and an optional signature, the shape the login
+// success packet and the player list entry both carry.
+func copyProfileProperties(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	properties, err := copyVarInt(in, out)
+	if err != nil {
+		return err
+	}
+
+	for i := int32(0); i < properties; i++ {
+		// The property's name and value.
+		for j := 0; j < 2; j++ {
+			if err := copyString(in, out); err != nil {
+				return err
+			}
+		}
+
+		signed, err := copyBoolean(in, out)
+		if err != nil {
+			return err
+		}
+
+		if signed {
+			if err := copyString(in, out); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // copyRest moves everything left across, for the tail of a body that has
 // nothing further to change in it.
 func copyRest(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
