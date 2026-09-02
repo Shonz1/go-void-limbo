@@ -67,8 +67,10 @@ type blockStateProperty struct {
 // twenty-four blocks in all, so 767 numbers 26,684 states. 1.20.5 shares that
 // table the way 1.21.9 shares 1.21.11's: 1.21 added no block, and the two
 // jars' blocks reports are byte-identical, so 766 numbers every state as 767
-// does.
+// does. And 1.20.3 its own at the very bottom: 766 is where the vault and the
+// heavy core landed, two blocks in all, so 765 numbers 26,644 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_20_3.ID:  "blockstates_minecraft_1_20_3.json",
 	types.ProtocolVersions.MINECRAFT_1_20_5.ID:  "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21.ID:    "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21_2.ID:  "blockstates_minecraft_1_21_2.json",

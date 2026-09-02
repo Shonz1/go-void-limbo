@@ -45,6 +45,17 @@ func copyString(in *streams.MinecraftStream, out *streams.MinecraftStream) error
 	return out.WriteString(value)
 }
 
+// copyByteArray moves a counted byte array across: a var int of how many
+// bytes follow, then the bytes.
+func copyByteArray(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	length, err := copyVarInt(in, out)
+	if err != nil {
+		return err
+	}
+
+	return copyBytes(in, out, length)
+}
+
 // copyBoolean moves a boolean across and returns it, since a boolean in front
 // of an optional field is what says whether the field follows.
 func copyBoolean(in *streams.MinecraftStream, out *streams.MinecraftStream) (bool, error) {

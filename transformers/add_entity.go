@@ -14,8 +14,11 @@ import (
 // 1.21.4 retired, so the player sits one higher there than on 1.21.4. And
 // 1.21.2 is where the biggest jump is, twenty entries: the boats and chest
 // boats became one entity type per wood there, and the creaking arrived. Below
-// that the number holds still: 1.21 added no entity type, so 1.20.5 numbers
-// the player as 1.21 does and needs no rewrite at that step.
+// that the number holds still for one step: 1.21 added no entity type, so
+// 1.20.5 numbers the player as 1.21 does and needs no rewrite there. 1.20.5
+// itself added four that sort before the player -- the armadillo, the bogged,
+// the breeze's wind charge and the ominous item spawner -- so 1.20.3 sits
+// four lower.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
@@ -27,6 +30,8 @@ const (
 	playerEntityType1_21_4  = 147
 	playerEntityType1_21_2  = 148
 	playerEntityType1_21    = 128
+	playerEntityType1_20_5  = 128
+	playerEntityType1_20_3  = 124
 )
 
 // downgradeAddEntityType rewrites the entity type field of an add entity

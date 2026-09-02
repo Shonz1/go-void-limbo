@@ -1,0 +1,3047 @@
+{
+	"registries": [
+		{
+			"name": "minecraft:trim_material",
+			"entries": [
+				{
+					"name": "minecraft:amethyst",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "amethyst"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#9A5CC6"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.amethyst"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:amethyst_shard"
+							},
+							"item_model_index": {
+								"double": 1
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:copper",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "copper"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#B4684D"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.copper"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:copper_ingot"
+							},
+							"item_model_index": {
+								"double": 0.5
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:diamond",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "diamond"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#6EECD2"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.diamond"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:diamond"
+							},
+							"item_model_index": {
+								"double": 0.8
+							},
+							"override_armor_materials": {
+								"compound": {
+									"diamond": {
+										"string": "diamond_darker"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:emerald",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "emerald"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#11A036"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.emerald"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:emerald"
+							},
+							"item_model_index": {
+								"double": 0.7
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:gold",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "gold"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#DEB12D"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.gold"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:gold_ingot"
+							},
+							"item_model_index": {
+								"double": 0.6
+							},
+							"override_armor_materials": {
+								"compound": {
+									"gold": {
+										"string": "gold_darker"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:iron",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "iron"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#ECECEC"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.iron"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:iron_ingot"
+							},
+							"item_model_index": {
+								"double": 0.2
+							},
+							"override_armor_materials": {
+								"compound": {
+									"iron": {
+										"string": "iron_darker"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:lapis",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "lapis"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#416E97"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.lapis"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:lapis_lazuli"
+							},
+							"item_model_index": {
+								"double": 0.9
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:netherite",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "netherite"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#625859"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.netherite"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:netherite_ingot"
+							},
+							"item_model_index": {
+								"double": 0.3
+							},
+							"override_armor_materials": {
+								"compound": {
+									"netherite": {
+										"string": "netherite_darker"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:quartz",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "quartz"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#E3D4C4"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.quartz"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:quartz"
+							},
+							"item_model_index": {
+								"double": 0.1
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:redstone",
+					"data": {
+						"compound": {
+							"asset_name": {
+								"string": "redstone"
+							},
+							"description": {
+								"compound": {
+									"color": {
+										"string": "#971607"
+									},
+									"translate": {
+										"string": "trim_material.minecraft.redstone"
+									}
+								}
+							},
+							"ingredient": {
+								"string": "minecraft:redstone"
+							},
+							"item_model_index": {
+								"double": 0.4
+							}
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "minecraft:trim_pattern",
+			"entries": [
+				{
+					"name": "minecraft:coast",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:coast"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.coast"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:coast_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:dune",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:dune"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.dune"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:dune_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:eye",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:eye"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.eye"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:eye_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:host",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:host"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.host"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:host_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:raiser",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:raiser"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.raiser"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:raiser_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:rib",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:rib"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.rib"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:rib_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:sentry",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:sentry"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.sentry"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:sentry_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:shaper",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:shaper"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.shaper"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:shaper_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:silence",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:silence"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.silence"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:silence_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:snout",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:snout"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.snout"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:snout_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:spire",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:spire"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.spire"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:spire_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:tide",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:tide"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.tide"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:tide_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:vex",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:vex"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.vex"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:vex_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:ward",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:ward"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.ward"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:ward_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:wayfinder",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:wayfinder"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.wayfinder"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:wayfinder_armor_trim_smithing_template"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:wild",
+					"data": {
+						"compound": {
+							"asset_id": {
+								"string": "minecraft:wild"
+							},
+							"decal": {
+								"byte": 0
+							},
+							"description": {
+								"compound": {
+									"translate": {
+										"string": "trim_pattern.minecraft.wild"
+									}
+								}
+							},
+							"template_item": {
+								"string": "minecraft:wild_armor_trim_smithing_template"
+							}
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "minecraft:damage_type",
+			"entries": [
+				{
+					"name": "minecraft:arrow",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "arrow"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:bad_respawn_point",
+					"data": {
+						"compound": {
+							"death_message_type": {
+								"string": "intentional_game_design"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "badRespawnPoint"
+							},
+							"scaling": {
+								"string": "always"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:cactus",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "cactus"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:cramming",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "cramming"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:dragon_breath",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "dragonBreath"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:drown",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "drowning"
+							},
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "drown"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:dry_out",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "dryout"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:explosion",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "explosion"
+							},
+							"scaling": {
+								"string": "always"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:fall",
+					"data": {
+						"compound": {
+							"death_message_type": {
+								"string": "fall_variants"
+							},
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "fall"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:falling_anvil",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "anvil"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:falling_block",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "fallingBlock"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:falling_stalactite",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "fallingStalactite"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:fireball",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "fireball"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:fireworks",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "fireworks"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:fly_into_wall",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "flyIntoWall"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:freeze",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "freezing"
+							},
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "freeze"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:generic",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "generic"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:generic_kill",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "genericKill"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:hot_floor",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "hotFloor"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:in_fire",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "inFire"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:in_wall",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "inWall"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:indirect_magic",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "indirectMagic"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:lava",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "lava"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:lightning_bolt",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "lightningBolt"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:magic",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "magic"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:mob_attack",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "mob"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:mob_attack_no_aggro",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "mob"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:mob_projectile",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "mob"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:on_fire",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "onFire"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:out_of_world",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "outOfWorld"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:outside_border",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "outsideBorder"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:player_attack",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "player"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:player_explosion",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "explosion.player"
+							},
+							"scaling": {
+								"string": "always"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:sonic_boom",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "sonic_boom"
+							},
+							"scaling": {
+								"string": "always"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:stalagmite",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "stalagmite"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:starve",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "starve"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:sting",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "sting"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:sweet_berry_bush",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "poking"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "sweetBerryBush"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:thorns",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "thorns"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "thorns"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:thrown",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "thrown"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:trident",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "trident"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:unattributed_fireball",
+					"data": {
+						"compound": {
+							"effects": {
+								"string": "burning"
+							},
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "onFire"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:wither",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0
+							},
+							"message_id": {
+								"string": "wither"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:wither_skull",
+					"data": {
+						"compound": {
+							"exhaustion": {
+								"double": 0.1
+							},
+							"message_id": {
+								"string": "witherSkull"
+							},
+							"scaling": {
+								"string": "when_caused_by_living_non_player"
+							}
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "minecraft:chat_type",
+			"entries": [
+				{
+					"name": "minecraft:chat",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:emote_command",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.emote"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.emote"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:msg_command_incoming",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"style": {
+										"compound": {
+											"color": {
+												"string": "gray"
+											},
+											"italic": {
+												"byte": 1
+											}
+										}
+									},
+									"translation_key": {
+										"string": "commands.message.display.incoming"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:msg_command_outgoing",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"style": {
+										"compound": {
+											"color": {
+												"string": "gray"
+											},
+											"italic": {
+												"byte": 1
+											}
+										}
+									},
+									"translation_key": {
+										"string": "commands.message.display.outgoing"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:say_command",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.announcement"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:team_msg_command_incoming",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.team.text"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:team_msg_command_outgoing",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.team.sent"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				}
+			]
+		}
+	],
+	"tags": [
+		{
+			"registry": "minecraft:block",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:all_hanging_signs"
+				},
+				{
+					"name": "minecraft:all_signs"
+				},
+				{
+					"name": "minecraft:ancient_city_replaceable"
+				},
+				{
+					"name": "minecraft:animals_spawnable_on"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:axolotls_spawnable_on"
+				},
+				{
+					"name": "minecraft:azalea_grows_on"
+				},
+				{
+					"name": "minecraft:azalea_root_replaceable"
+				},
+				{
+					"name": "minecraft:bamboo_blocks"
+				},
+				{
+					"name": "minecraft:bamboo_plantable_on"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:base_stone_nether"
+				},
+				{
+					"name": "minecraft:base_stone_overworld"
+				},
+				{
+					"name": "minecraft:beacon_base_blocks"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:bee_growables"
+				},
+				{
+					"name": "minecraft:beehives"
+				},
+				{
+					"name": "minecraft:big_dripleaf_placeable"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:camel_sand_step_sound_blocks"
+				},
+				{
+					"name": "minecraft:campfires"
+				},
+				{
+					"name": "minecraft:candle_cakes"
+				},
+				{
+					"name": "minecraft:candles"
+				},
+				{
+					"name": "minecraft:cauldrons"
+				},
+				{
+					"name": "minecraft:cave_vines"
+				},
+				{
+					"name": "minecraft:ceiling_hanging_signs"
+				},
+				{
+					"name": "minecraft:cherry_logs"
+				},
+				{
+					"name": "minecraft:climbable"
+				},
+				{
+					"name": "minecraft:coal_ores"
+				},
+				{
+					"name": "minecraft:combination_step_sound_blocks"
+				},
+				{
+					"name": "minecraft:completes_find_tree_tutorial"
+				},
+				{
+					"name": "minecraft:concrete_powder"
+				},
+				{
+					"name": "minecraft:convertable_to_mud"
+				},
+				{
+					"name": "minecraft:copper_ores"
+				},
+				{
+					"name": "minecraft:coral_blocks"
+				},
+				{
+					"name": "minecraft:coral_plants"
+				},
+				{
+					"name": "minecraft:corals"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:crops"
+				},
+				{
+					"name": "minecraft:crystal_sound_blocks"
+				},
+				{
+					"name": "minecraft:dampens_vibrations"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:dead_bush_may_place_on"
+				},
+				{
+					"name": "minecraft:deepslate_ore_replaceables"
+				},
+				{
+					"name": "minecraft:diamond_ores"
+				},
+				{
+					"name": "minecraft:dirt"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:dragon_immune"
+				},
+				{
+					"name": "minecraft:dragon_transparent"
+				},
+				{
+					"name": "minecraft:dripstone_replaceable_blocks"
+				},
+				{
+					"name": "minecraft:emerald_ores"
+				},
+				{
+					"name": "minecraft:enchantment_power_provider"
+				},
+				{
+					"name": "minecraft:enchantment_power_transmitter"
+				},
+				{
+					"name": "minecraft:enderman_holdable"
+				},
+				{
+					"name": "minecraft:fall_damage_resetting"
+				},
+				{
+					"name": "minecraft:features_cannot_replace"
+				},
+				{
+					"name": "minecraft:fence_gates"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fire"
+				},
+				{
+					"name": "minecraft:flower_pots"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:foxes_spawnable_on"
+				},
+				{
+					"name": "minecraft:frog_prefer_jump_to"
+				},
+				{
+					"name": "minecraft:frogs_spawnable_on"
+				},
+				{
+					"name": "minecraft:geode_invalid_blocks"
+				},
+				{
+					"name": "minecraft:goats_spawnable_on"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:guarded_by_piglins"
+				},
+				{
+					"name": "minecraft:hoglin_repellents"
+				},
+				{
+					"name": "minecraft:ice"
+				},
+				{
+					"name": "minecraft:impermeable"
+				},
+				{
+					"name": "minecraft:infiniburn_end"
+				},
+				{
+					"name": "minecraft:infiniburn_nether"
+				},
+				{
+					"name": "minecraft:infiniburn_overworld"
+				},
+				{
+					"name": "minecraft:inside_step_sound_blocks"
+				},
+				{
+					"name": "minecraft:invalid_spawn_inside"
+				},
+				{
+					"name": "minecraft:iron_ores"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:lapis_ores"
+				},
+				{
+					"name": "minecraft:lava_pool_stone_cannot_replace"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:lush_ground_replaceable"
+				},
+				{
+					"name": "minecraft:maintains_farmland"
+				},
+				{
+					"name": "minecraft:mangrove_logs"
+				},
+				{
+					"name": "minecraft:mangrove_logs_can_grow_through"
+				},
+				{
+					"name": "minecraft:mangrove_roots_can_grow_through"
+				},
+				{
+					"name": "minecraft:mineable/axe"
+				},
+				{
+					"name": "minecraft:mineable/hoe"
+				},
+				{
+					"name": "minecraft:mineable/pickaxe"
+				},
+				{
+					"name": "minecraft:mineable/shovel"
+				},
+				{
+					"name": "minecraft:mooshrooms_spawnable_on"
+				},
+				{
+					"name": "minecraft:moss_replaceable"
+				},
+				{
+					"name": "minecraft:mushroom_grow_block"
+				},
+				{
+					"name": "minecraft:needs_diamond_tool"
+				},
+				{
+					"name": "minecraft:needs_iron_tool"
+				},
+				{
+					"name": "minecraft:needs_stone_tool"
+				},
+				{
+					"name": "minecraft:nether_carver_replaceables"
+				},
+				{
+					"name": "minecraft:nylium"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:occludes_vibration_signals"
+				},
+				{
+					"name": "minecraft:overworld_carver_replaceables"
+				},
+				{
+					"name": "minecraft:overworld_natural_logs"
+				},
+				{
+					"name": "minecraft:parrots_spawnable_on"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:polar_bears_spawnable_on_alternate"
+				},
+				{
+					"name": "minecraft:portals"
+				},
+				{
+					"name": "minecraft:pressure_plates"
+				},
+				{
+					"name": "minecraft:prevent_mob_spawning_inside"
+				},
+				{
+					"name": "minecraft:rabbits_spawnable_on"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:redstone_ores"
+				},
+				{
+					"name": "minecraft:replaceable"
+				},
+				{
+					"name": "minecraft:replaceable_by_trees"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:sculk_replaceable"
+				},
+				{
+					"name": "minecraft:sculk_replaceable_world_gen"
+				},
+				{
+					"name": "minecraft:shulker_boxes"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_dripleaf_placeable"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:smelts_to_glass"
+				},
+				{
+					"name": "minecraft:snaps_goat_horn"
+				},
+				{
+					"name": "minecraft:sniffer_diggable_block"
+				},
+				{
+					"name": "minecraft:sniffer_egg_hatch_boost"
+				},
+				{
+					"name": "minecraft:snow"
+				},
+				{
+					"name": "minecraft:snow_layer_can_survive_on"
+				},
+				{
+					"name": "minecraft:snow_layer_cannot_survive_on"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:soul_speed_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:standing_signs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_buttons"
+				},
+				{
+					"name": "minecraft:stone_ore_replaceables"
+				},
+				{
+					"name": "minecraft:stone_pressure_plates"
+				},
+				{
+					"name": "minecraft:strider_warm_blocks"
+				},
+				{
+					"name": "minecraft:sword_efficient"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:terracotta"
+				},
+				{
+					"name": "minecraft:trail_ruins_replaceable"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:underwater_bonemeals"
+				},
+				{
+					"name": "minecraft:unstable_bottom_center"
+				},
+				{
+					"name": "minecraft:valid_spawn"
+				},
+				{
+					"name": "minecraft:vibration_resonators"
+				},
+				{
+					"name": "minecraft:wall_corals"
+				},
+				{
+					"name": "minecraft:wall_hanging_signs"
+				},
+				{
+					"name": "minecraft:wall_post_override"
+				},
+				{
+					"name": "minecraft:wall_signs"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wart_blocks"
+				},
+				{
+					"name": "minecraft:wither_immune"
+				},
+				{
+					"name": "minecraft:wither_summon_base_blocks"
+				},
+				{
+					"name": "minecraft:wolves_spawnable_on"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				},
+				{
+					"name": "minecraft:wool_carpets"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:item",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:axes"
+				},
+				{
+					"name": "minecraft:axolotl_tempt_items"
+				},
+				{
+					"name": "minecraft:bamboo_blocks"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:beacon_payment_items"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:boats"
+				},
+				{
+					"name": "minecraft:bookshelf_books"
+				},
+				{
+					"name": "minecraft:breaks_decorated_pots"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:candles"
+				},
+				{
+					"name": "minecraft:cherry_logs"
+				},
+				{
+					"name": "minecraft:chest_boats"
+				},
+				{
+					"name": "minecraft:cluster_max_harvestables"
+				},
+				{
+					"name": "minecraft:coal_ores"
+				},
+				{
+					"name": "minecraft:coals"
+				},
+				{
+					"name": "minecraft:compasses"
+				},
+				{
+					"name": "minecraft:completes_find_tree_tutorial"
+				},
+				{
+					"name": "minecraft:copper_ores"
+				},
+				{
+					"name": "minecraft:creeper_drop_music_discs"
+				},
+				{
+					"name": "minecraft:creeper_igniters"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:dampens_vibrations"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:decorated_pot_ingredients"
+				},
+				{
+					"name": "minecraft:decorated_pot_sherds"
+				},
+				{
+					"name": "minecraft:diamond_ores"
+				},
+				{
+					"name": "minecraft:dirt"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:emerald_ores"
+				},
+				{
+					"name": "minecraft:fence_gates"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fishes"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:fox_food"
+				},
+				{
+					"name": "minecraft:freeze_immune_wearables"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:hanging_signs"
+				},
+				{
+					"name": "minecraft:hoes"
+				},
+				{
+					"name": "minecraft:ignored_by_piglin_babies"
+				},
+				{
+					"name": "minecraft:iron_ores"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:lapis_ores"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:lectern_books"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:mangrove_logs"
+				},
+				{
+					"name": "minecraft:music_discs"
+				},
+				{
+					"name": "minecraft:non_flammable_wood"
+				},
+				{
+					"name": "minecraft:noteblock_top_instruments"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:pickaxes"
+				},
+				{
+					"name": "minecraft:piglin_food"
+				},
+				{
+					"name": "minecraft:piglin_loved"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:redstone_ores"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:shovels"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:smelts_to_glass"
+				},
+				{
+					"name": "minecraft:sniffer_food"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_buttons"
+				},
+				{
+					"name": "minecraft:stone_crafting_materials"
+				},
+				{
+					"name": "minecraft:stone_tool_materials"
+				},
+				{
+					"name": "minecraft:swords"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:terracotta"
+				},
+				{
+					"name": "minecraft:tools"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:trim_materials"
+				},
+				{
+					"name": "minecraft:trim_templates"
+				},
+				{
+					"name": "minecraft:trimmable_armor"
+				},
+				{
+					"name": "minecraft:villager_plantable_seeds"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wart_blocks"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				},
+				{
+					"name": "minecraft:wool_carpets"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:entity_type",
+			"tags": [
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:axolotl_always_hostiles"
+				},
+				{
+					"name": "minecraft:axolotl_hunt_targets"
+				},
+				{
+					"name": "minecraft:beehive_inhabitors"
+				},
+				{
+					"name": "minecraft:can_breathe_under_water"
+				},
+				{
+					"name": "minecraft:dismounts_underwater"
+				},
+				{
+					"name": "minecraft:fall_damage_immune"
+				},
+				{
+					"name": "minecraft:freeze_hurts_extra_types"
+				},
+				{
+					"name": "minecraft:freeze_immune_entity_types"
+				},
+				{
+					"name": "minecraft:frog_food"
+				},
+				{
+					"name": "minecraft:impact_projectiles"
+				},
+				{
+					"name": "minecraft:non_controlling_rider"
+				},
+				{
+					"name": "minecraft:powder_snow_walkable_mobs"
+				},
+				{
+					"name": "minecraft:raiders"
+				},
+				{
+					"name": "minecraft:skeletons"
+				},
+				{
+					"name": "minecraft:undead"
+				},
+				{
+					"name": "minecraft:zombies"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:fluid",
+			"tags": [
+				{
+					"name": "minecraft:lava"
+				},
+				{
+					"name": "minecraft:water"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:game_event",
+			"tags": [
+				{
+					"name": "minecraft:allay_can_listen"
+				},
+				{
+					"name": "minecraft:ignore_vibrations_sneaking"
+				},
+				{
+					"name": "minecraft:shrieker_can_listen"
+				},
+				{
+					"name": "minecraft:vibrations"
+				},
+				{
+					"name": "minecraft:warden_can_listen"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:point_of_interest_type",
+			"tags": [
+				{
+					"name": "minecraft:acquirable_job_site"
+				},
+				{
+					"name": "minecraft:bee_home"
+				},
+				{
+					"name": "minecraft:village"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:damage_type",
+			"tags": [
+				{
+					"name": "minecraft:always_hurts_ender_dragons"
+				},
+				{
+					"name": "minecraft:always_kills_armor_stands"
+				},
+				{
+					"name": "minecraft:always_most_significant_fall"
+				},
+				{
+					"name": "minecraft:always_triggers_silverfish"
+				},
+				{
+					"name": "minecraft:avoids_guardian_thorns"
+				},
+				{
+					"name": "minecraft:burns_armor_stands"
+				},
+				{
+					"name": "minecraft:bypasses_armor"
+				},
+				{
+					"name": "minecraft:bypasses_effects"
+				},
+				{
+					"name": "minecraft:bypasses_enchantments"
+				},
+				{
+					"name": "minecraft:bypasses_invulnerability"
+				},
+				{
+					"name": "minecraft:bypasses_resistance"
+				},
+				{
+					"name": "minecraft:bypasses_shield"
+				},
+				{
+					"name": "minecraft:can_break_armor_stand"
+				},
+				{
+					"name": "minecraft:damages_helmet"
+				},
+				{
+					"name": "minecraft:ignites_armor_stands"
+				},
+				{
+					"name": "minecraft:is_drowning"
+				},
+				{
+					"name": "minecraft:is_explosion"
+				},
+				{
+					"name": "minecraft:is_fall"
+				},
+				{
+					"name": "minecraft:is_fire"
+				},
+				{
+					"name": "minecraft:is_freezing"
+				},
+				{
+					"name": "minecraft:is_lightning"
+				},
+				{
+					"name": "minecraft:is_projectile"
+				},
+				{
+					"name": "minecraft:no_anger"
+				},
+				{
+					"name": "minecraft:no_impact"
+				},
+				{
+					"name": "minecraft:no_knockback"
+				},
+				{
+					"name": "minecraft:witch_resistant_to"
+				},
+				{
+					"name": "minecraft:wither_immune_to"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:worldgen/biome",
+			"tags": [
+				{
+					"name": "minecraft:allows_surface_slime_spawns"
+				},
+				{
+					"name": "minecraft:allows_tropical_fish_spawns_at_any_height"
+				},
+				{
+					"name": "minecraft:has_closer_water_fog"
+				},
+				{
+					"name": "minecraft:has_structure/ancient_city"
+				},
+				{
+					"name": "minecraft:has_structure/bastion_remnant"
+				},
+				{
+					"name": "minecraft:has_structure/buried_treasure"
+				},
+				{
+					"name": "minecraft:has_structure/desert_pyramid"
+				},
+				{
+					"name": "minecraft:has_structure/end_city"
+				},
+				{
+					"name": "minecraft:has_structure/igloo"
+				},
+				{
+					"name": "minecraft:has_structure/jungle_temple"
+				},
+				{
+					"name": "minecraft:has_structure/mineshaft"
+				},
+				{
+					"name": "minecraft:has_structure/mineshaft_mesa"
+				},
+				{
+					"name": "minecraft:has_structure/nether_fortress"
+				},
+				{
+					"name": "minecraft:has_structure/nether_fossil"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_monument"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_ruin_cold"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_ruin_warm"
+				},
+				{
+					"name": "minecraft:has_structure/pillager_outpost"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_desert"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_jungle"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_mountain"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_nether"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_ocean"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_standard"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_swamp"
+				},
+				{
+					"name": "minecraft:has_structure/shipwreck"
+				},
+				{
+					"name": "minecraft:has_structure/shipwreck_beached"
+				},
+				{
+					"name": "minecraft:has_structure/stronghold"
+				},
+				{
+					"name": "minecraft:has_structure/swamp_hut"
+				},
+				{
+					"name": "minecraft:has_structure/trail_ruins"
+				},
+				{
+					"name": "minecraft:has_structure/village_desert"
+				},
+				{
+					"name": "minecraft:has_structure/village_plains"
+				},
+				{
+					"name": "minecraft:has_structure/village_savanna"
+				},
+				{
+					"name": "minecraft:has_structure/village_snowy"
+				},
+				{
+					"name": "minecraft:has_structure/village_taiga"
+				},
+				{
+					"name": "minecraft:has_structure/woodland_mansion"
+				},
+				{
+					"name": "minecraft:increased_fire_burnout"
+				},
+				{
+					"name": "minecraft:is_badlands"
+				},
+				{
+					"name": "minecraft:is_beach"
+				},
+				{
+					"name": "minecraft:is_deep_ocean"
+				},
+				{
+					"name": "minecraft:is_end"
+				},
+				{
+					"name": "minecraft:is_forest"
+				},
+				{
+					"name": "minecraft:is_hill"
+				},
+				{
+					"name": "minecraft:is_jungle"
+				},
+				{
+					"name": "minecraft:is_mountain"
+				},
+				{
+					"name": "minecraft:is_nether"
+				},
+				{
+					"name": "minecraft:is_ocean"
+				},
+				{
+					"name": "minecraft:is_overworld"
+				},
+				{
+					"name": "minecraft:is_river"
+				},
+				{
+					"name": "minecraft:is_savanna"
+				},
+				{
+					"name": "minecraft:is_taiga"
+				},
+				{
+					"name": "minecraft:mineshaft_blocking"
+				},
+				{
+					"name": "minecraft:more_frequent_drowned_spawns"
+				},
+				{
+					"name": "minecraft:plays_underwater_music"
+				},
+				{
+					"name": "minecraft:polar_bears_spawn_on_alternate_blocks"
+				},
+				{
+					"name": "minecraft:produces_corals_from_bonemeal"
+				},
+				{
+					"name": "minecraft:reduce_water_ambient_spawns"
+				},
+				{
+					"name": "minecraft:required_ocean_monument_surrounding"
+				},
+				{
+					"name": "minecraft:snow_golem_melts"
+				},
+				{
+					"name": "minecraft:spawns_cold_variant_frogs"
+				},
+				{
+					"name": "minecraft:spawns_gold_rabbits"
+				},
+				{
+					"name": "minecraft:spawns_snow_foxes"
+				},
+				{
+					"name": "minecraft:spawns_warm_variant_frogs"
+				},
+				{
+					"name": "minecraft:spawns_white_rabbits"
+				},
+				{
+					"name": "minecraft:stronghold_biased_to"
+				},
+				{
+					"name": "minecraft:water_on_map_outlines"
+				},
+				{
+					"name": "minecraft:without_patrol_spawns"
+				},
+				{
+					"name": "minecraft:without_wandering_trader_spawns"
+				},
+				{
+					"name": "minecraft:without_zombie_sieges"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:instrument",
+			"tags": [
+				{
+					"name": "minecraft:goat_horns"
+				},
+				{
+					"name": "minecraft:regular_goat_horns"
+				},
+				{
+					"name": "minecraft:screaming_goat_horns"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:painting_variant",
+			"tags": [
+				{
+					"name": "minecraft:placeable"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:banner_pattern",
+			"tags": [
+				{
+					"name": "minecraft:no_item_required"
+				},
+				{
+					"name": "minecraft:pattern_item/creeper"
+				},
+				{
+					"name": "minecraft:pattern_item/flower"
+				},
+				{
+					"name": "minecraft:pattern_item/globe"
+				},
+				{
+					"name": "minecraft:pattern_item/mojang"
+				},
+				{
+					"name": "minecraft:pattern_item/piglin"
+				},
+				{
+					"name": "minecraft:pattern_item/skull"
+				}
+			]
+		}
+	]
+}

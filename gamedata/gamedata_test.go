@@ -154,13 +154,96 @@ func TestPacketsForPreservesRegistryOrder(t *testing.T) {
 		registries = append(registries, Registry{Name: name})
 	}
 
-	provider := newTestProvider(t, Set{MinProtocol: 1, Registries: registries})
-	got := registryNames(t, provider.PacketsFor(types.ProtocolVersion{ID: 1}))
+	// A set above 1.20.5, where each registry is a packet of its own and the
+	// order is the order of the packets; below it the one packet holds them
+	// all, which TestProviderSendsOneCompoundBelow1_20_5 covers.
+	provider := newTestProvider(t, Set{MinProtocol: 1000, Registries: registries})
+	got := registryNames(t, provider.PacketsFor(types.ProtocolVersion{ID: 1000}))
 
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("registry order = %v, want %v", got, want)
 		}
+	}
+}
+
+// A client before 1.20.5 reads every registry from one packet, as one
+// compound keyed by registry name, each holding its name again under type and
+// its entries under value with explicit ids. The ids are the positions the
+// per-registry shape numbers entries by, so the dimension type the play login
+// names by index is the same entry on either side of 1.20.5.
+func TestProviderSendsOneCompoundBelow1_20_5(t *testing.T) {
+	registries := []Registry{
+		{Name: "minecraft:dimension_type", Entries: []Entry{
+			{Name: "minecraft:overworld", Data: nbt.Compound{"height": nbt.Int(384)}},
+		}},
+		{Name: "minecraft:worldgen/biome", Entries: []Entry{
+			{Name: "minecraft:plains", Data: nbt.Compound{"temperature": nbt.Float(0.8)}},
+			{Name: "minecraft:desert", Data: nbt.Compound{"temperature": nbt.Float(2)}},
+		}},
+	}
+
+	provider := newTestProvider(t, Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_3.ID, Registries: registries})
+	packets := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_3)
+
+	if len(packets) != 1 {
+		t.Fatalf("1.20.3 was sent %d registry packets, want the one holding every registry", len(packets))
+	}
+
+	buf := new(bytes.Buffer)
+	out := streams.NewMinecraftStreamFromBuffer(buf)
+
+	if err := packets[0].Encode(out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := out.Flush(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	decoded, err := nbt.Read(streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer(buf.Bytes())))
+	if err != nil {
+		t.Fatalf("the body is not one nameless compound: %v", err)
+	}
+
+	want := nbt.Compound{
+		"minecraft:dimension_type": nbt.Compound{
+			"type": nbt.String("minecraft:dimension_type"),
+			"value": nbt.List{ElementType: nbt.TagCompound, Elements: []nbt.Tag{
+				nbt.Compound{"name": nbt.String("minecraft:overworld"), "id": nbt.Int(0), "element": nbt.Compound{"height": nbt.Int(384)}},
+			}},
+		},
+		"minecraft:worldgen/biome": nbt.Compound{
+			"type": nbt.String("minecraft:worldgen/biome"),
+			"value": nbt.List{ElementType: nbt.TagCompound, Elements: []nbt.Tag{
+				nbt.Compound{"name": nbt.String("minecraft:plains"), "id": nbt.Int(0), "element": nbt.Compound{"temperature": nbt.Float(0.8)}},
+				nbt.Compound{"name": nbt.String("minecraft:desert"), "id": nbt.Int(1), "element": nbt.Compound{"temperature": nbt.Float(2)}},
+			}},
+		},
+	}
+
+	if decoded.String() != want.String() {
+		t.Errorf("1.20.3's registry data decodes as\n%v\nwant\n%v", decoded, want)
+	}
+}
+
+// The combined shape has no way to send a name without its definition, since
+// nothing before 1.20.5 knows a pack to fall back on, so a set that tries is
+// refused when the provider is built rather than sent to a client that cannot
+// fill it in.
+func TestProviderRefusesAnEntryWithoutDataBelow1_20_5(t *testing.T) {
+	registries := []Registry{
+		{Name: "minecraft:dimension_type", Entries: []Entry{{Name: "minecraft:overworld"}}},
+	}
+
+	if _, err := NewProvider(Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_3.ID, Registries: registries}); err == nil {
+		t.Error("error = nil, want a refusal for an entry with no definition")
+	}
+
+	// The same set one version up is fine: the per-registry shape sends the
+	// name with a flag saying no definition follows.
+	if _, err := NewProvider(Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_5.ID, Registries: registries}); err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -1068,6 +1151,169 @@ func TestRegistriesFor1_20_5AreItsOwnAndNot1_21s(t *testing.T) {
 	}
 }
 
+// 1.20.3 synchronizes six registries to 1.20.5's eight -- the wolf variant
+// and the banner pattern became data-driven in 1.20.5 -- and the content is
+// its own: 1.20.5 is where the spit damage type landed. The tag sets cover
+// eleven registries to 1.20.5's twelve, since 1.20.5 is where enchantment
+// tags appeared, and each version declares the tags of its own jar: 1.20.5
+// retired the tools item tag, and gave every animal a food tag.
+func TestRegistriesFor1_20_3AreItsOwnAndNot1_20_5s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_20_3), registries(registriesMinecraft1_20_5)
+
+	if len(older) != 6 {
+		t.Errorf("1.20.3 is sent %d registries, want 6", len(older))
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.20.3 was sent an empty %s", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.20.3 is sent %s, which 1.20.5 is not", name)
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.20.3's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+		}
+	}
+
+	for _, name := range []string{"minecraft:wolf_variant", "minecraft:banner_pattern"} {
+		if _, ok := older[name]; ok {
+			t.Errorf("1.20.3 is sent %s, which 766 is where it became data-driven", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.20.5 is no longer sent %s, which its jar holds", name)
+		}
+	}
+
+	if _, ok := older["minecraft:damage_type"]["minecraft:spit"]; ok {
+		t.Error("1.20.3 is sent the spit damage type, which 766 introduced")
+	}
+
+	if _, ok := newer["minecraft:damage_type"]["minecraft:spit"]; !ok {
+		t.Error("1.20.5 is no longer sent the spit damage type, which its jar holds")
+	}
+
+	// The dimension type the play login names by index on 1.20.5 is named
+	// outright on 1.20.3, and the 1.20.5 step's rewrite writes the name of
+	// the entry package gamedata puts first, so first is where it has to be.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_20_3)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.20.3's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_20_3), tags(tagsMinecraft1_20_5)
+
+	if len(olderTags) != len(newerTags)-1 {
+		t.Errorf("1.20.3 declares tags for %d registries and 1.20.5 for %d, want one fewer for 1.20.3", len(olderTags), len(newerTags))
+	}
+
+	if _, ok := olderTags["minecraft:enchantment"]; ok {
+		t.Error("1.20.3 declares enchantment tags, which 766 introduced")
+	}
+
+	if !olderTags["minecraft:item"]["minecraft:tools"] {
+		t.Error("1.20.3 no longer declares tools, an item tag its jar does declare")
+	}
+
+	if newerTags["minecraft:item"]["minecraft:tools"] {
+		t.Error("1.20.5 declares tools, an item tag 766 retired")
+	}
+
+	if olderTags["minecraft:item"]["minecraft:armadillo_food"] {
+		t.Error("1.20.3 declares armadillo_food, an item tag 766 introduced")
+	}
+
+	if !olderTags["minecraft:block"]["minecraft:enchantment_power_provider"] {
+		t.Error("1.20.3 no longer declares enchantment_power_provider, a block tag its jar does declare")
+	}
+}
+
+// 1.20.3's dimension type is 1.21.9's but for the monster spawn light level,
+// whose int provider 1.20.4 reads with its fields nested under value, the
+// way a dispatch lays out a plain codec; the flat shape is 1.20.5's, where
+// the provider's codec became a map codec. Everything else has to stay
+// 1.21.9's, so that the one difference is the one the codecs have.
+func TestDimensionTypeFor1_20_3NestsTheIntProvider(t *testing.T) {
+	var dimensionType nbt.Compound
+
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft1_20_3) {
+		if registry.Name == "minecraft:dimension_type" {
+			dimensionType = registry.Entries[0].Data.(nbt.Compound)
+		}
+	}
+
+	if dimensionType == nil {
+		t.Fatal("1.20.3 has no dimension type")
+	}
+
+	provider, ok := dimensionType["monster_spawn_light_level"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("monster_spawn_light_level = %v, want a compound", dimensionType["monster_spawn_light_level"])
+	}
+
+	if provider["type"] != nbt.String("minecraft:uniform") {
+		t.Errorf("monster_spawn_light_level type = %v, want minecraft:uniform", provider["type"])
+	}
+
+	value, ok := provider["value"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("monster_spawn_light_level value = %v, want the provider's fields nested under it", provider["value"])
+	}
+
+	if value["min_inclusive"] != nbt.Int(0) || value["max_inclusive"] != nbt.Int(7) {
+		t.Errorf("monster_spawn_light_level value = %v, want min_inclusive 0 and max_inclusive 7", value)
+	}
+
+	for _, key := range []string{"min_inclusive", "max_inclusive"} {
+		if _, ok := provider[key]; ok {
+			t.Errorf("monster_spawn_light_level carries %s beside the type, which is 1.20.5's flat shape", key)
+		}
+	}
+
+	for key, want := range overworldDimensionType1_21_9 {
+		if key == "monster_spawn_light_level" {
+			continue
+		}
+
+		if got := dimensionType[key]; got.String() != want.String() {
+			t.Errorf("%s = %v, want 1.21.9's %v", key, got, want)
+		}
+	}
+
+	if len(dimensionType) != len(overworldDimensionType1_21_9) {
+		t.Errorf("1.20.3's dimension type has %d fields and 1.21.9's %d, want the same fields", len(dimensionType), len(overworldDimensionType1_21_9))
+	}
+}
+
 func TestDimensionTypeFor1_21_9KeepsThePreReworkSchema(t *testing.T) {
 	var dimensionType nbt.Compound
 
@@ -1155,6 +1401,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest00 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_3)
 	oldest0 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_5)
 	oldest1 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21)
 	oldest2 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_2)
@@ -1167,8 +1414,14 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	// 1.20.3 takes every registry in one packet, so it is sent that and the
+	// tags: two packets, however many registries it synchronizes.
+	if len(oldest00) != 2 {
+		t.Errorf("1.20.3 was sent %d packets, want the one holding every registry and the tags", len(oldest00))
 	}
 
 	// 1.20.5 synchronizes three registries fewer than 1.21, which the count sees.

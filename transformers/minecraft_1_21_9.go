@@ -93,7 +93,7 @@ const (
 // its serializer is shaped by the serializer, so the rewrite can only carry
 // entries it knows the shape of.
 const (
-	byteSerializer1_21_9 = 0
+	byteSerializer = 0
 
 	// entityDataTerminator ends the entry list, sitting where no real index
 	// can.
@@ -110,6 +110,15 @@ const (
 // walk has to understand each entry to get past its value, so only the two
 // serializers this server sends are accepted.
 func DowngradeSetEntityDataTo1_21_7(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	return renamePoseSerializer(in, out, poseSerializer1_21_9, poseSerializer1_21_7)
+}
+
+// renamePoseSerializer walks a set entity data packet across, writing the
+// pose serializer as to wherever it finds it as from. The byte serializer
+// crosses as it is, being registered first in every version this server
+// speaks; anything else is refused, because the walk cannot get past a value
+// whose shape it does not know.
+func renamePoseSerializer(in *streams.MinecraftStream, out *streams.MinecraftStream, from, to int32) error {
 	// The entity id.
 	if _, err := copyVarInt(in, out); err != nil {
 		return err
@@ -135,7 +144,7 @@ func DowngradeSetEntityDataTo1_21_7(in *streams.MinecraftStream, out *streams.Mi
 		}
 
 		switch serializer {
-		case byteSerializer1_21_9:
+		case byteSerializer:
 			if err := out.WriteVarInt(serializer); err != nil {
 				return err
 			}
@@ -143,8 +152,8 @@ func DowngradeSetEntityDataTo1_21_7(in *streams.MinecraftStream, out *streams.Mi
 			if err := copyBytes(in, out, 1); err != nil {
 				return err
 			}
-		case poseSerializer1_21_9:
-			if err := out.WriteVarInt(poseSerializer1_21_7); err != nil {
+		case from:
+			if err := out.WriteVarInt(to); err != nil {
 				return err
 			}
 

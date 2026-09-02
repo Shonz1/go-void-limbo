@@ -38,15 +38,28 @@ func NewProvider(sets ...Set) (*Provider, error) {
 	buckets := make([]bucket, 0, len(sets))
 
 	for _, set := range sets {
-		packets := make([]types.ClientboundPacket, 0, len(set.Registries))
+		packets := make([]types.ClientboundPacket, 0, len(set.Registries)+1)
 
-		for _, registry := range set.Registries {
-			body, err := registry.encode()
+		// The shape is the set's version's own. A set that starts below 1.20.5
+		// is read by clients that take every registry in one packet, which is
+		// the one difference in this package's output between the versions:
+		// the content of a set is what varies, and the shape only once.
+		if set.MinProtocol < combinedRegistryDataProtocol {
+			body, err := encodeCombined(set.Registries)
 			if err != nil {
 				return nil, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
 			}
 
-			packets = append(packets, configuration.NewRegistryDataClientboundPacket(registry.Name, body))
+			packets = append(packets, configuration.NewRegistryDataClientboundPacket(combinedRegistryName(set.Registries), body))
+		} else {
+			for _, registry := range set.Registries {
+				body, err := registry.encode()
+				if err != nil {
+					return nil, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+				}
+
+				packets = append(packets, configuration.NewRegistryDataClientboundPacket(registry.Name, body))
+			}
 		}
 
 		// Tags go out after the registries they point into, since a tag names
