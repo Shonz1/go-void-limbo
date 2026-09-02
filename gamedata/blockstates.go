@@ -57,7 +57,10 @@ type blockStateProperty struct {
 // 773's 29,671 and carries its own table. 1.21.6 shares that table the way
 // 1.21.9 shares 1.21.11's: 772 added no block -- its jar's blocks report is
 // byte-identical to 771's -- so the two versions number every state alike.
+// 1.21.5 carries its own table again: 771 is where the dried ghast landed,
+// so 770 numbers 27,914 states to 771's 27,946.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_21_5.ID:  "blockstates_minecraft_1_21_5.json",
 	types.ProtocolVersions.MINECRAFT_1_21_6.ID:  "blockstates_minecraft_1_21_7.json",
 	types.ProtocolVersions.MINECRAFT_1_21_7.ID:  "blockstates_minecraft_1_21_7.json",
 	types.ProtocolVersions.MINECRAFT_1_21_9.ID:  "blockstates_minecraft_1_21_11.json",

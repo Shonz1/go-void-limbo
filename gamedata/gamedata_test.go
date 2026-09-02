@@ -563,6 +563,81 @@ func TestRegistriesFor1_21_6AreItsOwnAndNot1_21_7s(t *testing.T) {
 	}
 }
 
+// 1.21.5 synchronizes one registry fewer than 1.21.6: dialog is 771's, added
+// for the dialogs it introduced, and a registry the client does not expect is
+// as much a failed configuration as one it expects and never receives. The
+// generated content is 1.21.5's own as well, because the tears jukebox song
+// landed in 771, and so did the happy ghast's tags.
+func TestRegistriesFor1_21_5AreItsOwnAndNot1_21_6s(t *testing.T) {
+	entries := func(load func() ([]Registry, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			names[registry.Name] = map[string]bool{}
+			for _, entry := range registry.Entries {
+				names[registry.Name][entry.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	older, newer := entries(registriesMinecraft1_21_5), entries(registriesMinecraft1_21_6)
+
+	if len(older) != 20 {
+		t.Errorf("1.21.5 is sent %d registries, want 20", len(older))
+	}
+
+	if _, ok := older["minecraft:dialog"]; ok {
+		t.Error("1.21.5 is sent the dialog registry, which 771 introduced")
+	}
+
+	if _, ok := newer["minecraft:dialog"]; !ok {
+		t.Error("1.21.6 is no longer sent the dialog registry, which its jar synchronizes")
+	}
+
+	if len(older["minecraft:damage_type"]) == 0 || len(older["minecraft:enchantment"]) == 0 {
+		t.Error("1.21.5 was sent an empty damage_type or enchantment")
+	}
+
+	if older["minecraft:jukebox_song"]["minecraft:tears"] {
+		t.Error("1.21.5 is sent the tears jukebox song, which 771 introduced")
+	}
+
+	if !newer["minecraft:jukebox_song"]["minecraft:tears"] {
+		t.Error("1.21.6 no longer has the tears jukebox song, which its jar does")
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_21_5), tags(tagsMinecraft1_21_6)
+
+	if _, ok := olderTags["minecraft:dialog"]; ok {
+		t.Error("1.21.5 declares dialog tags, for a registry it does not have")
+	}
+
+	if olderTags["minecraft:item"]["minecraft:happy_ghast_food"] {
+		t.Error("1.21.5 declares happy_ghast_food, an item tag 771 introduced")
+	}
+
+	if !newerTags["minecraft:item"]["minecraft:happy_ghast_food"] {
+		t.Error("1.21.6 no longer declares happy_ghast_food, which its jar does")
+	}
+
+	if !olderTags["minecraft:block"]["minecraft:plays_ambient_desert_block_sounds"] {
+		t.Error("1.21.5 no longer declares plays_ambient_desert_block_sounds, which its jar does and 771 renamed")
+	}
+}
+
 // 1.21.11 reworked the dimension type and biome schema; 1.21.9 is the last
 // supported version that reads the shape before it. The entries document
 // themselves as exactly what each codec requires, so what the rework removed
@@ -655,6 +730,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	first := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_5)
 	oldest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_6)
 	old7 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_7)
 	old9 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_9)
@@ -662,8 +738,13 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	// 1.21.5 synchronizes one registry fewer than 1.21.6, which the count sees.
+	if len(first) >= len(oldest) {
+		t.Errorf("1.21.5 was sent %d packets and 1.21.6 %d, want fewer for 1.21.5", len(first), len(oldest))
 	}
 
 	// 1.21.6, 1.21.7 and 1.21.9 synchronize the same 21 registries, so the
