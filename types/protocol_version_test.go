@@ -9,6 +9,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		want ProtocolVersion
 	}{
 		{"zero", ProtocolVersions.ZERO.ID, ProtocolVersions.ZERO},
+		{"minecraft_1_20_2", ProtocolVersions.MINECRAFT_1_20_2.ID, ProtocolVersions.MINECRAFT_1_20_2},
 		{"minecraft_1_20_3", ProtocolVersions.MINECRAFT_1_20_3.ID, ProtocolVersions.MINECRAFT_1_20_3},
 		{"minecraft_1_20_5", ProtocolVersions.MINECRAFT_1_20_5.ID, ProtocolVersions.MINECRAFT_1_20_5},
 		{"minecraft_1_21", ProtocolVersions.MINECRAFT_1_21.ID, ProtocolVersions.MINECRAFT_1_21},
@@ -165,6 +166,15 @@ func TestPreviousProtocolVersion(t *testing.T) {
 
 	if previous.ID != ProtocolVersions.MINECRAFT_1_20_3.ID {
 		t.Errorf("expected 1.20.3 below 1.20.5, got %d", previous.ID)
+	}
+
+	previous, ok = PreviousProtocolVersion(ProtocolVersions.MINECRAFT_1_20_3)
+	if !ok {
+		t.Fatal("expected a version below 1.20.3")
+	}
+
+	if previous.ID != ProtocolVersions.MINECRAFT_1_20_2.ID {
+		t.Errorf("expected 1.20.2 below 1.20.3, got %d", previous.ID)
 	}
 
 	if _, ok := PreviousProtocolVersion(SupportedProtocolVersions[0]); ok {

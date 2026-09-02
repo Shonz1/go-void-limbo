@@ -67,9 +67,13 @@ type blockStateProperty struct {
 // twenty-four blocks in all, so 767 numbers 26,684 states. 1.20.5 shares that
 // table the way 1.21.9 shares 1.21.11's: 1.21 added no block, and the two
 // jars' blocks reports are byte-identical, so 766 numbers every state as 767
-// does. And 1.20.3 its own at the very bottom: 766 is where the vault and the
-// heavy core landed, two blocks in all, so 765 numbers 26,644 states.
+// does. And 1.20.3 its own below that: 766 is where the vault and the heavy
+// core landed, two blocks in all, so 765 numbers 26,644 states. And 1.20.2
+// its own at the very bottom: 765 is where the crafter, the trial spawner,
+// the copper and tuff sets landed and where grass became short grass,
+// fifty-six blocks in for the one name gone, so 764 numbers 24,276 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_20_2.ID:  "blockstates_minecraft_1_20_2.json",
 	types.ProtocolVersions.MINECRAFT_1_20_3.ID:  "blockstates_minecraft_1_20_3.json",
 	types.ProtocolVersions.MINECRAFT_1_20_5.ID:  "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21.ID:    "blockstates_minecraft_1_21.json",
@@ -82,6 +86,17 @@ var blockStatesFiles = map[types.ProtocolId]string{
 	types.ProtocolVersions.MINECRAFT_1_21_11.ID: "blockstates_minecraft_1_21_11.json",
 	types.ProtocolVersions.MINECRAFT_26_1.ID:    "blockstates_minecraft_26_1.json",
 	types.ProtocolVersions.MINECRAFT_26_2.ID:    "blockstates_minecraft_26_2.json",
+}
+
+// blockStateRenames is every block a version knows under an older name than
+// the one a newer world stores it by: the name the world uses, and the name
+// this version's table numbers it as. A rename is the same block with the
+// same properties under a different name, so the table numbers both names
+// alike, and a world saved after the rename translates to the version before
+// it without a hole. 1.20.3 is where grass became short grass, the one rename
+// among the versions this server speaks.
+var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_20_2.ID: {"minecraft:short_grass": "minecraft:grass"},
 }
 
 // The JSON shape of one version's table.
@@ -143,6 +158,19 @@ func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
 		if end := block.Base + count; end > states.stateCount {
 			states.stateCount = end
 		}
+	}
+
+	for newer, older := range blockStateRenames[version.ID] {
+		entry, ok := states.blocks[older]
+		if !ok {
+			return nil, fmt.Errorf("gamedata: %s renames %s to %s, which protocol %d does not number", name, newer, older, version.ID)
+		}
+
+		if _, ok := states.blocks[newer]; ok {
+			return nil, fmt.Errorf("gamedata: %s renames %s to %s, but protocol %d numbers both", name, newer, older, version.ID)
+		}
+
+		states.blocks[newer] = entry
 	}
 
 	return states, nil
