@@ -961,6 +961,113 @@ func TestRegistriesFor1_21AreItsOwnAndNot1_21_2s(t *testing.T) {
 // themselves as exactly what each codec requires, so what the rework removed
 // is what 1.21.9 must still be sent, and what it added is what 1.21.9 must
 // not be.
+// 1.20.5 synchronizes eight registries to 1.21's eleven -- the painting
+// variant, the enchantment and the jukebox song became data-driven in 1.21 --
+// and the content is its own: 1.21 is where the flow and guster banner
+// patterns and the campfire and wind charge damage types landed. The tag sets
+// cover the same twelve registries, and each version declares the tags of its
+// own jar: 1.21 retired the music discs item tag for the jukebox songs.
+func TestRegistriesFor1_20_5AreItsOwnAndNot1_21s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_20_5), registries(registriesMinecraft1_21)
+
+	if len(older) != 8 {
+		t.Errorf("1.20.5 is sent %d registries, want 8", len(older))
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.20.5 was sent an empty %s", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.20.5 is sent %s, which 1.21 is not", name)
+		}
+	}
+
+	for _, name := range []string{"minecraft:painting_variant", "minecraft:enchantment", "minecraft:jukebox_song"} {
+		if _, ok := older[name]; ok {
+			t.Errorf("1.20.5 is sent %s, which 767 is where it became data-driven", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.21 is no longer sent %s, which its jar holds", name)
+		}
+	}
+
+	if _, ok := older["minecraft:damage_type"]["minecraft:wind_charge"]; ok {
+		t.Error("1.20.5 is sent the wind charge damage type, which 767 introduced")
+	}
+
+	if _, ok := newer["minecraft:damage_type"]["minecraft:wind_charge"]; !ok {
+		t.Error("1.21 is no longer sent the wind charge damage type, which its jar holds")
+	}
+
+	if _, ok := older["minecraft:banner_pattern"]["minecraft:flow"]; ok {
+		t.Error("1.20.5 is sent the flow banner pattern, which 767 introduced")
+	}
+
+	if _, ok := newer["minecraft:banner_pattern"]["minecraft:flow"]; !ok {
+		t.Error("1.21 is no longer sent the flow banner pattern, which its jar holds")
+	}
+
+	// The wolf variant's biomes go out empty on 1.20.5 for the reason they
+	// do on the versions above: its codec is the same set of biome references.
+	wolf, ok := older["minecraft:wolf_variant"]["minecraft:pale"].(nbt.Compound)
+	if !ok {
+		t.Fatal("1.20.5 has no pale wolf variant")
+	}
+
+	if biomes, ok := wolf["biomes"].(nbt.List); !ok || len(biomes.Elements) != 0 {
+		t.Errorf("1.20.5's wolf variant biomes = %v, want an empty list", wolf["biomes"])
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_20_5), tags(tagsMinecraft1_21)
+
+	if len(olderTags) != len(newerTags) {
+		t.Errorf("1.20.5 declares tags for %d registries and 1.21 for %d, want the same registries", len(olderTags), len(newerTags))
+	}
+
+	if !olderTags["minecraft:item"]["minecraft:music_discs"] {
+		t.Error("1.20.5 no longer declares music_discs, an item tag its jar does declare")
+	}
+
+	if newerTags["minecraft:item"]["minecraft:music_discs"] {
+		t.Error("1.21 declares music_discs, an item tag 767 retired")
+	}
+
+	if olderTags["minecraft:item"]["minecraft:enchantable/mace"] {
+		t.Error("1.20.5 declares enchantable/mace, an item tag 767 introduced")
+	}
+
+	if !olderTags["minecraft:block"]["minecraft:enchantment_power_provider"] {
+		t.Error("1.20.5 no longer declares enchantment_power_provider, a block tag its jar does declare")
+	}
+}
+
 func TestDimensionTypeFor1_21_9KeepsThePreReworkSchema(t *testing.T) {
 	var dimensionType nbt.Compound
 
@@ -1048,6 +1155,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest0 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_5)
 	oldest1 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21)
 	oldest2 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_2)
 	earliest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_4)
@@ -1059,8 +1167,13 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
+	}
+
+	// 1.20.5 synchronizes three registries fewer than 1.21, which the count sees.
+	if len(oldest0) >= len(oldest1) {
+		t.Errorf("1.20.5 was sent %d packets and 1.21 %d, want fewer for 1.20.5", len(oldest0), len(oldest1))
 	}
 
 	// 1.21 synchronizes one registry fewer than 1.21.2, which the count sees.

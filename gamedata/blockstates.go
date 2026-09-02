@@ -64,8 +64,12 @@ type blockStateProperty struct {
 // 769 is where the resin blocks and the eyeblossoms landed, eleven blocks in
 // all, so 768 numbers 27,318 states. And 1.21 its own at the bottom: 768 is
 // where the pale oak wood set, the pale moss and the creaking heart landed,
-// twenty-four blocks in all, so 767 numbers 26,684 states.
+// twenty-four blocks in all, so 767 numbers 26,684 states. 1.20.5 shares that
+// table the way 1.21.9 shares 1.21.11's: 1.21 added no block, and the two
+// jars' blocks reports are byte-identical, so 766 numbers every state as 767
+// does.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_20_5.ID:  "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21.ID:    "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21_2.ID:  "blockstates_minecraft_1_21_2.json",
 	types.ProtocolVersions.MINECRAFT_1_21_4.ID:  "blockstates_minecraft_1_21_4.json",

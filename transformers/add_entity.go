@@ -13,7 +13,9 @@ import (
 // number is not monotonic: 1.21.2 still had the transient creaking, which
 // 1.21.4 retired, so the player sits one higher there than on 1.21.4. And
 // 1.21.2 is where the biggest jump is, twenty entries: the boats and chest
-// boats became one entity type per wood there, and the creaking arrived.
+// boats became one entity type per wood there, and the creaking arrived. Below
+// that the number holds still: 1.21 added no entity type, so 1.20.5 numbers
+// the player as 1.21 does and needs no rewrite at that step.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
