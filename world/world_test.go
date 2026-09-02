@@ -278,8 +278,9 @@ func decodeSections(t *testing.T, version types.ProtocolVersion, data []byte, st
 	t.Helper()
 
 	fluidCounts := version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID
+	dataLengths := version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID
 
-	r := &sectionReader{t: t, data: data}
+	r := &sectionReader{t: t, data: data, dataLengths: dataLengths}
 
 	var sections []decodedSection
 	for i := 0; i < sectionCount; i++ {
@@ -309,6 +310,11 @@ type sectionReader struct {
 	t    *testing.T
 	data []byte
 	pos  int
+
+	// dataLengths is whether each container's longs come with a var int count
+	// in front, as they do on 1.21.4, which the reader checks against the
+	// count the bits imply.
+	dataLengths bool
 }
 
 func (r *sectionReader) short() int32 {
@@ -337,6 +343,8 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 
 	if declared == 0 {
 		value := r.varInt()
+		r.dataLength(0)
+
 		values := make([]int32, entries)
 		for i := range values {
 			values[i] = value
@@ -370,6 +378,8 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 	longs := (entries + perLong - 1) / perLong
 	mask := int64(1)<<bitsPerEntry - 1
 
+	r.dataLength(longs)
+
 	values := make([]int32, entries)
 	for i := range values {
 		long := binary.BigEndian.Uint64(r.data[r.pos+(i/perLong)*8:])
@@ -389,6 +399,18 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 	r.pos += longs * 8
 
 	return values
+}
+
+// dataLength reads the count of longs in front of a container's data on the
+// versions that send one, and checks it is the count the bits imply.
+func (r *sectionReader) dataLength(want int) {
+	if !r.dataLengths {
+		return
+	}
+
+	if got := r.varInt(); got != int32(want) {
+		r.t.Fatalf("container declares %d longs, want %d", got, want)
+	}
 }
 
 func writeLevelDat(t *testing.T, dir string, root nbt.Compound) {
