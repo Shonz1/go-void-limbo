@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.omc
+.claude
+.DS_Store
+worlds
+Dockerfile
+README.md

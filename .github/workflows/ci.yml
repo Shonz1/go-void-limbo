@@ -1,0 +1,64 @@
+# Build and test validation for every pull request, and for main once a pull
+# request lands on it, so the branch a publish is cut from carries the same
+# checks the change was reviewed with.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # The e2e suite needs Docker and a real Minecraft client, so it does not
+      # run here; vetting it under its build tag keeps it compiling.
+      - name: Vet the e2e suite
+        run: go vet -tags e2e ./e2e
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+  image:
+    name: Build the image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built for the runner's platform only and never pushed: the point is
+      # that the Dockerfile still produces an image from this change, and the
+      # multi-platform build is left to the publish workflow.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
