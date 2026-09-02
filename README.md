@@ -184,7 +184,9 @@ crowd of simulated clients and reports what serving them costs.
 ### Continuous integration
 
 - Every pull request is built, vetted, formatted-checked and tested under the
-  race detector, and the Docker image is built without being pushed.
+  race detector, the Docker image is built without being pushed, and the
+  end-to-end suite has the real client of every version join the limbo on a
+  hosted runner.
 - Every push to `main` builds the multi-platform image and publishes it to the
   GitHub Container Registry.
 
