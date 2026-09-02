@@ -26,13 +26,21 @@ func DowngradeAddEntityTo1_21_2(in *streams.MinecraftStream, out *streams.Minecr
 // end. 1.21.2 has seven actions and reads the mask as a set of those, so the
 // bit comes off the mask and the boolean off each entry, and the seven
 // fields in front of it are walked across as they are.
+func DowngradePlayerInfoUpdateTo1_21_2(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	return dropPlayerInfoAction(in, out, play.PlayerInfoUpdateHat)
+}
+
+// dropPlayerInfoAction rewrites a player info update packet without one of
+// its actions: the bit comes off the mask and the field off every entry, and
+// every other field the mask names is walked across as it is. It is how the
+// two steps that each appended an action to this packet carry it down.
 //
-// Two of those fields are optionals this server always writes absent -- the
+// Two of the fields are optionals this server always writes absent -- the
 // chat session and the display name -- and this rewrite copies the absence
 // and refuses the presence, since a session is a key and a signature and a
 // display name is a text component, and walking either is a job it was never
 // given.
-func DowngradePlayerInfoUpdateTo1_21_2(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+func dropPlayerInfoAction(in *streams.MinecraftStream, out *streams.MinecraftStream, dropped play.PlayerInfoAction) error {
 	mask, err := in.ReadByte()
 	if err != nil {
 		return err
@@ -40,7 +48,7 @@ func DowngradePlayerInfoUpdateTo1_21_2(in *streams.MinecraftStream, out *streams
 
 	actions := play.PlayerInfoAction(mask)
 
-	if err := out.WriteByte(byte(actions &^ play.PlayerInfoUpdateHat)); err != nil {
+	if err := out.WriteByte(byte(actions &^ dropped)); err != nil {
 		return err
 	}
 
@@ -107,18 +115,45 @@ func DowngradePlayerInfoUpdateTo1_21_2(in *streams.MinecraftStream, out *streams
 		}
 
 		if actions&play.PlayerInfoUpdateListOrder != 0 {
-			if _, err := copyVarInt(in, out); err != nil {
+			if err := carryVarInt(in, out, dropped&play.PlayerInfoUpdateListOrder == 0); err != nil {
 				return err
 			}
 		}
 
-		// The hat, read so that it is consumed and never written.
 		if actions&play.PlayerInfoUpdateHat != 0 {
-			if _, err := in.ReadBoolean(); err != nil {
+			if err := carryBoolean(in, out, dropped&play.PlayerInfoUpdateHat == 0); err != nil {
 				return err
 			}
 		}
 	}
 
 	return nil
+}
+
+// carryVarInt copies a var int across, or reads it so that it is consumed and
+// never written.
+func carryVarInt(in *streams.MinecraftStream, out *streams.MinecraftStream, keep bool) error {
+	if keep {
+		_, err := copyVarInt(in, out)
+
+		return err
+	}
+
+	_, err := in.ReadVarInt()
+
+	return err
+}
+
+// carryBoolean copies a boolean across, or reads it so that it is consumed
+// and never written.
+func carryBoolean(in *streams.MinecraftStream, out *streams.MinecraftStream, keep bool) error {
+	if keep {
+		_, err := copyBoolean(in, out)
+
+		return err
+	}
+
+	_, err := in.ReadBoolean()
+
+	return err
 }

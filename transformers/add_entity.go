@@ -11,7 +11,9 @@ import (
 // the latest id -- has its type field rewritten at every step where the number
 // moved. Each id here is read out of that version's own registry report. The
 // number is not monotonic: 1.21.2 still had the transient creaking, which
-// 1.21.4 retired, so the player sits one higher there than on 1.21.4.
+// 1.21.4 retired, so the player sits one higher there than on 1.21.4. And
+// 1.21.2 is where the biggest jump is, twenty entries: the boats and chest
+// boats became one entity type per wood there, and the creaking arrived.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
@@ -22,6 +24,7 @@ const (
 	playerEntityType1_21_5  = 148
 	playerEntityType1_21_4  = 147
 	playerEntityType1_21_2  = 148
+	playerEntityType1_21    = 128
 )
 
 // downgradeAddEntityType rewrites the entity type field of an add entity

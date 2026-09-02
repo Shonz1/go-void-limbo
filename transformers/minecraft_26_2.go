@@ -64,6 +64,32 @@ func DowngradeAddEntityTo26_1(in *streams.MinecraftStream, out *streams.Minecraf
 // names are an array, and the spawn info holds a string and an optional death
 // location.
 func DowngradePlayLoginTo26_1(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
+	if err := copyPlayLoginHead(in, out); err != nil {
+		return err
+	}
+
+	if err := copySpawnInfo(in, out); err != nil {
+		return err
+	}
+
+	// Sea level, the last field of the spawn info.
+	if _, err := copyVarInt(in, out); err != nil {
+		return err
+	}
+
+	// The online mode flag, read so that it is consumed and never written.
+	if _, err := in.ReadBoolean(); err != nil {
+		return err
+	}
+
+	// Enforces secure chat, which is all that is left.
+	return copyRest(in, out)
+}
+
+// copyPlayLoginHead moves everything in the play login packet in front of the
+// spawn info across: the fields there have not moved in any version this
+// server speaks.
+func copyPlayLoginHead(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
 	// The entity id is a plain int here rather than a var int, unlike everywhere
 	// else the protocol names an entity.
 	if err := copyBytes(in, out, 4); err != nil {
@@ -100,21 +126,13 @@ func DowngradePlayLoginTo26_1(in *streams.MinecraftStream, out *streams.Minecraf
 		}
 	}
 
-	if err := copySpawnInfo(in, out); err != nil {
-		return err
-	}
-
-	// The online mode flag, read so that it is consumed and never written.
-	if _, err := in.ReadBoolean(); err != nil {
-		return err
-	}
-
-	// Enforces secure chat, which is all that is left.
-	return copyRest(in, out)
+	return nil
 }
 
 // copySpawnInfo moves the block describing the world the client is placed in
-// across. 26.1 and 26.2 lay it out the same way.
+// across, up to and including the portal cooldown. Every version this server
+// speaks lays that much of it out the same way; the sea level behind it is
+// 1.21.2's, so the caller decides what becomes of it.
 func copySpawnInfo(in *streams.MinecraftStream, out *streams.MinecraftStream) error {
 	// Dimension type id.
 	if _, err := copyVarInt(in, out); err != nil {
@@ -160,11 +178,6 @@ func copySpawnInfo(in *streams.MinecraftStream, out *streams.MinecraftStream) er
 	}
 
 	// Portal cooldown.
-	if _, err := copyVarInt(in, out); err != nil {
-		return err
-	}
-
-	// Sea level.
 	_, err = copyVarInt(in, out)
 
 	return err
