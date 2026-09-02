@@ -135,6 +135,14 @@ func TestDowngradeAddEntityTo1_21_7MovesTheVelocityBack(t *testing.T) {
 	if !bytes.Equal(to1_21_4, want4) {
 		t.Errorf("to 1.21.4 = % x, want % x", to1_21_4, want4)
 	}
+
+	// And 1.21.2 the same shape, with the player back up at 148: the
+	// transient creaking still sat in front of it there.
+	to1_21_2 := runTransformer(t, DowngradeAddEntityTo1_21_2, to1_21_4)
+
+	if !bytes.Equal(to1_21_2, want5) {
+		t.Errorf("to 1.21.2 = % x, want % x", to1_21_2, want5)
+	}
 }
 
 func TestDowngradeAddEntityRefusesAnEntityItDoesNotKnow(t *testing.T) {

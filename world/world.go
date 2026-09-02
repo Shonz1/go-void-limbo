@@ -192,11 +192,11 @@ type chunkBuilder struct {
 	fluidCounts bool
 
 	// dataLengths is whether a paletted container's data comes with its
-	// length in front, which 1.21.5 dropped: a 1.21.4 container is the bits,
-	// the palette, a var int count of longs and the longs, and a later one
-	// leaves the count out because the bits already say how many longs
-	// follow. A single value container has no longs, and on 1.21.4 says so
-	// with a count of zero.
+	// length in front, which 1.21.5 dropped: a container on 1.21.4 or before
+	// is the bits, the palette, a var int count of longs and the longs, and a
+	// later one leaves the count out because the bits already say how many
+	// longs follow. A single value container has no longs, and before 1.21.5
+	// says so with a count of zero.
 	dataLengths bool
 
 	// substituted is every stored state this version had no number for, warned
