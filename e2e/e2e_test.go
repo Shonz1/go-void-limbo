@@ -8,20 +8,20 @@
 // in-process, and watch it join.
 //
 // The suite needs Docker, downloads the client image on first use, and
-// launches a full Minecraft client once per version name, so it is minutes of
-// work per version and hides behind the e2e build tag rather than running with
-// the ordinary suite:
+// launches a full Minecraft client once per version name, so it hides behind
+// the e2e build tag rather than running with the ordinary suite:
 //
-//	go test -tags e2e -timeout 180m ./e2e
+//	go test -tags e2e -timeout 60m ./e2e
 //
-// One container serves every subtest: the image runs one game at a time, and
-// reusing the container is what its own documentation says to do between
-// sessions.
+// A launch is seconds and a version is done in under a minute, most of which
+// is the client's own thirty second wait for a spawn chunk. E2E_CLIENTS sets
+// how many clients run at once -- each is a full Minecraft client, a few
+// gigabytes of memory and every core it can find while it boots -- and the
+// versions are spread over that many containers. It defaults to two.
 package e2e
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,29 +53,32 @@ const clientImage = "ghcr.io/caunt/portable-minecraft-client:offline"
 // name, so the address works on both.
 const serverHostFromContainer = "host.docker.internal"
 
+// clientsEnv names the environment variable that sets how many client
+// containers a test runs at once, and defaultClients is what it is without one.
+// Two is what a laptop running Docker with its default memory comfortably
+// holds; a machine with more to spare finishes proportionally sooner.
+const (
+	clientsEnv     = "E2E_CLIENTS"
+	defaultClients = 2
+)
+
 // The client launches in demo mode, so the login is offline and the limbo has
 // to take the username on the connection's word: encryption stays off, exactly
 // as it would behind a proxy.
 //
 // How long each wait may take is split by what is being waited for. A launch
 // unpacks a version's assets from the image and boots the client, minutes at
-// the outside; a join is a handshake against a server on the same machine,
-// though the API only answers once the join has settled; and the hold is two
-// keep alive rounds, which is the proof the connection settled into the play
-// phase rather than merely reaching it.
+// the outside on a cold cache; the join is the game connecting to a server on
+// the same machine the moment it has a window; and the hold is two keep alive
+// rounds, which is the proof the connection settled into the play phase rather
+// than merely reaching it.
 const (
-	launchTimeout  = 20 * time.Minute
-	connectTimeout = 3 * time.Minute
-	stopTimeout    = 3 * time.Minute
-	holdFor        = 35 * time.Second
+	launchTimeout = 20 * time.Minute
+	joinTimeout   = 3 * time.Minute
+	stopTimeout   = 3 * time.Minute
+	holdFor       = 35 * time.Second
+	pollEvery     = time.Second
 )
-
-// connectAttempts is how many game sessions a version gets to produce one
-// join. The container joins a server by driving the client's own menus, and
-// once in a while its press of the join button never lands, leaving the game
-// parked on the direct connection screen; a connect re-issued at a parked game
-// just parks with it, so the recovery is a fresh game, not a second ask.
-const connectAttempts = 3
 
 // What the position sync test waits for and settles for.
 //
@@ -100,27 +104,28 @@ const (
 // this suite is the clients themselves, not the protocol table.
 func TestEveryVersionJoinsWithARealClient(t *testing.T) {
 	port := startLimbo(t)
-	client := startClientContainer(t)
+	pool := startClientPool(t)
 
 	for _, version := range types.SupportedProtocolVersions {
 		for _, name := range version.Names {
 			t.Run(name, func(t *testing.T) {
-				// Whatever the last subtest left running is torn down before
-				// this one launches, and this one's game is torn down after
-				// it, pass or fail: the container runs one game at a time.
-				t.Cleanup(func() { client.ensureStopped(t) })
+				t.Parallel()
 
-				client.joinLimbo(t, name, usernameFor(name), port)
+				client := pool.acquire(t)
+				username := usernameFor(name)
+
+				client.joinLimbo(t, name, username, port)
 
 				// A client that failed the configuration phase, choked on a
 				// mistransformed packet, or missed its keep alives would be
-				// back on the menu by now. Still being connected after two
-				// keep alive intervals is the join having actually held.
+				// back on the menu by now, with no player to report. Still
+				// having one after two keep alive intervals is the join
+				// having actually held.
 				time.Sleep(holdFor)
 
-				status := client.status(t)
-				if status.State != "connected" {
-					t.Fatalf("the client did not stay connected: %s", describe(status))
+				local := client.localPlayer(t)
+				if local.Name != username {
+					t.Fatalf("the client is in the world as %q, want %q", local.Name, username)
 				}
 			})
 		}
@@ -149,37 +154,41 @@ const anchorUsername = "e2eSyncAnchor"
 // times out, which is what the longer of the two timeouts sits through. Were
 // the relay broken, a view would sit frozen wherever the spawn packet put it.
 //
-// Two containers, because each runs one game at a time: the anchor holds one,
-// and every version under test cycles through the other.
+// The versions share the one anchor and run as many at a time as there are
+// containers in the pool, so at any moment the anchor may be watching several
+// players and each of them may see the others: every lookup is by name, and a
+// version leaving is checked as its own name going, not as the anchor being
+// left alone.
 func TestPositionSyncsWithEveryVersion(t *testing.T) {
 	port := startLimbo(t)
 
 	anchor := startClientContainer(t)
-	roamer := startClientContainer(t)
+	pool := startClientPool(t)
 
 	t.Cleanup(func() { anchor.ensureStopped(t) })
-	t.Cleanup(func() { roamer.ensureStopped(t) })
 
 	anchor.joinLimbo(t, types.LatestProtocolVersion.Names[len(types.LatestProtocolVersion.Names)-1], anchorUsername, port)
 
 	for _, version := range types.SupportedProtocolVersions {
 		for _, name := range version.Names {
 			t.Run(name, func(t *testing.T) {
-				t.Cleanup(func() { roamer.ensureStopped(t) })
+				t.Parallel()
+
+				roamer := pool.acquire(t)
 
 				// Every subtest leans on the one anchor, so an anchor that
 				// fell off the server fails loudly here rather than as ten
 				// mysteries.
-				if status := anchor.status(t); status.State != "connected" {
-					t.Fatalf("the anchor is no longer connected: %s", describe(status))
+				if _, err := anchor.players(); err != nil {
+					t.Fatalf("the anchor is no longer in the world: %v", err)
 				}
 
 				username := usernameFor(name)
 				roamer.joinLimbo(t, name, username, port)
 
-				// Each side is shown exactly the other, under the name it
-				// logged in as. The name proves the player info entry; the
-				// position beside it is the spawn.
+				// Each side is shown the other, under the name it logged in
+				// as. The name proves the player info entry; the position
+				// beside it is the spawn.
 				roamer.awaitRemotePlayer(t, anchorUsername, playersTimeout)
 				anchor.awaitRemotePlayer(t, username, playersTimeout)
 
@@ -225,7 +234,7 @@ func TestPositionSyncsWithEveryVersion(t *testing.T) {
 				// Leaving is half the sync too: the player has to come back
 				// off the anchor's screen, list and world both.
 				roamer.ensureStopped(t)
-				anchor.awaitAlone(t, playersTimeout)
+				anchor.awaitRemoteGone(t, username, playersTimeout)
 			})
 		}
 	}
@@ -266,6 +275,64 @@ func startLimbo(t *testing.T) int {
 	go srv.Serve(listener)
 
 	return listener.Addr().(*net.TCPAddr).Port
+}
+
+// clientPool is a fixed crowd of client containers that parallel subtests take
+// turns with. Each container runs one game at a time, so a subtest holds one
+// for as long as it runs and the pool's size is the number of versions being
+// tested at once.
+type clientPool struct {
+	free chan *voidClient
+}
+
+// startClientPool runs as many client containers as E2E_CLIENTS asks for and
+// waits for each to answer.
+func startClientPool(t *testing.T) *clientPool {
+	t.Helper()
+
+	count := clientCount(t)
+	pool := &clientPool{free: make(chan *voidClient, count)}
+
+	for i := 0; i < count; i++ {
+		pool.free <- startClientContainer(t)
+	}
+
+	return pool
+}
+
+// acquire hands the calling subtest a container of its own, waiting for one to
+// come free if every container is busy. The container goes back to the pool
+// when the subtest ends, with whatever game it left running stopped first, so
+// one version's wreckage never reaches the next.
+func (p *clientPool) acquire(t *testing.T) *voidClient {
+	t.Helper()
+
+	client := <-p.free
+
+	t.Cleanup(func() {
+		client.ensureStopped(t)
+		p.free <- client
+	})
+
+	return client
+}
+
+// clientCount is how many client containers E2E_CLIENTS asks for, or the
+// default when it is unset.
+func clientCount(t *testing.T) int {
+	t.Helper()
+
+	raw, ok := os.LookupEnv(clientsEnv)
+	if !ok || raw == "" {
+		return defaultClients
+	}
+
+	count, err := strconv.Atoi(raw)
+	if err != nil || count < 1 {
+		t.Fatalf("%s must be a positive count of client containers, got %q", clientsEnv, raw)
+	}
+
+	return count
 }
 
 // voidClient is the containerized Minecraft client, spoken to over its HTTP
@@ -341,12 +408,9 @@ func startClientContainer(t *testing.T) *voidClient {
 
 	address := strings.TrimSpace(strings.Split(strings.TrimSpace(string(portOut)), "\n")[0])
 
-	// The API answers a connect only once the join has settled -- measured at
-	// better than a minute against a server on the same machine -- so the
-	// timeout here is sized for the slowest call rather than a typical one.
 	client := &voidClient{
 		baseURL: "http://" + address,
-		http:    &http.Client{Timeout: 5 * time.Minute},
+		http:    &http.Client{Timeout: time.Minute},
 	}
 
 	client.awaitHealthy(t, 5*time.Minute)
@@ -373,7 +437,7 @@ func (c *voidClient) awaitHealthy(t *testing.T, timeout time.Duration) {
 			lastErr = err
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(pollEvery)
 	}
 
 	t.Fatalf("the client container did not become healthy within %v: %v", timeout, lastErr)
@@ -402,76 +466,29 @@ func (c *voidClient) post(t *testing.T, path string, body any) {
 	}
 }
 
-// tryConnect asks the game to join host:port and reports how it went rather
-// than failing the test, because a connect that never answers is the one call
-// here a retry genuinely recovers. The API answers it only once the join has
-// settled, and abandoning the request cancels the operation on the container's
-// side, which is what frees a wedged game to be stopped and relaunched.
-func (c *voidClient) tryConnect(host string, port int, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	encoded, err := json.Marshal(map[string]any{"host": host, "port": port})
-	if err != nil {
-		return fmt.Errorf("encoding the request: %w", err)
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/game/connect", bytes.NewReader(encoded))
-	if err != nil {
-		return err
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(request)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		answer, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("connect answered %s: %s", resp.Status, answer)
-	}
-
-	return nil
-}
-
-// joinLimbo drives one full join: launch the named release, connect it to the
-// limbo on port, and wait until the session reports connected. The menu-driving
-// flake and its recovery -- a fresh game, not a second ask -- live here so
-// every test joins the same way.
+// joinLimbo drives one full join: launch the named release with the limbo on
+// port as its quick play server, and wait until the game has a player in the
+// world. The join is the client's own doing -- the launcher hands the release
+// the server the way the launcher's own play button would -- so the game is on
+// the limbo the moment it has a window, with no menus driven and nothing to
+// retry. The arguments are the launcher's, not the game's: the container runs
+// PortableMC, whose start command takes --join-server and the port beside it.
 func (c *voidClient) joinLimbo(t *testing.T, version, username string, port int) {
 	t.Helper()
 
-	joined := false
-	for attempt := 1; attempt <= connectAttempts && !joined; attempt++ {
-		c.ensureStopped(t)
+	c.ensureStopped(t)
 
-		c.post(t, "/api/game/start/vanilla", map[string]any{
-			"version":   version,
-			"arguments": []string{"--username", username},
-		})
-		c.awaitState(t, "ready", launchTimeout)
+	c.post(t, "/api/game/start/vanilla", map[string]any{
+		"version": version,
+		"arguments": []string{
+			"--username", username,
+			"--join-server", serverHostFromContainer,
+			"--join-server-port", strconv.Itoa(port),
+		},
+	})
 
-		// Dropping the request is what cancels a connect the container has
-		// wedged on, which is why this one call carries its own deadline
-		// rather than the client's.
-		err := c.tryConnect(serverHostFromContainer, port, connectTimeout)
-		if err == nil {
-			joined = true
-			break
-		}
-
-		t.Logf("connect attempt %d of %d: %v", attempt, connectAttempts, err)
-	}
-
-	if !joined {
-		t.Fatalf("no game session joined in %d attempts; last status: %s", connectAttempts, describe(c.status(t)))
-	}
-
-	c.awaitState(t, "connected", connectTimeout)
+	c.awaitState(t, "ready", launchTimeout)
+	c.awaitJoined(t, joinTimeout)
 }
 
 // The shapes /api/game/players answers with, down to the fields the tests
@@ -494,8 +511,10 @@ type livePlayers struct {
 }
 
 // players asks the client who is in its world right now. It reports an error
-// rather than failing the test, because the API refuses the question for a
-// moment around a join, and the callers that poll want to ride that out.
+// rather than failing the test, because the API refuses the question whenever
+// the client has no player -- on the menu, on a disconnect screen, or in the
+// moment around a join -- and the callers that poll want to ride that out or
+// read it as the answer it is.
 func (c *voidClient) players() (livePlayers, error) {
 	resp, err := c.http.Get(c.baseURL + "/api/game/players")
 	if err != nil {
@@ -517,7 +536,8 @@ func (c *voidClient) players() (livePlayers, error) {
 	return players, nil
 }
 
-// localPlayer is the client's own player, right now.
+// localPlayer is the client's own player, right now. A client with no player
+// to report is not in any world, which fails the test.
 func (c *voidClient) localPlayer(t *testing.T) livePlayer {
 	t.Helper()
 
@@ -529,9 +549,25 @@ func (c *voidClient) localPlayer(t *testing.T) livePlayer {
 	return players.Local
 }
 
+// findRemote picks the player named name out of everyone the client sees, and
+// reports whether exactly one such player is there. A crowd of others is
+// fine; two of the same name is a broken player list.
+func findRemote(players livePlayers, name string) (livePlayer, bool) {
+	var found livePlayer
+	matches := 0
+
+	for _, player := range players.Remote {
+		if player.Name == name {
+			found = player
+			matches++
+		}
+	}
+
+	return found, matches == 1
+}
+
 // remotePlayer is the one player named name in the client's world, right now.
-// Any other crowd -- nobody, somebody else, or more than one -- is a failure,
-// because the tests using this put exactly two players on the server.
+// Nobody of that name, or more than one, is a failure.
 func (c *voidClient) remotePlayer(t *testing.T, name string) livePlayer {
 	t.Helper()
 
@@ -540,14 +576,37 @@ func (c *voidClient) remotePlayer(t *testing.T, name string) livePlayer {
 		t.Fatalf("asking the client about its world: %v", err)
 	}
 
-	if len(players.Remote) != 1 || players.Remote[0].Name != name {
-		t.Fatalf("the client sees %+v, want exactly %q", players.Remote, name)
+	player, ok := findRemote(players, name)
+	if !ok {
+		t.Fatalf("the client sees %+v, want exactly one %q", players.Remote, name)
 	}
 
-	return players.Remote[0]
+	return player
 }
 
-// awaitRemotePlayer polls until the client sees exactly one other player,
+// awaitJoined polls until the client has a player in a world, which is the
+// join having gone through: the players API refuses the question until then.
+func (c *voidClient) awaitJoined(t *testing.T, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	last := "no answer yet"
+
+	for time.Now().Before(deadline) {
+		_, err := c.players()
+		if err == nil {
+			return
+		}
+
+		last = err.Error()
+
+		time.Sleep(pollEvery)
+	}
+
+	t.Fatalf("the client did not join within %v; last: %s; status: %s", timeout, last, describe(c.status(t)))
+}
+
+// awaitRemotePlayer polls until the client sees exactly one other player
 // named name, and returns that sighting. On the way to it the API may refuse
 // the question, know of nobody, or -- briefly, around the spawn packets --
 // hold an entry whose entity has not appeared yet; all of that is waited out,
@@ -561,16 +620,15 @@ func (c *voidClient) awaitRemotePlayer(t *testing.T, name string, timeout time.D
 	for time.Now().Before(deadline) {
 		players, err := c.players()
 
-		switch {
-		case err != nil:
+		if err != nil {
 			last = err.Error()
-		case len(players.Remote) == 1 && players.Remote[0].Name == name:
-			return players.Remote[0]
-		default:
+		} else if player, ok := findRemote(players, name); ok {
+			return player
+		} else {
 			last = fmt.Sprintf("sees %+v", players.Remote)
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(pollEvery)
 	}
 
 	t.Fatalf("the client never saw %q within %v; last: %s", name, timeout, last)
@@ -592,11 +650,10 @@ func (c *voidClient) awaitRemoteFall(t *testing.T, name string, timeout time.Dur
 	for time.Now().Before(deadline) {
 		players, err := c.players()
 
-		switch {
-		case err != nil:
+		if err != nil {
 			last = err.Error()
-		case len(players.Remote) == 1 && players.Remote[0].Name == name:
-			y := players.Remote[0].Position.Y
+		} else if player, ok := findRemote(players, name); ok {
+			y := player.Position.Y
 
 			if !sighted {
 				baseline, sighted = y, true
@@ -607,19 +664,19 @@ func (c *voidClient) awaitRemoteFall(t *testing.T, name string, timeout time.Dur
 			}
 
 			last = fmt.Sprintf("fallen %g of %g blocks", baseline-y, minObservedFall)
-		default:
+		} else {
 			last = fmt.Sprintf("sees %+v", players.Remote)
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(pollEvery)
 	}
 
 	t.Fatalf("%q never fell %g blocks on this client's screen within %v; last: %s", name, minObservedFall, timeout, last)
 }
 
-// awaitAlone polls until the client sees no other players at all, which is
-// what a departed player has to leave behind.
-func (c *voidClient) awaitAlone(t *testing.T, timeout time.Duration) {
+// awaitRemoteGone polls until the client sees nobody named name any more,
+// which is what a departed player has to leave behind.
+func (c *voidClient) awaitRemoteGone(t *testing.T, name string, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -628,19 +685,18 @@ func (c *voidClient) awaitAlone(t *testing.T, timeout time.Duration) {
 	for time.Now().Before(deadline) {
 		players, err := c.players()
 
-		switch {
-		case err != nil:
+		if err != nil {
 			last = err.Error()
-		case len(players.Remote) == 0:
+		} else if _, ok := findRemote(players, name); !ok {
 			return
-		default:
+		} else {
 			last = fmt.Sprintf("still sees %+v", players.Remote)
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(pollEvery)
 	}
 
-	t.Fatalf("the client was never alone again within %v; last: %s", timeout, last)
+	t.Fatalf("the client kept seeing %q within %v; last: %s", name, timeout, last)
 }
 
 func (c *voidClient) status(t *testing.T) gameStatus {
@@ -681,14 +737,14 @@ func (c *voidClient) awaitState(t *testing.T, want string, timeout time.Duration
 			t.Fatalf("the client failed on the way to %q: %s", want, describe(last))
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(pollEvery)
 	}
 
 	t.Fatalf("the client did not reach %q within %v; last: %s", want, timeout, describe(last))
 }
 
 // ensureStopped brings the container back to idle, whatever it was doing. Used
-// on the way into a subtest as well as out of it, so one version's wreckage
+// on the way into a game as well as out of it, so one version's wreckage
 // never reaches the next.
 func (c *voidClient) ensureStopped(t *testing.T) {
 	t.Helper()
