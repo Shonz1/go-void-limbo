@@ -257,7 +257,7 @@ func startLimbo(t *testing.T) int {
 	}
 
 	srv := server.New(server.Config{
-		PacketRegistry:    protocol.NewDefaultRegistry(),
+		PacketRegistry:    protocol.NewDefaultRegistry(gameData),
 		GameData:          gameData,
 		KeyPair:           keyPair,
 		SessionServer:     auth.NewSessionServer(),

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	clientboundCommon "github.com/Shonz1/go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
+	clientboundPlay "github.com/Shonz1/go-void-limbo/packets/clientbound/play"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 	"reflect"
@@ -220,7 +221,7 @@ func TestUnsupportedVersionIsLeftAlone(t *testing.T) {
 }
 
 func TestEncodeClientboundPutsTheVersionsIdInFrontOfTheBody(t *testing.T) {
-	registry := NewDefaultRegistry()
+	registry := NewDefaultRegistry(nil)
 	keepAlive := &clientboundCommon.KeepAliveClientboundPacket{Id: 1}
 
 	latest, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, keepAlive)
@@ -258,7 +259,7 @@ func TestEncodeClientboundPutsTheVersionsIdInFrontOfTheBody(t *testing.T) {
 }
 
 func TestEncodeClientboundRefusesWhatTheVersionDoesNotCarry(t *testing.T) {
-	registry := NewDefaultRegistry()
+	registry := NewDefaultRegistry(nil)
 
 	if _, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, nil); err == nil {
 		t.Error("EncodeClientbound(nil) succeeded, want an error")
@@ -268,5 +269,56 @@ func TestEncodeClientboundRefusesWhatTheVersionDoesNotCarry(t *testing.T) {
 	packet := clientboundConfiguration.NewRegistryDataClientboundPacket("minecraft:dimension_type", []byte{1})
 	if _, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2, packet); err == nil {
 		t.Error("EncodeClientbound() of a configuration packet in play succeeded, want an error")
+	}
+}
+
+// registryCodecs is the one thing a default registry is built from beyond
+// its tables: what a 1.20 play login carries the registries as.
+type registryCodecs []byte
+
+func (r registryCodecs) RegistryCodecFor(version types.ProtocolVersion) []byte {
+	if version.ID != types.ProtocolVersions.MINECRAFT_1_20.ID {
+		return nil
+	}
+
+	return r
+}
+
+// A 1.20 play login carries the registries, which the packet encoded at the
+// latest version has nothing of: they come from the source the registry was
+// built with, and a registry built without one refuses the login rather than
+// send it without them. Every other version's login is untouched by the
+// source, since none of them reads registries there.
+func TestEncodeClientboundWritesTheRegistriesIntoA1_20Login(t *testing.T) {
+	codec := registryCodecs{0x0A, 0x00, 0x00, 0x00}
+	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
+
+	body, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_20, login)
+	if err != nil {
+		t.Fatalf("EncodeClientbound() error: %v", err)
+	}
+
+	if !bytes.Contains(body, codec) {
+		t.Errorf("the 1.20 login % x does not carry the registries % x", body, codec)
+	}
+
+	if _, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_20, login); err == nil {
+		t.Error("EncodeClientbound() of a 1.20 login with no registries succeeded, want a refusal")
+	}
+
+	for _, version := range types.SupportedProtocolVersions[1:] {
+		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
+		if err != nil {
+			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
+		}
+
+		without, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, version, login)
+		if err != nil {
+			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
+		}
+
+		if !bytes.Equal(with, without) {
+			t.Errorf("protocol %d: the login differs with and without a registry codec, want it untouched", version.ID)
+		}
 	}
 }

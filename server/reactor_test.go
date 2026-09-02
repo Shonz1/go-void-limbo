@@ -48,7 +48,7 @@ func tcpPair(t *testing.T) (net.Conn, net.Conn) {
 // -- with the player counted out and the registry emptied -- when the peer
 // leaves.
 func TestTheReactorServesAJoinedConnection(t *testing.T) {
-	srv := &Server{packetRegistry: protocol.NewDefaultRegistry()}
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(nil)}
 
 	reactor, err := newReactor(srv)
 	if err != nil {

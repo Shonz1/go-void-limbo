@@ -111,21 +111,23 @@ func registryNames(t *testing.T, packets []types.ClientboundPacket) []string {
 
 // TestPacketsForResolvesTheNewestSetReached covers the point of bucketing by
 // version: a set applies to every version from where it starts until the next
-// one begins, so a version that changed nothing needs no set.
+// one begins, so a version that changed nothing needs no set. The sets sit
+// above every version this server speaks, where each registry is a packet
+// of its own; the shapes below are the shape tests' business.
 func TestPacketsForResolvesTheNewestSetReached(t *testing.T) {
 	provider := newTestProvider(t,
-		Set{MinProtocol: 300, Registries: []Registry{{Name: "newer"}}},
-		Set{MinProtocol: 100, Registries: []Registry{{Name: "older"}}},
+		Set{MinProtocol: 3000, Registries: []Registry{{Name: "newer"}}},
+		Set{MinProtocol: 1000, Registries: []Registry{{Name: "older"}}},
 	)
 
 	tests := []struct {
 		protocol types.ProtocolId
 		want     []string
 	}{
-		{99, nil},
-		{100, []string{"older"}},
-		{299, []string{"older"}},
-		{300, []string{"newer"}},
+		{999, nil},
+		{1000, []string{"older"}},
+		{2999, []string{"older"}},
+		{3000, []string{"newer"}},
 		{9000, []string{"newer"}},
 	}
 
@@ -247,13 +249,99 @@ func TestProviderRefusesAnEntryWithoutDataBelow1_20_5(t *testing.T) {
 	}
 }
 
+// A set that starts below 1.20.2 is read by clients with no configuration
+// phase, which take the registries inside their play login and the tags in
+// play: the provider hands out the tags as its one packet, and the registries
+// as the compound the login carries, named as a root the way 1.20 reads
+// every NBT on the wire. From 1.20.2 on there is no such compound, and the
+// registries are packets.
+func TestProviderCarriesTheRegistriesInTheLoginBelow1_20_2(t *testing.T) {
+	registries := []Registry{
+		{Name: "minecraft:dimension_type", Entries: []Entry{{Name: "minecraft:overworld", Data: nbt.Compound{"height": nbt.Int(384)}}}},
+	}
+	tags := []TagSet{{Registry: "minecraft:block", Tags: []NamedTag{{Name: "minecraft:dirt"}}}}
+
+	provider := newTestProvider(t,
+		Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20.ID, Registries: registries, Tags: tags},
+		Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_2.ID, Registries: registries, Tags: tags},
+	)
+
+	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20)
+	if len(older) != 1 {
+		t.Fatalf("1.20 was sent %d packets, want the tags alone", len(older))
+	}
+
+	if _, ok := older[0].(*configuration.UpdateTagsClientboundPacket); !ok {
+		t.Errorf("1.20 was sent %T, want the tags", older[0])
+	}
+
+	codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20)
+
+	want := new(bytes.Buffer)
+	ms := streams.NewMinecraftStreamFromBuffer(want)
+
+	compound, err := combinedCompound(registries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := nbt.WriteNamed(ms, "", compound); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := ms.Flush(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Equal(codec, want.Bytes()) {
+		t.Errorf("1.20's registry codec = % X\nwant = % X", codec, want.Bytes())
+	}
+
+	// A compound type byte, then the two-byte empty name: the root name 1.20
+	// reads and 1.20.2 does not.
+	if len(codec) < 3 || codec[0] != byte(nbt.TagCompound) || codec[1] != 0 || codec[2] != 0 {
+		t.Errorf("1.20's registry codec starts % X, want a compound named with the empty string", codec[:min(3, len(codec))])
+	}
+
+	// Handed out as it is to every connection, since it is the same for all
+	// of them.
+	if again := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20); len(again) == 0 || &again[0] != &codec[0] {
+		t.Error("expected the same registry codec to be handed to every connection")
+	}
+
+	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_2)
+	if len(newer) != 2 {
+		t.Errorf("1.20.2 was sent %d packets, want the one holding every registry and the tags", len(newer))
+	}
+
+	if provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20_2) != nil {
+		t.Error("1.20.2 has a registry codec, want none for a version that reads its registries from packets")
+	}
+
+	if provider.RegistryCodecFor(types.ProtocolVersion{ID: 1}) != nil {
+		t.Error("a version below every set has a registry codec, want none")
+	}
+}
+
+// The one-compound shapes below 1.20.5 cannot leave a definition out, on
+// either side of 1.20.2.
+func TestProviderRefusesAnEntryWithoutDataBelow1_20_2(t *testing.T) {
+	registries := []Registry{
+		{Name: "minecraft:dimension_type", Entries: []Entry{{Name: "minecraft:overworld"}}},
+	}
+
+	if _, err := NewProvider(Set{MinProtocol: types.ProtocolVersions.MINECRAFT_1_20.ID, Registries: registries}); err == nil {
+		t.Error("error = nil, want a refusal for an entry with no definition")
+	}
+}
+
 // TestPacketsForReusesEncodedPackets pins the reason bodies are encoded up
 // front: a connection costs a lookup, not an encode.
 func TestPacketsForReusesEncodedPackets(t *testing.T) {
-	provider := newTestProvider(t, Set{MinProtocol: 1, Registries: []Registry{{Name: "minecraft:test"}}})
+	provider := newTestProvider(t, Set{MinProtocol: 1000, Registries: []Registry{{Name: "minecraft:test"}}})
 
-	first := provider.PacketsFor(types.ProtocolVersion{ID: 1})
-	second := provider.PacketsFor(types.ProtocolVersion{ID: 1})
+	first := provider.PacketsFor(types.ProtocolVersion{ID: 1000})
+	second := provider.PacketsFor(types.ProtocolVersion{ID: 1000})
 
 	if first[0] != second[0] {
 		t.Error("expected the same packet instance to be handed to every connection")
@@ -1361,6 +1449,123 @@ func TestRegistriesFor1_20_2AreItsOwnAndNot1_20_3s(t *testing.T) {
 	}
 }
 
+// 1.20 synchronizes the same six registries as 1.20.2, and the same entries
+// in each of them, read off the two jars: 1.20.2 added no trim, no damage
+// type and no chat type, and the one field it added -- the trim patterns'
+// decal flag -- is one 1.20 has no field for. The tag sets cover the same
+// eleven registries, and differ by the five tags 1.20.2 introduced, since
+// each version declares the tags of its own jar.
+func TestRegistriesFor1_20AreItsOwnAndNot1_20_2s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_20), registries(registriesMinecraft1_20_2)
+
+	if len(older) != 6 {
+		t.Errorf("1.20 is sent %d registries, want 6", len(older))
+	}
+
+	if len(older) != len(newer) {
+		t.Errorf("1.20 is sent %d registries and 1.20.2 %d, want the same six", len(older), len(newer))
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.20 was sent an empty %s", name)
+		}
+
+		newerEntries, ok := newer[name]
+		if !ok {
+			t.Errorf("1.20 is sent %s, which 1.20.2 is not", name)
+
+			continue
+		}
+
+		if len(entries) != len(newerEntries) {
+			t.Errorf("1.20's %s holds %d entries and 1.20.2's %d, want the same: 1.20.2 added nothing to it", name, len(entries), len(newerEntries))
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.20's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+
+			if _, ok := newerEntries[entryName]; !ok {
+				t.Errorf("1.20's %s holds %s, which 1.20.2's does not", name, entryName)
+			}
+		}
+	}
+
+	// The decal flag is 1.20.2's: its trim patterns carry it and 1.20's do
+	// not, since 1.20 has no field to read it into.
+	for version, patterns := range map[string]map[string]nbt.Tag{"1.20": older["minecraft:trim_pattern"], "1.20.2": newer["minecraft:trim_pattern"]} {
+		coast, ok := patterns["minecraft:coast"].(nbt.Compound)
+		if !ok {
+			t.Fatalf("%s's coast trim pattern is %T, want a compound", version, patterns["minecraft:coast"])
+		}
+
+		if _, hasDecal := coast["decal"]; hasDecal != (version == "1.20.2") {
+			t.Errorf("%s's coast trim pattern carries a decal flag: %t, want %t", version, hasDecal, version == "1.20.2")
+		}
+	}
+
+	// The dimension type the play login names outright, so first is where it
+	// has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_20)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.20's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_20), tags(tagsMinecraft1_20_2)
+
+	if len(olderTags) != len(newerTags) {
+		t.Errorf("1.20 declares tags for %d registries and 1.20.2 for %d, want the same eleven", len(olderTags), len(newerTags))
+	}
+
+	introduced := map[string][]string{
+		"minecraft:block":       {"minecraft:concrete_powder", "minecraft:camel_sand_step_sound_blocks"},
+		"minecraft:damage_type": {"minecraft:always_kills_armor_stands", "minecraft:no_knockback"},
+		"minecraft:entity_type": {"minecraft:non_controlling_rider"},
+	}
+
+	for registry, names := range introduced {
+		for _, name := range names {
+			if olderTags[registry][name] {
+				t.Errorf("1.20 declares %s, a %s tag 764 introduced", name, registry)
+			}
+
+			if !newerTags[registry][name] {
+				t.Errorf("1.20.2 no longer declares %s, a %s tag its jar does declare", name, registry)
+			}
+		}
+	}
+
+	if !olderTags["minecraft:item"]["minecraft:tools"] {
+		t.Error("1.20 no longer declares tools, an item tag its jar does declare")
+	}
+}
+
 // 1.20.3's dimension type is 1.21.9's but for the monster spawn light level,
 // whose int provider 1.20.4 reads with its fields nested under value, the
 // way a dispatch lays out a plain codec; the flat shape is 1.20.5's, where
@@ -1505,6 +1710,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest0000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20)
 	oldest000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_2)
 	oldest00 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_3)
 	oldest0 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_5)
@@ -1519,7 +1725,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -1532,6 +1738,20 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	// And so does 1.20.2, which is where that shape came from.
 	if len(oldest000) != 2 {
 		t.Errorf("1.20.2 was sent %d packets, want the one holding every registry and the tags", len(oldest000))
+	}
+
+	// 1.20 takes every registry inside its play login, so it is sent the tags
+	// alone, and the registries as the compound that login carries.
+	if len(oldest0000) != 1 {
+		t.Errorf("1.20 was sent %d packets, want the tags alone", len(oldest0000))
+	}
+
+	if codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20); len(codec) == 0 {
+		t.Error("1.20 has no registry codec, want the compound its play login carries")
+	}
+
+	if codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20_2); codec != nil {
+		t.Error("1.20.2 has a registry codec, want none for a version that reads its registries from packets")
 	}
 
 	// 1.20.5 synchronizes three registries fewer than 1.21, which the count sees.

@@ -15,6 +15,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	// the table to the version: a table missing a block, or holding another
 	// version's, lands somewhere else.
 	stateCounts := map[types.ProtocolId]int32{
+		types.ProtocolVersions.MINECRAFT_1_20.ID:    24135,
 		types.ProtocolVersions.MINECRAFT_1_20_2.ID:  24276,
 		types.ProtocolVersions.MINECRAFT_1_20_3.ID:  26644,
 		types.ProtocolVersions.MINECRAFT_1_20_5.ID:  26684,
@@ -122,25 +123,27 @@ func TestBlockStatesIdUnknown(t *testing.T) {
 }
 
 // 1.20.3 renamed grass to short grass, so a world saved by a later version
-// stores a block 1.20.2 numbers under the older name. The table answers to
-// both, with the number the older name has, and only where the rename holds:
-// 1.20.3 numbers short grass itself.
+// stores a block every version before it numbers under the older name. The
+// table answers to both, with the number the older name has, and only where
+// the rename holds: 1.20.3 numbers short grass itself.
 func TestBlockStatesIdFollowsARename(t *testing.T) {
-	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20_2)
-	if err != nil {
-		t.Fatalf("BlockStatesFor() error: %v", err)
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_20, types.ProtocolVersions.MINECRAFT_1_20_2} {
+		states, err := BlockStatesFor(version)
+		if err != nil {
+			t.Fatalf("BlockStatesFor() error: %v", err)
+		}
+
+		older, ok := states.Id("minecraft:grass", nil)
+		if !ok {
+			t.Fatalf("Id(grass) did not resolve on protocol %d, whose jar names it", version.ID)
+		}
+
+		if newer, ok := states.Id("minecraft:short_grass", nil); !ok || newer != older {
+			t.Errorf("Id(short_grass) = %d, %t on protocol %d, want grass's %d, true", newer, ok, version.ID, older)
+		}
 	}
 
-	older, ok := states.Id("minecraft:grass", nil)
-	if !ok {
-		t.Fatal("Id(grass) did not resolve on 1.20.2, whose jar names it")
-	}
-
-	if newer, ok := states.Id("minecraft:short_grass", nil); !ok || newer != older {
-		t.Errorf("Id(short_grass) = %d, %t on 1.20.2, want grass's %d, true", newer, ok, older)
-	}
-
-	states, err = BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20_3)
+	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20_3)
 	if err != nil {
 		t.Fatalf("BlockStatesFor() error: %v", err)
 	}
@@ -166,5 +169,26 @@ func TestBlockStatesDefaultId(t *testing.T) {
 
 	if _, ok := states.DefaultId("minecraft:no_such_block"); ok {
 		t.Error("DefaultId() resolved a block that does not exist")
+	}
+}
+
+// 1.20.2 gave the heads and skulls a powered property and the barrier a
+// waterlogged one, so a world saved by a later version stores properties
+// 1.20 has no value for. A property the version's block does not have is
+// one it cannot express and is passed over, so the block still resolves to
+// the state its other properties name rather than to a hole.
+func TestBlockStatesIdPassesOverAPropertyTheVersionLacks(t *testing.T) {
+	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_20)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	rotated, ok := states.Id("minecraft:player_head", map[string]string{"rotation": "3"})
+	if !ok {
+		t.Fatal("Id(player_head rotation=3) did not resolve on 1.20")
+	}
+
+	if got, ok := states.Id("minecraft:player_head", map[string]string{"rotation": "3", "powered": "false"}); !ok || got != rotated {
+		t.Errorf("Id(player_head rotation=3 powered=false) = %d, %t on 1.20, want %d, true", got, ok, rotated)
 	}
 }

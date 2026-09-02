@@ -7,6 +7,10 @@ import (
 	"github.com/Shonz1/go-void-limbo/types"
 )
 
+// HandleLoginAcknowledgedServerboundPacket moves a client that has read its
+// login success into configuration and sends it what that phase carries. A
+// client from before the configuration phase never sends this: its login
+// success leads straight into play, and what is sent here reaches it there.
 func HandleLoginAcknowledgedServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	_, ok := packet.(*login.LoginAcknowledgedServerboundPacket)
 	if !ok {

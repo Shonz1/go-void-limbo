@@ -81,10 +81,14 @@ type blockStateProperty struct {
 // jars' blocks reports are byte-identical, so 766 numbers every state as 767
 // does. And 1.20.3 its own below that: 766 is where the vault and the heavy
 // core landed, two blocks in all, so 765 numbers 26,644 states. And 1.20.2
-// its own at the very bottom: 765 is where the crafter, the trial spawner,
-// the copper and tuff sets landed and where grass became short grass,
-// fifty-six blocks in for the one name gone, so 764 numbers 24,276 states.
+// its own below that: 765 is where the crafter, the trial spawner, the
+// copper and tuff sets landed and where grass became short grass, fifty-six
+// blocks in for the one name gone, so 764 numbers 24,276 states. And 1.20
+// its own at the very bottom, with the same blocks as 1.20.2 and fewer
+// states: 764 is where the heads and skulls gained their powered property
+// and the barrier its waterlogged one, so 763 numbers 24,135 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_20.ID:    "blockstates_minecraft_1_20.json",
 	types.ProtocolVersions.MINECRAFT_1_20_2.ID:  "blockstates_minecraft_1_20_2.json",
 	types.ProtocolVersions.MINECRAFT_1_20_3.ID:  "blockstates_minecraft_1_20_3.json",
 	types.ProtocolVersions.MINECRAFT_1_20_5.ID:  "blockstates_minecraft_1_21.json",
@@ -105,9 +109,11 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // this version's table numbers it as. A rename is the same block with the
 // same properties under a different name, so a lookup under the newer name
 // reads the older name's entry, and a world saved after the rename translates
-// to the version before it without a hole. 1.20.3 is where grass became short grass, the one rename
-// among the versions this server speaks.
+// to the version before it without a hole. 1.20.3 is where grass became
+// short grass, the one rename among the versions this server speaks, so
+// every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_20.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_20_2.ID: {"minecraft:short_grass": "minecraft:grass"},
 }
 

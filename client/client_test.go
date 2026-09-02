@@ -79,7 +79,7 @@ func newTestClientOn(phase types.Phase, protocolVersion types.ProtocolVersion) (
 		phase:           phase,
 		conn:            conn,
 		stream:          streams.NewMinecraftStreamFromBuffer(buf),
-		packetRegistry:  protocol.NewDefaultRegistry(),
+		packetRegistry:  protocol.NewDefaultRegistry(nil),
 		status:          new(fakeStatus),
 	}, buf
 }
@@ -105,7 +105,7 @@ func newLoginClient(t *testing.T, sessionServer SessionServer) (*Client, net.Con
 		phase:             types.PhaseLogin,
 		conn:              server,
 		stream:            streams.NewMinecraftStreamFromNetConn(server),
-		packetRegistry:    protocol.NewDefaultRegistry(),
+		packetRegistry:    protocol.NewDefaultRegistry(nil),
 		keyPair:           testutil.KeyPair(),
 		sessionServer:     sessionServer,
 		status:            new(fakeStatus),
@@ -1031,7 +1031,7 @@ func TestWritePacketDropsTheSessionIdForAnOlderClient(t *testing.T) {
 func preparedKeepAlive(t *testing.T, phase types.Phase, version types.ProtocolVersion) (*types.PreparedPacket, []byte) {
 	t.Helper()
 
-	body, err := protocol.NewDefaultRegistry().EncodeClientbound(phase, version, &clientboundCommon.KeepAliveClientboundPacket{Id: 7})
+	body, err := protocol.NewDefaultRegistry(nil).EncodeClientbound(phase, version, &clientboundCommon.KeepAliveClientboundPacket{Id: 7})
 	if err != nil {
 		t.Fatalf("EncodeClientbound() error: %v", err)
 	}

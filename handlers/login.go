@@ -45,7 +45,10 @@ func askForEncryption(client types.Client) error {
 // completeLogin welcomes a client whose profile is settled, whether it was
 // settled by Mojang or, on an unencrypted connection, by the name the client
 // logged in under. It is the last of the login phase: the client acknowledges
-// the success packet and moves on to configuration.
+// the success packet and moves on to configuration -- or, on a version from
+// before there was a configuration phase, is in play the moment it reads the
+// success packet, with nothing to acknowledge, and is put into the world from
+// here.
 //
 // From here the profile is the one that was decided rather than the one the
 // client claimed, since the play phase has to tell the client about itself and
@@ -71,5 +74,18 @@ func completeLogin(client types.Client, profile types.GameProfile) error {
 		SessionId: sessionId,
 	}
 
-	return client.WritePacket(&loginSuccess)
+	if err := client.WritePacket(&loginSuccess); err != nil {
+		return err
+	}
+
+	// A client with a configuration phase ahead of it acknowledges the
+	// success packet first, and the join waits on that. One without is in
+	// play already, and nothing it sends says so: the join follows the
+	// success packet straight away, the way it does on a vanilla server of
+	// that version.
+	if client.ProtocolVersion().HasConfigurationPhase() {
+		return nil
+	}
+
+	return enterPlay(client)
 }

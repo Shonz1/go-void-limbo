@@ -113,7 +113,7 @@ func TestTwoPlayersAreShownEachOther(t *testing.T) {
 	}
 
 	srv := New(Config{
-		PacketRegistry: protocol.NewDefaultRegistry(),
+		PacketRegistry: protocol.NewDefaultRegistry(gameData),
 		GameData:       gameData,
 		KeyPair:        testutil.KeyPair(),
 		SessionServer:  &testutil.FakeSessionServer{},

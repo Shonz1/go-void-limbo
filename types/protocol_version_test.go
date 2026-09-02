@@ -9,6 +9,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		want ProtocolVersion
 	}{
 		{"zero", ProtocolVersions.ZERO.ID, ProtocolVersions.ZERO},
+		{"minecraft_1_20", ProtocolVersions.MINECRAFT_1_20.ID, ProtocolVersions.MINECRAFT_1_20},
 		{"minecraft_1_20_2", ProtocolVersions.MINECRAFT_1_20_2.ID, ProtocolVersions.MINECRAFT_1_20_2},
 		{"minecraft_1_20_3", ProtocolVersions.MINECRAFT_1_20_3.ID, ProtocolVersions.MINECRAFT_1_20_3},
 		{"minecraft_1_20_5", ProtocolVersions.MINECRAFT_1_20_5.ID, ProtocolVersions.MINECRAFT_1_20_5},
@@ -177,6 +178,15 @@ func TestPreviousProtocolVersion(t *testing.T) {
 		t.Errorf("expected 1.20.2 below 1.20.3, got %d", previous.ID)
 	}
 
+	previous, ok = PreviousProtocolVersion(ProtocolVersions.MINECRAFT_1_20_2)
+	if !ok {
+		t.Fatal("expected a version below 1.20.2")
+	}
+
+	if previous.ID != ProtocolVersions.MINECRAFT_1_20.ID {
+		t.Errorf("expected 1.20 below 1.20.2, got %d", previous.ID)
+	}
+
 	if _, ok := PreviousProtocolVersion(SupportedProtocolVersions[0]); ok {
 		t.Error("expected nothing below the oldest version")
 	}
@@ -197,5 +207,24 @@ func TestIsSupportedProtocolVersion(t *testing.T) {
 	// version anything is carried to or from.
 	if IsSupportedProtocolVersion(ProtocolVersions.ZERO) {
 		t.Error("expected the zero version not to be supported")
+	}
+}
+
+// 1.20.2 is where the configuration phase appeared: every version from it on
+// passes through the phase, and the one version below it goes from its login
+// straight into play.
+func TestHasConfigurationPhase(t *testing.T) {
+	if ProtocolVersions.MINECRAFT_1_20.HasConfigurationPhase() {
+		t.Error("1.20 has a configuration phase, want the login to lead straight into play")
+	}
+
+	for _, version := range SupportedProtocolVersions[1:] {
+		if !version.HasConfigurationPhase() {
+			t.Errorf("protocol %d has no configuration phase, want one on every version from 1.20.2", version.ID)
+		}
+	}
+
+	if !ProtocolVersions.MINECRAFT_1_20_2.HasConfigurationPhase() {
+		t.Error("1.20.2 has no configuration phase, which is the version that introduced it")
 	}
 }
