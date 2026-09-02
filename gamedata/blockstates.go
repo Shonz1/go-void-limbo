@@ -62,8 +62,11 @@ type blockStateProperty struct {
 // that: 770 is where the spring vegetation and the test blocks landed, nine
 // blocks in all, so 769 numbers 27,866 states. And 1.21.2 its own again:
 // 769 is where the resin blocks and the eyeblossoms landed, eleven blocks in
-// all, so 768 numbers 27,318 states.
+// all, so 768 numbers 27,318 states. And 1.21 its own at the bottom: 768 is
+// where the pale oak wood set, the pale moss and the creaking heart landed,
+// twenty-four blocks in all, so 767 numbers 26,684 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_21.ID:    "blockstates_minecraft_1_21.json",
 	types.ProtocolVersions.MINECRAFT_1_21_2.ID:  "blockstates_minecraft_1_21_2.json",
 	types.ProtocolVersions.MINECRAFT_1_21_4.ID:  "blockstates_minecraft_1_21_4.json",
 	types.ProtocolVersions.MINECRAFT_1_21_5.ID:  "blockstates_minecraft_1_21_5.json",

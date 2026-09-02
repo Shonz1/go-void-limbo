@@ -19,8 +19,8 @@ What a joined player gets:
 - **A connection that stays up.** Keep alives go out every fifteen seconds and
   packets above 256 bytes are compressed, as a full server would.
 
-The server speaks every protocol version from **1.21.2 through 26.2**
-(protocols 768 to 776). Every packet is implemented once, at the latest
+The server speaks every protocol version from **1.21 through 26.2**
+(protocols 767 to 776). Every packet is implemented once, at the latest
 version, and carried to older clients through per-version transformers.
 
 ## Running

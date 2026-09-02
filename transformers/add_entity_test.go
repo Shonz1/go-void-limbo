@@ -143,6 +143,18 @@ func TestDowngradeAddEntityTo1_21_7MovesTheVelocityBack(t *testing.T) {
 	if !bytes.Equal(to1_21_2, want5) {
 		t.Errorf("to 1.21.2 = % x, want % x", to1_21_2, want5)
 	}
+
+	// And 1.21 the same shape at the bottom of the chain, with the player
+	// down at 128 -- 1.21.2 added twenty entities in front of it -- which is
+	// still a two byte var int.
+	to1_21 := runTransformer(t, DowngradeAddEntityTo1_21, to1_21_2)
+
+	want1 := append(append([]byte{}, want[:17]...), 0x80, 0x01)
+	want1 = append(want1, want[19:]...)
+
+	if !bytes.Equal(to1_21, want1) {
+		t.Errorf("to 1.21 = % x, want % x", to1_21, want1)
+	}
 }
 
 func TestDowngradeAddEntityRefusesAnEntityItDoesNotKnow(t *testing.T) {
