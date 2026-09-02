@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"reflect"
 	"sync"
 
 	"github.com/Shonz1/go-void-limbo/auth"
@@ -744,42 +743,17 @@ func (c *Client) WritePacket(packet types.ClientboundPacket) error {
 // writePacket is WritePacket with the lock already held, for the callers that
 // took it to decide what to write in the first place.
 func (c *Client) writePacket(packet types.ClientboundPacket) error {
-	if packet == nil {
-		return errors.New("packet is nil")
-	}
-
-	packetType := reflect.TypeOf(packet).Elem()
-
-	packetId := c.packetRegistry.GetClientboundId(c.phase, packetType, c.protocolVersion)
-	if packetId == -1 {
-		return errors.New("unknown packet id")
+	if prepared, ok := packet.(*types.PreparedPacket); ok {
+		return c.writePrepared(prepared)
 	}
 
 	// The packet encodes itself at the latest version, which is the only one it
 	// knows how to be, and is then carried back down to the version the client
-	// speaks.
-	payloadBuf := new(bytes.Buffer)
-	payloadStream := streams.NewMinecraftStreamFromBuffer(payloadBuf)
-
-	err := packet.Encode(payloadStream)
+	// speaks, with the id it goes out under at that version in front.
+	body, err := c.packetRegistry.EncodeClientbound(c.phase, c.protocolVersion, packet)
 	if err != nil {
 		return err
 	}
-
-	err = payloadStream.Flush()
-	if err != nil {
-		return err
-	}
-
-	payload, err := c.packetRegistry.DowngradeBody(c.phase, packetType, c.protocolVersion, payloadBuf.Bytes())
-	if err != nil {
-		return err
-	}
-
-	// The id goes in front of the body it was resolved for, at the version the
-	// client reads both at.
-	body := streams.AppendVarInt(make([]byte, 0, 5+len(payload)), packetId)
-	body = append(body, payload...)
 
 	if c.compressionEnabled {
 		body, err = streams.CompressBody(body, c.compressionThreshold)
@@ -793,6 +767,50 @@ func (c *Client) writePacket(packet types.ClientboundPacket) error {
 	}
 
 	logPacket("packet sent", packet)
+
+	return nil
+}
+
+// writePrepared writes a packet that was put in wire form ahead of time, for
+// this client's phase and version -- a packet prepared for any other is a
+// mistake in whoever handed it over, and is refused rather than sent as
+// something the client would read as noise.
+//
+// The deflated bytes go out as they are when this connection would have
+// deflated the body itself: a threshold was announced and the body reaches it.
+// Otherwise the body is inflated and framed the way the connection frames any
+// other, so what was prepared is only ever a saving, never a difference.
+func (c *Client) writePrepared(prepared *types.PreparedPacket) error {
+	if prepared == nil {
+		return errors.New("packet is nil")
+	}
+
+	if prepared.Phase != c.phase || prepared.Version != c.protocolVersion.ID {
+		return fmt.Errorf("%s is not prepared for phase %d on protocol %d", prepared, c.phase, c.protocolVersion.ID)
+	}
+
+	if c.compressionEnabled && prepared.Size >= c.compressionThreshold {
+		if err := c.stream.WriteCompressedFrame(prepared.Size, prepared.Deflated); err != nil {
+			return err
+		}
+	} else {
+		body, err := prepared.Body()
+		if err != nil {
+			return err
+		}
+
+		if c.compressionEnabled {
+			err = c.stream.WriteCompressedFrame(0, body)
+		} else {
+			err = c.stream.WriteFrame(body)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	logPacket("packet sent", prepared)
 
 	return nil
 }

@@ -79,6 +79,30 @@ func (s *MinecraftStream) WriteFrame(body []byte) error {
 	return s.Flush()
 }
 
+// WriteCompressedFrame writes one frame for a connection that has been told a
+// compression threshold, from the two parts CompressBody would have joined:
+// the size the payload inflates to, or zero for one that travels in full, and
+// the payload itself. The parts go to the connection as they are, which is
+// what lets a body deflated ahead of time be sent without being copied.
+func (s *MinecraftStream) WriteCompressedFrame(size int32, payload []byte) error {
+	var sizeScratch [5]byte
+	sizeBytes := AppendVarInt(sizeScratch[:0], size)
+
+	if err := s.WriteVarInt(int32(len(sizeBytes) + len(payload))); err != nil {
+		return err
+	}
+
+	if err := s.WriteBytes(sizeBytes); err != nil {
+		return err
+	}
+
+	if err := s.WriteBytes(payload); err != nil {
+		return err
+	}
+
+	return s.Flush()
+}
+
 // CompressBody frames a packet body for a connection that has been told a
 // compression threshold, deflating it when it is big enough to be worth it. The
 // var int in front carries the size the body inflates to, or zero for a body

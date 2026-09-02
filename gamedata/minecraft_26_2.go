@@ -7,208 +7,59 @@ import (
 
 // NewDefaultProvider builds the provider for the versions this server speaks.
 //
-// Adding a version means adding a Set here. Start it as a copy of the set below
+// Adding a version means adding a set here. Start it as a copy of the set below
 // and apply the differences: registry content changes unpredictably between
 // versions, so a chain of shared bases becomes harder to read than the
 // duplication it saves.
+//
+// Each set is encoded as soon as it is loaded, before the next is read. A
+// version's registries parse into a tree several times the size of the bytes
+// they encode to, and thirteen of those held at once until the last is read
+// is what this process would peak at for no reason; one at a time, the peak
+// is one tree.
 func NewDefaultProvider() (*Provider, error) {
-	registries1_20_2, err := registriesMinecraft1_20_2()
-	if err != nil {
-		return nil, err
+	sets := []struct {
+		minProtocol types.ProtocolId
+		registries  func() ([]Registry, error)
+		tags        func() ([]TagSet, error)
+	}{
+		{types.ProtocolVersions.MINECRAFT_1_20_2.ID, registriesMinecraft1_20_2, tagsMinecraft1_20_2},
+		{types.ProtocolVersions.MINECRAFT_1_20_3.ID, registriesMinecraft1_20_3, tagsMinecraft1_20_3},
+		{types.ProtocolVersions.MINECRAFT_1_20_5.ID, registriesMinecraft1_20_5, tagsMinecraft1_20_5},
+		{types.ProtocolVersions.MINECRAFT_1_21.ID, registriesMinecraft1_21, tagsMinecraft1_21},
+		{types.ProtocolVersions.MINECRAFT_1_21_2.ID, registriesMinecraft1_21_2, tagsMinecraft1_21_2},
+		{types.ProtocolVersions.MINECRAFT_1_21_4.ID, registriesMinecraft1_21_4, tagsMinecraft1_21_4},
+		{types.ProtocolVersions.MINECRAFT_1_21_5.ID, registriesMinecraft1_21_5, tagsMinecraft1_21_5},
+		{types.ProtocolVersions.MINECRAFT_1_21_6.ID, registriesMinecraft1_21_6, tagsMinecraft1_21_6},
+		{types.ProtocolVersions.MINECRAFT_1_21_7.ID, registriesMinecraft1_21_7, tagsMinecraft1_21_7},
+		{types.ProtocolVersions.MINECRAFT_1_21_9.ID, registriesMinecraft1_21_9, tagsMinecraft1_21_9},
+		{types.ProtocolVersions.MINECRAFT_1_21_11.ID, registriesMinecraft1_21_11, tagsMinecraft1_21_11},
+		{types.ProtocolVersions.MINECRAFT_26_1.ID, registriesMinecraft26_1, tagsMinecraft26_1},
+		{types.ProtocolVersions.MINECRAFT_26_2.ID, registriesMinecraft26_2, tagsMinecraft26_2},
 	}
 
-	tags1_20_2, err := tagsMinecraft1_20_2()
-	if err != nil {
-		return nil, err
+	buckets := make([]bucket, 0, len(sets))
+
+	for _, set := range sets {
+		registries, err := set.registries()
+		if err != nil {
+			return nil, err
+		}
+
+		tags, err := set.tags()
+		if err != nil {
+			return nil, err
+		}
+
+		encoded, err := encodeSet(Set{MinProtocol: set.minProtocol, Registries: registries, Tags: tags})
+		if err != nil {
+			return nil, err
+		}
+
+		buckets = append(buckets, encoded)
 	}
 
-	registries1_20_3, err := registriesMinecraft1_20_3()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_20_3, err := tagsMinecraft1_20_3()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_20_5, err := registriesMinecraft1_20_5()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_20_5, err := tagsMinecraft1_20_5()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21, err := registriesMinecraft1_21()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21, err := tagsMinecraft1_21()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_2, err := registriesMinecraft1_21_2()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_2, err := tagsMinecraft1_21_2()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_4, err := registriesMinecraft1_21_4()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_4, err := tagsMinecraft1_21_4()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_5, err := registriesMinecraft1_21_5()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_5, err := tagsMinecraft1_21_5()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_6, err := registriesMinecraft1_21_6()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_6, err := tagsMinecraft1_21_6()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_7, err := registriesMinecraft1_21_7()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_7, err := tagsMinecraft1_21_7()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_9, err := registriesMinecraft1_21_9()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_9, err := tagsMinecraft1_21_9()
-	if err != nil {
-		return nil, err
-	}
-
-	registries1_21_11, err := registriesMinecraft1_21_11()
-	if err != nil {
-		return nil, err
-	}
-
-	tags1_21_11, err := tagsMinecraft1_21_11()
-	if err != nil {
-		return nil, err
-	}
-
-	registries26_1, err := registriesMinecraft26_1()
-	if err != nil {
-		return nil, err
-	}
-
-	tags26_1, err := tagsMinecraft26_1()
-	if err != nil {
-		return nil, err
-	}
-
-	registries26_2, err := registriesMinecraft26_2()
-	if err != nil {
-		return nil, err
-	}
-
-	tags26_2, err := tagsMinecraft26_2()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewProvider(
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_2.ID,
-			Registries:  registries1_20_2,
-			Tags:        tags1_20_2,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_3.ID,
-			Registries:  registries1_20_3,
-			Tags:        tags1_20_3,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_20_5.ID,
-			Registries:  registries1_20_5,
-			Tags:        tags1_20_5,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21.ID,
-			Registries:  registries1_21,
-			Tags:        tags1_21,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_2.ID,
-			Registries:  registries1_21_2,
-			Tags:        tags1_21_2,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_4.ID,
-			Registries:  registries1_21_4,
-			Tags:        tags1_21_4,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_5.ID,
-			Registries:  registries1_21_5,
-			Tags:        tags1_21_5,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_6.ID,
-			Registries:  registries1_21_6,
-			Tags:        tags1_21_6,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_7.ID,
-			Registries:  registries1_21_7,
-			Tags:        tags1_21_7,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_9.ID,
-			Registries:  registries1_21_9,
-			Tags:        tags1_21_9,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_1_21_11.ID,
-			Registries:  registries1_21_11,
-			Tags:        tags1_21_11,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_26_1.ID,
-			Registries:  registries26_1,
-			Tags:        tags26_1,
-		},
-		Set{
-			MinProtocol: types.ProtocolVersions.MINECRAFT_26_2.ID,
-			Registries:  registries26_2,
-			Tags:        tags26_2,
-		},
-	)
+	return newProvider(buckets)
 }
 
 // registriesMinecraft26_2 is every registry the client is sent, which is all 29

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
@@ -139,6 +140,43 @@ func (r *Registry) GetClientboundId(phase types.Phase, packet reflect.Type, prot
 	}
 
 	return id
+}
+
+// EncodeClientbound puts a packet in the form it goes out in on a version: its
+// id at that version in front of its body, encoded at the latest version --
+// the only one a packet knows how to be -- and carried down from there. It
+// reports an error for a packet the version does not carry.
+func (r *Registry) EncodeClientbound(phase types.Phase, protocolVersion types.ProtocolVersion, packet types.ClientboundPacket) ([]byte, error) {
+	if packet == nil {
+		return nil, errors.New("packet is nil")
+	}
+
+	packetType := reflect.TypeOf(packet).Elem()
+
+	packetId := r.GetClientboundId(phase, packetType, protocolVersion)
+	if packetId == -1 {
+		return nil, errors.New("unknown packet id")
+	}
+
+	payloadBuf := new(bytes.Buffer)
+	payloadStream := streams.NewMinecraftStreamFromBuffer(payloadBuf)
+
+	if err := packet.Encode(payloadStream); err != nil {
+		return nil, err
+	}
+
+	if err := payloadStream.Flush(); err != nil {
+		return nil, err
+	}
+
+	payload, err := r.DowngradeBody(phase, packetType, protocolVersion, payloadBuf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	body := streams.AppendVarInt(make([]byte, 0, 5+len(payload)), packetId)
+
+	return append(body, payload...), nil
 }
 
 // UpgradeBody carries a body that arrived on from up to the latest version, one

@@ -27,6 +27,18 @@ import (
 // BlockStates is one version's numbering of every block state, as
 // BlockStatesFor loads it.
 type BlockStates struct {
+	table *blockStatesTable
+
+	// renames is every block this version numbers under an older name than
+	// the one a newer world stores it by, as blockStateRenames spells it.
+	// It sits beside the table rather than in it because the table may be
+	// shared with a version that has no such rename.
+	renames map[string]string
+}
+
+// blockStatesTable is one parsed table: what a block state file holds, which
+// several versions may share.
+type blockStatesTable struct {
 	blocks map[string]*blockStatesEntry
 
 	// stateCount is how many states the version numbers in all, which is what
@@ -91,9 +103,9 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // blockStateRenames is every block a version knows under an older name than
 // the one a newer world stores it by: the name the world uses, and the name
 // this version's table numbers it as. A rename is the same block with the
-// same properties under a different name, so the table numbers both names
-// alike, and a world saved after the rename translates to the version before
-// it without a hole. 1.20.3 is where grass became short grass, the one rename
+// same properties under a different name, so a lookup under the newer name
+// reads the older name's entry, and a world saved after the rename translates
+// to the version before it without a hole. 1.20.3 is where grass became short grass, the one rename
 // among the versions this server speaks.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
 	types.ProtocolVersions.MINECRAFT_1_20_2.ID: {"minecraft:short_grass": "minecraft:grass"},
@@ -127,11 +139,58 @@ type blockStatesFileProperty struct {
 // error for a version this server does not speak, since a table it does not
 // hold is not one to guess at.
 func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
+	return new(BlockStatesLoader).For(version)
+}
+
+// A BlockStatesLoader loads the numbering of several versions and lets those
+// that number every state alike share one parsed table, for a caller that
+// holds every version's numbering at once. Three of the versions this server
+// speaks share a file with another (see blockStatesFiles), and a table is
+// hundreds of kilobytes, so loading each version on its own would hold three
+// copies of tables already in memory. The zero value is ready to use.
+type BlockStatesLoader struct {
+	tables map[string]*blockStatesTable
+}
+
+// For loads the numbering of one version, sharing its table with any version
+// loaded before it from the same file.
+func (l *BlockStatesLoader) For(version types.ProtocolVersion) (*BlockStates, error) {
 	name, ok := blockStatesFiles[version.ID]
 	if !ok {
 		return nil, fmt.Errorf("gamedata: no block state table for protocol %d", version.ID)
 	}
 
+	table, ok := l.tables[name]
+	if !ok {
+		var err error
+		if table, err = loadBlockStatesTable(name); err != nil {
+			return nil, err
+		}
+
+		if l.tables == nil {
+			l.tables = make(map[string]*blockStatesTable)
+		}
+
+		l.tables[name] = table
+	}
+
+	states := &BlockStates{table: table, renames: blockStateRenames[version.ID]}
+
+	for newer, older := range states.renames {
+		if _, ok := table.blocks[older]; !ok {
+			return nil, fmt.Errorf("gamedata: %s renames %s to %s, which protocol %d does not number", name, newer, older, version.ID)
+		}
+
+		if _, ok := table.blocks[newer]; ok {
+			return nil, fmt.Errorf("gamedata: %s renames %s to %s, but protocol %d numbers both", name, newer, older, version.ID)
+		}
+	}
+
+	return states, nil
+}
+
+// loadBlockStatesTable parses one table out of the embedded data directory.
+func loadBlockStatesTable(name string) (*blockStatesTable, error) {
 	raw, err := dataFiles.ReadFile("data/" + name)
 	if err != nil {
 		return nil, fmt.Errorf("gamedata: %w", err)
@@ -142,7 +201,7 @@ func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
 		return nil, fmt.Errorf("gamedata: parsing %s: %w", name, err)
 	}
 
-	states := &BlockStates{blocks: make(map[string]*blockStatesEntry, len(file.Blocks))}
+	table := &blockStatesTable{blocks: make(map[string]*blockStatesEntry, len(file.Blocks))}
 
 	for _, block := range file.Blocks {
 		entry := &blockStatesEntry{base: block.Base, defaultOff: block.Default}
@@ -153,32 +212,31 @@ func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
 			count *= int32(len(property.Values))
 		}
 
-		states.blocks[block.Name] = entry
+		table.blocks[block.Name] = entry
 
-		if end := block.Base + count; end > states.stateCount {
-			states.stateCount = end
+		if end := block.Base + count; end > table.stateCount {
+			table.stateCount = end
 		}
 	}
 
-	for newer, older := range blockStateRenames[version.ID] {
-		entry, ok := states.blocks[older]
-		if !ok {
-			return nil, fmt.Errorf("gamedata: %s renames %s to %s, which protocol %d does not number", name, newer, older, version.ID)
-		}
+	return table, nil
+}
 
-		if _, ok := states.blocks[newer]; ok {
-			return nil, fmt.Errorf("gamedata: %s renames %s to %s, but protocol %d numbers both", name, newer, older, version.ID)
-		}
-
-		states.blocks[newer] = entry
+// entry finds the block a name numbers, under the name itself or under the
+// older name this version knows it by.
+func (s *BlockStates) entry(name string) (*blockStatesEntry, bool) {
+	if older, renamed := s.renames[name]; renamed {
+		name = older
 	}
 
-	return states, nil
+	entry, ok := s.table.blocks[name]
+
+	return entry, ok
 }
 
 // StateCount is how many block states the version numbers in all.
 func (s *BlockStates) StateCount() int32 {
-	return s.stateCount
+	return s.table.stateCount
 }
 
 // Id numbers one block state: a block name and the properties a world's
@@ -190,7 +248,7 @@ func (s *BlockStates) StateCount() int32 {
 // value it does not know, and decides nothing about what to send instead; the
 // caller knows what a hole in a world should look like.
 func (s *BlockStates) Id(name string, properties map[string]string) (int32, bool) {
-	entry, ok := s.blocks[name]
+	entry, ok := s.entry(name)
 	if !ok {
 		return 0, false
 	}
@@ -232,7 +290,7 @@ func (s *BlockStates) Id(name string, properties map[string]string) (int32, bool
 // DefaultId numbers the state a block is in when nothing says otherwise. It
 // reports false for a name this version does not know.
 func (s *BlockStates) DefaultId(name string) (int32, bool) {
-	entry, ok := s.blocks[name]
+	entry, ok := s.entry(name)
 	if !ok {
 		return 0, false
 	}
