@@ -165,13 +165,18 @@ go test ./...
 ```
 
 The end-to-end suite launches a real Minecraft client of every supported
-version in a container and has it join the limbo. It needs Docker, downloads a
-large client image on first use, and takes minutes per version, so it sits
-behind a build tag:
+version in a container and has it join the limbo. It needs Docker and downloads
+a large client image on first use, so it sits behind a build tag:
 
 ```bash
-go test -tags e2e -timeout 180m ./e2e
+go test -tags e2e -timeout 60m ./e2e
 ```
+
+Each version takes well under a minute, most of it the client's own wait for
+a spawn chunk, and the versions are spread over a pool of client containers
+that run at once. `E2E_CLIENTS` sets the pool's size and defaults to two; each
+client is a full Minecraft client that wants a few gigabytes of memory, so
+raise it as far as the machine running Docker allows.
 
 A load generator under [`cmd/loadtest`](cmd/loadtest/README.md) connects a
 crowd of simulated clients and reports what serving them costs.
