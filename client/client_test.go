@@ -749,6 +749,15 @@ func TestCompleteEncryptionRefusesAResponseItCannotTie(t *testing.T) {
 			sharedSecret: func(t *testing.T, _ []byte) []byte { return testutil.EncryptForServer(t, []byte("too short")) },
 			verifyToken:  func(t *testing.T, verifyToken []byte) []byte { return testutil.EncryptForServer(t, verifyToken) },
 		},
+		{
+			// A client on the latest version always encrypts the challenge,
+			// so no token is a wrong token there: only a version that may
+			// sign the challenge instead is let through without one.
+			name:         "with no token at all",
+			begin:        true,
+			sharedSecret: func(t *testing.T, _ []byte) []byte { return testutil.EncryptForServer(t, secret) },
+			verifyToken:  func(t *testing.T, _ []byte) []byte { return nil },
+		},
 	}
 
 	for _, test := range tests {
@@ -1172,4 +1181,51 @@ func keepAliveBodyOf(t *testing.T, prepared *types.PreparedPacket) []byte {
 	}
 
 	return body
+}
+
+// A 1.19.1 client holding a profile key signs the challenge under it rather
+// than encrypting it, and the 1.19.3 step's upgrade hands the response on
+// with no token, since the signature is one this server cannot check. Such
+// a response is let through on that version alone, and the secret still has
+// to be one encrypted to this server: what settles the login is the session
+// server, asked about that secret as for any other response.
+func TestCompleteEncryptionLetsASignedChallengeThroughOn1_19_1(t *testing.T) {
+	secret := []byte("0123456789abcdef")
+
+	client, _ := newLoginClient(t, &testutil.FakeSessionServer{})
+	client.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_1_19_1)
+
+	if _, _, err := client.BeginEncryption(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := client.CompleteEncryption(testutil.EncryptForServer(t, secret), nil); err != nil {
+		t.Fatalf("CompleteEncryption() with a signed challenge on 1.19.1 = %v, want the response let through", err)
+	}
+
+	if !bytes.Equal(client.sharedSecret, secret) {
+		t.Errorf("kept secret % x, want % x", client.sharedSecret, secret)
+	}
+
+	// The secret is still checked: a signed challenge is not a way past the
+	// server's key.
+	client, _ = newLoginClient(t, &testutil.FakeSessionServer{})
+	client.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_1_19_1)
+
+	if _, _, err := client.BeginEncryption(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := client.CompleteEncryption([]byte("not a ciphertext"), nil); err == nil {
+		t.Error("error = nil, want a secret encrypted to nobody refused on 1.19.1 as on any version")
+	}
+
+	// And a signed challenge is not a thing a request that never went out can
+	// be answered with.
+	client, _ = newLoginClient(t, &testutil.FakeSessionServer{})
+	client.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_1_19_1)
+
+	if err := client.CompleteEncryption(testutil.EncryptForServer(t, secret), nil); err == nil {
+		t.Error("error = nil, want a response to a request that was never sent refused")
+	}
 }

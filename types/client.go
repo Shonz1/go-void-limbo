@@ -67,7 +67,10 @@ type Encrypting interface {
 	// CompleteEncryption takes the two fields of an encryption response,
 	// decrypts them with the server's private key, refuses a verify token that
 	// is not the one that was sent, and puts the connection under the shared
-	// secret from there on.
+	// secret from there on. A response with no token at all is let through
+	// only from a version whose client may have signed the challenge instead
+	// of encrypting it, which this server cannot check: see
+	// ProtocolVersion.MaySignEncryptionChallenge.
 	//
 	// The client encrypts everything it sends after its response, so this has to
 	// happen before anything is written back, and a failure here leaves a

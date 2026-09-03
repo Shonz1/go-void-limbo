@@ -91,11 +91,15 @@ type blockStateProperty struct {
 // plant and its crop, the sniffer egg and the suspicious gravel landed, five
 // blocks in all, and where the decorated pot gained its cracked property and
 // the torchflower crop lost one of its three ages, so 762 numbers 23,725
-// states. And 1.19.3 its own at the very bottom: 762 is where the cherry
-// wood set, the pink petals, the torchflower and its crop, the decorated pot
-// and the suspicious sand landed, twenty-six blocks in all, so 761 numbers
-// 23,232 states.
+// states. And 1.19.3 its own below that: 762 is where the cherry wood set,
+// the pink petals, the torchflower and its crop, the decorated pot and the
+// suspicious sand landed, twenty-six blocks in all, so 761 numbers 23,232
+// states. And 1.19.1 its own at the very bottom: 761 is where the bamboo
+// wood set, the hanging signs of every wood, the chiseled bookshelf and the
+// piglin heads landed, thirty-nine blocks in all, and where the note block
+// gained its seven mob head instruments, so 760 numbers 21,448 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_19_1.ID:  "blockstates_minecraft_1_19_1.json",
 	types.ProtocolVersions.MINECRAFT_1_19_3.ID:  "blockstates_minecraft_1_19_3.json",
 	types.ProtocolVersions.MINECRAFT_1_19_4.ID:  "blockstates_minecraft_1_19_4.json",
 	types.ProtocolVersions.MINECRAFT_1_20.ID:    "blockstates_minecraft_1_20.json",
@@ -123,6 +127,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // short grass, the one rename among the versions this server speaks, so
 // every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_19_1.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19_3.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19_4.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_20.ID:   {"minecraft:short_grass": "minecraft:grass"},
