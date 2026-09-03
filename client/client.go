@@ -475,6 +475,17 @@ func (c *Client) BeginEncryption() ([]byte, []byte, error) {
 // what keeps a response from being worth anything anywhere but here. Nothing is
 // written back before the cipher is on, because the client turned its own on the
 // moment it sent this.
+//
+// A response with no token at all is what a client on a version that may sign
+// the challenge sent instead of encrypting it: a signature under the profile
+// key it announced in its hello, which the 1.19.3 step's upgrade takes off
+// because nothing above 1.19.1 has a field for it, and which this server has
+// no key left to check against. Such a response is let through on the
+// session server's word alone, which is what settles every login here anyway:
+// the client joined Mojang's session under the same secret before it answered,
+// and a secret nobody joined under is one Authenticate refuses. A version that
+// always encrypts the challenge sends no such thing, and an empty token from
+// it is refused as any wrong token is.
 func (c *Client) CompleteEncryption(sharedSecret, verifyToken []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -483,13 +494,19 @@ func (c *Client) CompleteEncryption(sharedSecret, verifyToken []byte) error {
 		return errors.New("encryption was never requested")
 	}
 
-	token, err := c.keyPair.Decrypt(verifyToken)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt the verify token: %w", err)
+	if len(verifyToken) == 0 && !c.protocolVersion.MaySignEncryptionChallenge() {
+		return fmt.Errorf("the verify token is empty, which protocol %d has no way to answer with", c.protocolVersion.ID)
 	}
 
-	if subtle.ConstantTimeCompare(token, c.verifyToken) != 1 {
-		return errors.New("the verify token is not the one that was sent")
+	if len(verifyToken) != 0 {
+		token, err := c.keyPair.Decrypt(verifyToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt the verify token: %w", err)
+		}
+
+		if subtle.ConstantTimeCompare(token, c.verifyToken) != 1 {
+			return errors.New("the verify token is not the one that was sent")
+		}
 	}
 
 	secret, err := c.keyPair.Decrypt(sharedSecret)

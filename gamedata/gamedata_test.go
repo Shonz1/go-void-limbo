@@ -6,6 +6,7 @@ import (
 	"github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -1836,6 +1837,123 @@ func TestRegistriesFor1_19_3AreItsOwnAndNot1_19_4s(t *testing.T) {
 	}
 }
 
+// 1.19.1 synchronizes the same three registries as 1.19.3, read off the two
+// jars: the dimension types, the biomes and the chat types, the three its
+// registry access marks as sent to the client. The chat types are 1.19.3's
+// entry for entry, 1.19.3 having moved them from code into data files
+// without changing one. The tag sets cover the same ten registries, and
+// differ by what each jar declares, since each version declares the tags of
+// its own. The dimension type and the biome are 1.19.3's by reference, since
+// the codecs are field-for-field identical in the two.
+func TestRegistriesFor1_19_1AreItsOwnAndNot1_19_3s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_19_1), registries(registriesMinecraft1_19_3)
+
+	if len(older) != 3 {
+		t.Errorf("1.19.1 is sent %d registries, want 3", len(older))
+	}
+
+	for _, name := range []string{"minecraft:dimension_type", "minecraft:worldgen/biome", "minecraft:chat_type"} {
+		if _, ok := older[name]; !ok {
+			t.Errorf("1.19.1 is not sent %s, which its registry access sends", name)
+		}
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.19.1's %s holds no entries, want every registry it declares filled", name)
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.19.1's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+
+			if !reflect.DeepEqual(newer[name][entryName], data) {
+				t.Errorf("1.19.1's %s entry %s differs from 1.19.3's, want the same: 1.19.3 changed none of them", name, entryName)
+			}
+		}
+	}
+
+	if len(older["minecraft:chat_type"]) != len(newer["minecraft:chat_type"]) {
+		t.Errorf("1.19.1's chat types hold %d entries and 1.19.3's %d, want the same: 1.19.3 added none", len(older["minecraft:chat_type"]), len(newer["minecraft:chat_type"]))
+	}
+
+	// The dimension type the play login names outright, so first is where it
+	// has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_19_1)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.19.1's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_19_1), tags(tagsMinecraft1_19_3)
+
+	if len(olderTags) != len(newerTags) {
+		t.Errorf("1.19.1 declares tags for %d registries and 1.19.3 for %d, want the same ten", len(olderTags), len(newerTags))
+	}
+
+	for registry := range newerTags {
+		if _, ok := olderTags[registry]; !ok {
+			t.Errorf("1.19.1 declares no %s tags, which 1.19.3 does and its jar does too", registry)
+		}
+	}
+
+	introduced := map[string][]string{
+		"minecraft:block": {"minecraft:all_signs", "minecraft:invalid_spawn_inside"},
+		"minecraft:item":  {"minecraft:creeper_igniters", "minecraft:fence_gates"},
+	}
+
+	for registry, names := range introduced {
+		for _, name := range names {
+			if olderTags[registry][name] {
+				t.Errorf("1.19.1 declares %s, a %s tag 761 introduced", name, registry)
+			}
+
+			if !newerTags[registry][name] {
+				t.Errorf("1.19.3 no longer declares %s, a %s tag its jar does declare", name, registry)
+			}
+		}
+	}
+
+	retired := map[string]string{
+		"minecraft:block": "minecraft:non_flammable_wood",
+		"minecraft:item":  "minecraft:overworld_natural_logs",
+	}
+
+	for registry, name := range retired {
+		if !olderTags[registry][name] {
+			t.Errorf("1.19.1 no longer declares %s, a %s tag its jar does declare", name, registry)
+		}
+
+		if newerTags[registry][name] {
+			t.Errorf("1.19.3 declares %s, a %s tag it retired", name, registry)
+		}
+	}
+}
+
 // 1.20.3's dimension type is 1.21.9's but for the monster spawn light level,
 // whose int provider 1.20.4 reads with its fields nested under value, the
 // way a dispatch lays out a plain codec; the flat shape is 1.20.5's, where
@@ -1980,6 +2098,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest0000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_1)
 	oldest000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_3)
 	oldest00000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_4)
 	oldest0000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20)
@@ -1997,7 +2116,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest0000000) == 0 || len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -2050,6 +2169,21 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 
 	if len(oldestCodec) >= len(olderCodec) {
 		t.Errorf("1.19.3's registry codec is %d bytes and 1.19.4's %d, want fewer for 1.19.3", len(oldestCodec), len(olderCodec))
+	}
+
+	// 1.19.1 likewise, with a compound of its own that holds the same three
+	// registries with the same entries, which the size sees as well.
+	if len(oldest0000000) != 1 {
+		t.Errorf("1.19.1 was sent %d packets, want the tags alone", len(oldest0000000))
+	}
+
+	firstCodec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_19_1)
+	if len(firstCodec) == 0 {
+		t.Error("1.19.1 has no registry codec, want the compound its play login carries")
+	}
+
+	if len(firstCodec) != len(oldestCodec) {
+		t.Errorf("1.19.1's registry codec is %d bytes and 1.19.3's %d, want the same: the two hold the same entries", len(firstCodec), len(oldestCodec))
 	}
 
 	if codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20_2); codec != nil {

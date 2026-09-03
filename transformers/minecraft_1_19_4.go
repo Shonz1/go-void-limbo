@@ -39,39 +39,47 @@ func DowngradePlayLoginTo1_19_3(registryCodec []byte) func(in *streams.Minecraft
 			return errors.New("a 1.19.3 play login carries the registries, and this transformer was given none")
 		}
 
-		// The entity id, a plain int, the hardcore flag, and the game mode
-		// and the previous game mode, a byte each.
-		if err := copyBytes(in, out, 7); err != nil {
-			return err
-		}
-
-		// The dimension names.
-		dimensionCount, err := copyVarInt(in, out)
-		if err != nil {
-			return err
-		}
-
-		for range dimensionCount {
-			if err := copyString(in, out); err != nil {
-				return err
-			}
-		}
-
-		// 1.19.4's registries, read so that they are consumed and never
-		// written, and 1.19.3's in their place.
-		if _, _, err := nbt.ReadNamed(in); err != nil {
-			return err
-		}
-
-		if err := out.WriteBytes(registryCodec); err != nil {
-			return err
-		}
-
-		// The dimension type and the dimension, the seed, the three
-		// distances, the four flags and the death location, laid out alike
-		// on both sides of this step.
-		return copyRest(in, out)
+		return swapPlayLoginRegistries(in, out, registryCodec)
 	}
+}
+
+// swapPlayLoginRegistries copies a play login laid out as 1.19.3 lays it
+// out, with the registries in the middle swapped for registryCodec: it is
+// the whole of the 1.19.4 step's login rewrite, and of the 1.19.3 step's,
+// since the three versions lay the packet out alike around the compound.
+func swapPlayLoginRegistries(in *streams.MinecraftStream, out *streams.MinecraftStream, registryCodec []byte) error {
+	// The entity id, a plain int, the hardcore flag, and the game mode
+	// and the previous game mode, a byte each.
+	if err := copyBytes(in, out, 7); err != nil {
+		return err
+	}
+
+	// The dimension names.
+	dimensionCount, err := copyVarInt(in, out)
+	if err != nil {
+		return err
+	}
+
+	for range dimensionCount {
+		if err := copyString(in, out); err != nil {
+			return err
+		}
+	}
+
+	// The newer version's registries, read so that they are consumed and
+	// never written, and the older version's in their place.
+	if _, _, err := nbt.ReadNamed(in); err != nil {
+		return err
+	}
+
+	if err := out.WriteBytes(registryCodec); err != nil {
+		return err
+	}
+
+	// The dimension type and the dimension, the seed, the three distances,
+	// the four flags and the death location, laid out alike on both sides
+	// of the step.
+	return copyRest(in, out)
 }
 
 // DowngradePlayerPositionTo1_19_3 rewrites the player position packet from
