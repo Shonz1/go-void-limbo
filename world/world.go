@@ -151,10 +151,11 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 		}
 
 		builders = append(builders, &chunkBuilder{
-			blockStates: blockStates,
-			version:     version,
-			fluidCounts: version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
-			dataLengths: version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
+			blockStates:   blockStates,
+			version:       version,
+			fluidCounts:   version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
+			dataLengths:   version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
+			separateLight: version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID,
 		})
 	}
 
@@ -162,7 +163,7 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 	// most a world sends and what a plausible one comes close to.
 	world := &World{spawn: spawn, packets: make(map[types.ProtocolId][]types.ClientboundPacket, len(builders))}
 	for _, builder := range builders {
-		packets := make([]types.ClientboundPacket, 0, maxChunks+1)
+		packets := make([]types.ClientboundPacket, 0, maxChunks*builder.packetsPerChunk()+1)
 		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
 
 		world.packets[builder.version.ID] = packets
@@ -196,7 +197,7 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 					return nil, fmt.Errorf("world: chunk %d,%d for protocol %d: %w", chunk.X, chunk.Z, builder.version.ID, err)
 				}
 
-				world.packets[builder.version.ID] = append(world.packets[builder.version.ID], prepared)
+				world.packets[builder.version.ID] = append(world.packets[builder.version.ID], prepared...)
 			}
 		}
 	}
@@ -208,10 +209,12 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 }
 
 // PacketsFor returns the packets that put this world on the wire of a client
-// speaking version, the chunk cache centre first. The slice is shared across
-// connections and must not be modified. It is empty for a version the world
-// was not built for, which is no version a connection can reach the play
-// phase on.
+// speaking version, the chunk cache centre first and then the chunks -- each
+// one packet, or on a version before 1.18 its light and then the chunk
+// itself, in the order a vanilla server of that version sends the two. The
+// slice is shared across connections and must not be modified. It is empty
+// for a version the world was not built for, which is no version a
+// connection can reach the play phase on.
 func (w *World) PacketsFor(version types.ProtocolVersion) []types.ClientboundPacket {
 	return w.packets[version.ID]
 }
@@ -240,22 +243,68 @@ type chunkBuilder struct {
 	// says so with a count of zero.
 	dataLengths bool
 
+	// separateLight is whether the version reads a chunk's light in a
+	// packet of its own, which 1.18 folded into the chunk packet: 1.17.1
+	// reads the light update packet first and the chunk after it, the order
+	// a vanilla server of that version sends the two in, and the 1.18 step's
+	// chunk transformer drops the light the chunk packet carries on the way
+	// down. The sections themselves are built as 1.18 reads them and carried
+	// down by that transformer as well, since 1.17.1 lays them out the same
+	// way but for what it leaves out.
+	separateLight bool
+
 	// substituted is every stored state this version had no number for, warned
 	// about once each rather than once per block.
 	substituted map[string]bool
 }
 
-// prepare builds the chunk packet for this version and puts it in wire form:
-// encoded, carried down to the version, and deflated. The chunk is the one
-// packet worth preparing: it is most of what a join sends and all of what a
-// world costs to hold, and what it deflates to is a fraction of the sections
-// and light it is built from. The centre stays a packet of a few bytes.
-func (b *chunkBuilder) prepare(chunk *anvil.Chunk, encoder PacketEncoder) (*types.PreparedPacket, error) {
+// packetsPerChunk is how many packets one chunk goes out as on this
+// version: the chunk packet, and on a version that reads the light on its
+// own the light packet ahead of it.
+func (b *chunkBuilder) packetsPerChunk() int {
+	if b.separateLight {
+		return 2
+	}
+
+	return 1
+}
+
+// prepare builds the packets that carry one chunk on this version and puts
+// them in wire form: encoded, carried down to the version, and deflated. The
+// chunk is the one packet worth preparing: it is most of what a join sends
+// and all of what a world costs to hold, and what it deflates to is a
+// fraction of the sections and light it is built from. The centre stays a
+// packet of a few bytes. On a version that reads the light in a packet of
+// its own, that packet comes first, built from the same light.
+func (b *chunkBuilder) prepare(chunk *anvil.Chunk, encoder PacketEncoder) ([]types.ClientboundPacket, error) {
 	packet, err := b.build(chunk)
 	if err != nil {
 		return nil, err
 	}
 
+	packets := make([]types.ClientboundPacket, 0, b.packetsPerChunk())
+
+	if b.separateLight {
+		light := &clientboundPlay.LightUpdateClientboundPacket{X: chunk.X, Z: chunk.Z, LightData: packet.LightData}
+
+		prepared, err := b.prepareOne(chunk, encoder, light)
+		if err != nil {
+			return nil, err
+		}
+
+		packets = append(packets, prepared)
+	}
+
+	prepared, err := b.prepareOne(chunk, encoder, packet)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(packets, prepared), nil
+}
+
+// prepareOne puts one of a chunk's packets in wire form.
+func (b *chunkBuilder) prepareOne(chunk *anvil.Chunk, encoder PacketEncoder, packet types.ClientboundPacket) (*types.PreparedPacket, error) {
 	body, err := encoder.EncodeClientbound(types.PhasePlay, b.version, packet)
 	if err != nil {
 		return nil, err

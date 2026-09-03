@@ -2277,6 +2277,185 @@ func TestRegistriesFor1_18AreItsOwnAndNot1_18_2s(t *testing.T) {
 	}
 }
 
+// 1.17.1 synchronizes the same two registries as 1.18, read off the two
+// jars: the dimension types and the biomes, the two its registry access
+// marks as sent to the client. The dimension type is 1.18's by reference,
+// the codec being field for field the same. The biome is its own: 1.18 is
+// where the depth and the scale left the codec, and 1.17.1 reads both as
+// required fields. The tag sets cover the same five registries, with the
+// names 1.17.1's own jar declares: 1.18's additions are absent, and the one
+// tag 1.18 renamed keeps its older name.
+func TestRegistriesFor1_17_1AreItsOwnAndNot1_18s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_17_1), registries(registriesMinecraft1_18)
+
+	if len(older) != 2 {
+		t.Errorf("1.17.1 is sent %d registries, want 2", len(older))
+	}
+
+	for _, name := range []string{"minecraft:dimension_type", "minecraft:worldgen/biome"} {
+		if _, ok := older[name]; !ok {
+			t.Errorf("1.17.1 is not sent %s, which its registry access sends", name)
+		}
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.17.1's %s holds no entries, want every registry it declares filled", name)
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.17.1's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+		}
+	}
+
+	// The dimension type is 1.18's, plain infiniburn tag and all.
+	overworld, ok := older["minecraft:dimension_type"]["minecraft:overworld"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.17.1's overworld is %T, want a compound", older["minecraft:dimension_type"]["minecraft:overworld"])
+	}
+
+	if !reflect.DeepEqual(overworld, newer["minecraft:dimension_type"]["minecraft:overworld"]) {
+		t.Error("1.17.1's overworld differs from 1.18's, want the same: the codec is field for field the same in the two")
+	}
+
+	if infiniburn, ok := overworld["infiniburn"].(nbt.String); !ok || infiniburn != "minecraft:infiniburn_overworld" {
+		t.Errorf("1.17.1's overworld burns %v, want the plain tag name from before tag keys", overworld["infiniburn"])
+	}
+
+	// The biome is 1.18's with the depth and the scale on top.
+	plains, ok := older["minecraft:worldgen/biome"]["minecraft:plains"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.17.1's plains biome is %T, want a compound", older["minecraft:worldgen/biome"]["minecraft:plains"])
+	}
+
+	newerPlains, ok := newer["minecraft:worldgen/biome"]["minecraft:plains"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.18's plains biome is %T, want a compound", newer["minecraft:worldgen/biome"]["minecraft:plains"])
+	}
+
+	if depth, ok := plains["depth"].(nbt.Float); !ok || depth != 0.125 {
+		t.Errorf("1.17.1's plains biome has depth %v, want the 0.125 its client's own plains carries", plains["depth"])
+	}
+
+	if scale, ok := plains["scale"].(nbt.Float); !ok || scale != 0.05 {
+		t.Errorf("1.17.1's plains biome has scale %v, want the 0.05 its client's own plains carries", plains["scale"])
+	}
+
+	for _, field := range []string{"depth", "scale"} {
+		if _, ok := newerPlains[field]; ok {
+			t.Errorf("1.18's plains biome carries %s, a field 1.18 took off the codec", field)
+		}
+	}
+
+	if len(plains) != len(newerPlains)+2 {
+		t.Errorf("1.17.1's plains biome has %d fields and 1.18's %d, want two more for 1.17.1", len(plains), len(newerPlains))
+	}
+
+	for field, value := range newerPlains {
+		if !reflect.DeepEqual(value, plains[field]) {
+			t.Errorf("1.17.1's plains biome has %s = %v and 1.18's %v, want the same: the field has the same codec in the two", field, plains[field], value)
+		}
+	}
+
+	// The dimension type the play login spells out, so first is where it
+	// has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_17_1)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.17.1's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	olderTags, newerTags := mustLoadTags(t, tagsMinecraft1_17_1), mustLoadTags(t, tagsMinecraft1_18)
+	if len(olderTags) != 5 {
+		t.Errorf("1.17.1 declares tags for %d registries, want five", len(olderTags))
+	}
+
+	tagNames := func(sets []TagSet) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range sets {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderNames, newerNames := tagNames(olderTags), tagNames(newerTags)
+
+	// What 1.18 added to the two sets that grew, and the one tag it renamed.
+	added := map[string]map[string]bool{
+		"minecraft:block": {
+			"minecraft:animals_spawnable_on": true, "minecraft:axolotls_spawnable_on": true, "minecraft:azalea_grows_on": true,
+			"minecraft:azalea_root_replaceable": true, "minecraft:big_dripleaf_placeable": true, "minecraft:foxes_spawnable_on": true,
+			"minecraft:goats_spawnable_on": true, "minecraft:mooshrooms_spawnable_on": true, "minecraft:parrots_spawnable_on": true,
+			"minecraft:polar_bears_spawnable_on_in_frozen_ocean": true, "minecraft:rabbits_spawnable_on": true,
+			"minecraft:replaceable_plants": true, "minecraft:terracotta": true, "minecraft:wolves_spawnable_on": true,
+			"minecraft:lava_pool_stone_cannot_replace": true,
+		},
+		"minecraft:item": {"minecraft:dirt": true, "minecraft:terracotta": true},
+	}
+
+	for _, registry := range []string{"minecraft:block", "minecraft:item", "minecraft:entity_type", "minecraft:fluid", "minecraft:game_event"} {
+		if _, ok := olderNames[registry]; !ok {
+			t.Errorf("1.17.1 declares no %s tags, which its jar does declare and a 1.17.1 server sends", registry)
+		}
+
+		for name := range olderNames[registry] {
+			if !newerNames[registry][name] && name != "minecraft:lava_pool_stone_replaceables" {
+				t.Errorf("1.17.1 declares %s, a %s tag 1.18 does not, and not the one 1.18 renamed", name, registry)
+			}
+		}
+
+		for name := range newerNames[registry] {
+			if !olderNames[registry][name] && !added[registry][name] {
+				t.Errorf("1.18 declares %s, a %s tag 1.17.1 does not, and not one 1.18 added", name, registry)
+			}
+		}
+
+		for name := range added[registry] {
+			if olderNames[registry][name] {
+				t.Errorf("1.17.1 declares %s, a %s tag 1.18 added", name, registry)
+			}
+		}
+	}
+
+	if !olderNames["minecraft:block"]["minecraft:lava_pool_stone_replaceables"] {
+		t.Error("1.17.1 no longer declares lava_pool_stone_replaceables, the block tag its jar declares under the older name")
+	}
+
+	// The tags a 1.17.1 client's own helpers name, which it checks the
+	// payload for and leaves over a missing one: a few from each of the five,
+	// the ones the client's code reads first.
+	for registry, names := range map[string][]string{
+		"minecraft:block":       {"minecraft:wool", "minecraft:climbable", "minecraft:infiniburn_overworld", "minecraft:lava_pool_stone_replaceables"},
+		"minecraft:item":        {"minecraft:wool", "minecraft:arrows", "minecraft:freeze_immune_wearables"},
+		"minecraft:entity_type": {"minecraft:skeletons", "minecraft:freeze_immune_entity_types", "minecraft:powder_snow_walkable_mobs"},
+		"minecraft:fluid":       {"minecraft:water", "minecraft:lava"},
+		"minecraft:game_event":  {"minecraft:vibrations", "minecraft:ignore_vibrations_sneaking"},
+	} {
+		for _, name := range names {
+			if !olderNames[registry][name] {
+				t.Errorf("1.17.1 declares no %s %s tag, which its client checks for and leaves without", registry, name)
+			}
+		}
+	}
+}
+
 // 1.19 synchronizes the same three registries as 1.19.1, read off the two
 // jars: the dimension types, the biomes and the chat types, the three its
 // registry access marks as sent to the client. The chat types are its own:
@@ -2666,6 +2845,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	floor := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_17_1)
 	bottom := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_18)
 	lowest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_18_2)
 	oldest00000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19)
@@ -2822,7 +3002,30 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Error("1.18 has 1.18.2's dimension type, want its own")
 	}
 
-	for _, version := range types.SupportedProtocolVersions[2:] {
+	// 1.17.1 likewise, with a compound larger than 1.18's -- the same two
+	// registries, the biome carrying the depth and the scale 1.18 took off
+	// its codec -- and 1.18's dimension type spelled out, the codec being the
+	// same in the two.
+	if len(floor) != 1 {
+		t.Errorf("1.17.1 was sent %d packets, want the tags alone", len(floor))
+	}
+
+	floorCodec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_17_1)
+	if len(floorCodec) == 0 {
+		t.Error("1.17.1 has no registry codec, want the compound its play login carries")
+	}
+
+	if len(floorCodec) <= len(bottomCodec) {
+		t.Errorf("1.17.1's registry codec is %d bytes and 1.18's %d, want more for 1.17.1: the depth and the scale on the biome", len(floorCodec), len(bottomCodec))
+	}
+
+	if dimensionType := provider.DimensionTypeFor(types.ProtocolVersions.MINECRAFT_1_17_1); len(dimensionType) == 0 {
+		t.Error("1.17.1 has no dimension type, want the entry its play login spells out")
+	} else if !bytes.Equal(dimensionType, provider.DimensionTypeFor(types.ProtocolVersions.MINECRAFT_1_18)) {
+		t.Error("1.17.1 spells out a dimension type other than 1.18's, want the same: the codec is field for field the same in the two")
+	}
+
+	for _, version := range types.SupportedProtocolVersions[3:] {
 		if provider.DimensionTypeFor(version) != nil {
 			t.Errorf("protocol %d has a dimension type to spell out, want none for a version whose play login names it", version.ID)
 		}
