@@ -45,7 +45,7 @@ import (
 // offline tag ships every release's assets prebuilt, so a launch asks nothing
 // of Mojang or the network: the one big download is the image itself.
 // VOID_CLIENT_IMAGE overrides it, for pinning a digest instead.
-const clientImage = "ghcr.io/caunt/portable-minecraft-client:offline"
+const clientImage = "ghcr.io/void-community/portable-minecraft-client:offline"
 
 // serverHostFromContainer is where the container finds the limbo, which is
 // listening on the host the container runs on. Docker Desktop resolves the name
