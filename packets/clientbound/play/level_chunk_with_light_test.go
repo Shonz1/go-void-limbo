@@ -12,12 +12,14 @@ func TestLevelChunkWithLightClientboundPacketEncode(t *testing.T) {
 		Heightmaps: []Heightmap{
 			{Type: HeightmapMotionBlocking, Data: []int64{65}},
 		},
-		SectionData:         []byte{0xAA, 0xBB, 0xCC},
-		SkyLightMask:        []int64{0b100000},
-		BlockLightMask:      nil,
-		EmptySkyLightMask:   []int64{0b011111},
-		EmptyBlockLightMask: []int64{0b111111},
-		SkyLight:            [][]byte{{0xFF, 0xEE}},
+		SectionData: []byte{0xAA, 0xBB, 0xCC},
+		LightData: LightData{
+			SkyLightMask:        []int64{0b100000},
+			BlockLightMask:      nil,
+			EmptySkyLightMask:   []int64{0b011111},
+			EmptyBlockLightMask: []int64{0b111111},
+			SkyLight:            [][]byte{{0xFF, 0xEE}},
+		},
 	}
 
 	want := []byte{

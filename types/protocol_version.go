@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_17_1  ProtocolVersion
 	MINECRAFT_1_18    ProtocolVersion
 	MINECRAFT_1_18_2  ProtocolVersion
 	MINECRAFT_1_19    ProtocolVersion
@@ -32,9 +33,18 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
+	// 1.17.1 has 756 to itself: 1.17 sits on 755 and 1.18 moved to 757. It
+	// is the oldest this server speaks, and like the seven above it from
+	// before the configuration phase: see HasConfigurationPhase. It is from
+	// before the profile key as well, so a client on it always encrypts the
+	// encryption challenge: see MaySignEncryptionChallenge. It is also from
+	// before the light joined the chunk packet, so a client on it reads the
+	// light in a packet of its own: see package world.
+	MINECRAFT_1_17_1: ProtocolVersion{ID: 756, Names: []string{"1.17.1"}},
+
 	// 1.18.1 stayed on 1.18's protocol, so a client on either of them is a
-	// client on this version. It is the oldest this server speaks, and like
-	// the six above it from before the configuration phase: see
+	// client on this version. 1.17.1 sits on 756 below it. Like the six
+	// above it, it is from before the configuration phase: see
 	// HasConfigurationPhase. It is from before the profile key as well, so a
 	// client on it always encrypts the encryption challenge: see
 	// MaySignEncryptionChallenge.
@@ -132,6 +142,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_17_1,
 	ProtocolVersions.MINECRAFT_1_18,
 	ProtocolVersions.MINECRAFT_1_18_2,
 	ProtocolVersions.MINECRAFT_1_19,
@@ -162,6 +173,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_17_1.ID:  ProtocolVersions.MINECRAFT_1_17_1,
 	ProtocolVersions.MINECRAFT_1_18.ID:    ProtocolVersions.MINECRAFT_1_18,
 	ProtocolVersions.MINECRAFT_1_18_2.ID:  ProtocolVersions.MINECRAFT_1_18_2,
 	ProtocolVersions.MINECRAFT_1_19.ID:    ProtocolVersions.MINECRAFT_1_19,
@@ -237,8 +249,8 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2 and 1.18 -- is in play the moment
-// its login succeeds, with nothing acknowledged in between, and what the phase carries
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18 and 1.17.1 -- is in play the
+// moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
 // packet itself, and the tags as a play packet right after it.
@@ -252,8 +264,8 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // client holding one -- which is every client logged into an account --
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
-// so from it on the challenge is always encrypted, and 1.18.2 and 1.18,
-// from before the key, have nothing to sign with and encrypt it as well:
+// so from it on the challenge is always encrypted, and 1.18.2, 1.18 and
+// 1.17.1, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let

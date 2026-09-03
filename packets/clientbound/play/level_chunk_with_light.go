@@ -50,6 +50,15 @@ type LevelChunkWithLightClientboundPacket struct {
 	// block count, fluid count, block states, biomes.
 	SectionData []byte
 
+	// The light, which 1.18 folded into this packet: a version before it
+	// reads the same data in a packet of its own, sent ahead of the chunk.
+	LightData
+}
+
+// LightData is all of a chunk's light as the wire carries it, which is the
+// same data whether it travels inside the chunk packet, as it does from 1.18
+// on, or in the light update packet of its own that 1.17.1 reads it in.
+type LightData struct {
 	// The light arrays, half a byte per block, 2048 bytes each, for the
 	// sections that have any. Light spans one section beyond the blocks in
 	// both directions, so the masks index sections from one below the world to
@@ -101,13 +110,19 @@ func (p *LevelChunkWithLightClientboundPacket) Encode(ms *streams.MinecraftStrea
 		return err
 	}
 
-	for _, mask := range [][]int64{p.SkyLightMask, p.BlockLightMask, p.EmptySkyLightMask, p.EmptyBlockLightMask} {
+	return p.LightData.encode(ms)
+}
+
+// encode writes the light the way both packets carry it: the four masks,
+// then the sky arrays and the block arrays, each counted.
+func (l *LightData) encode(ms *streams.MinecraftStream) error {
+	for _, mask := range [][]int64{l.SkyLightMask, l.BlockLightMask, l.EmptySkyLightMask, l.EmptyBlockLightMask} {
 		if err := writeLongArray(ms, mask); err != nil {
 			return err
 		}
 	}
 
-	for _, arrays := range [][][]byte{p.SkyLight, p.BlockLight} {
+	for _, arrays := range [][][]byte{l.SkyLight, l.BlockLight} {
 		if err := ms.WriteVarInt(int32(len(arrays))); err != nil {
 			return err
 		}

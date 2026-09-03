@@ -80,7 +80,7 @@ const (
 // milliseconds -- has the client drawing a world whose block atlas and
 // shaders do not exist yet, which crashes it on the spot: the versions from
 // 1.19 on happen to sit out the window on a profile key fetch that fails
-// slowly offline, and 1.18.2 and 1.18, with no key to fetch, do not. A player joins
+// slowly offline, and 1.18.2, 1.18 and 1.17.1, with no key to fetch, do not. A player joins
 // from a loaded client anyway, which is what this waits for; the reload takes
 // a few seconds here, and the settle is what a slow machine may need.
 const (

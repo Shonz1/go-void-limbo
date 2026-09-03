@@ -37,11 +37,13 @@ func TestDowngradeLevelChunkWithLightTo1_21_4RewritesTheHeightmaps(t *testing.T)
 			{Type: play.HeightmapMotionBlocking, Data: []int64{65, -1}},
 			{Type: play.HeightmapWorldSurface, Data: []int64{66}},
 		},
-		SectionData:         []byte{0xAA, 0xBB, 0xCC},
-		SkyLightMask:        []int64{0b100000},
-		EmptySkyLightMask:   []int64{0b011111},
-		EmptyBlockLightMask: []int64{0b111111},
-		SkyLight:            [][]byte{{0xFF, 0xEE}},
+		SectionData: []byte{0xAA, 0xBB, 0xCC},
+		LightData: play.LightData{
+			SkyLightMask:        []int64{0b100000},
+			EmptySkyLightMask:   []int64{0b011111},
+			EmptyBlockLightMask: []int64{0b111111},
+			SkyLight:            [][]byte{{0xFF, 0xEE}},
+		},
 	}
 
 	body := encodeChunk(t, packet)
