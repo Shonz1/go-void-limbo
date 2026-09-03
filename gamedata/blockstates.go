@@ -105,8 +105,11 @@ type blockStateProperty struct {
 // bricks, the sculk set, the froglights, the frogspawn and the reinforced
 // deepslate landed, thirty-five blocks in all, and where the leaves of
 // every wood gained their waterlogged property, so 758 numbers 20,342
-// states.
+// states. 1.18 shares that table the way 1.21.9 shares 1.21.11's: 1.18.2
+// added no block and no property -- the two jars' blocks reports produce
+// byte-identical tables -- so 757 numbers every state as 758 does.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_18.ID:    "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_18_2.ID:  "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_19.ID:    "blockstates_minecraft_1_19_1.json",
 	types.ProtocolVersions.MINECRAFT_1_19_1.ID:  "blockstates_minecraft_1_19_1.json",
@@ -137,6 +140,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // short grass, the one rename among the versions this server speaks, so
 // every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_18.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_18_2.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19_1.ID: {"minecraft:short_grass": "minecraft:grass"},
@@ -179,9 +183,9 @@ func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
 
 // A BlockStatesLoader loads the numbering of several versions and lets those
 // that number every state alike share one parsed table, for a caller that
-// holds every version's numbering at once. Four of the versions this server
+// holds every version's numbering at once. Five of the versions this server
 // speaks share a file with another (see blockStatesFiles), and a table is
-// hundreds of kilobytes, so loading each version on its own would hold four
+// hundreds of kilobytes, so loading each version on its own would hold five
 // copies of tables already in memory. The zero value is ready to use.
 type BlockStatesLoader struct {
 	tables map[string]*blockStatesTable
