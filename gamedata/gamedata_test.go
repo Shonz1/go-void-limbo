@@ -1837,6 +1837,134 @@ func TestRegistriesFor1_19_3AreItsOwnAndNot1_19_4s(t *testing.T) {
 	}
 }
 
+// 1.19 synchronizes the same three registries as 1.19.1, read off the two
+// jars: the dimension types, the biomes and the chat types, the three its
+// registry access marks as sent to the client. The chat types are its own:
+// 1.19.1 is where they were reworked, from a chat, an overlay and a
+// narration each optional and each holding its own decoration, into the
+// two decorations every version from it on reads, and from eight entries
+// into seven. The tag sets cover the same ten registries and declare the
+// same tags name for name, since 1.19.1 added none and retired none. The
+// dimension type and the biome are the later versions' by reference, since
+// the codecs are field-for-field identical in the two.
+func TestRegistriesFor1_19AreItsOwnAndNot1_19_1s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_19), registries(registriesMinecraft1_19_1)
+
+	if len(older) != 3 {
+		t.Errorf("1.19 is sent %d registries, want 3", len(older))
+	}
+
+	for _, name := range []string{"minecraft:dimension_type", "minecraft:worldgen/biome", "minecraft:chat_type"} {
+		if _, ok := older[name]; !ok {
+			t.Errorf("1.19 is not sent %s, which its registry access sends", name)
+		}
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.19's %s holds no entries, want every registry it declares filled", name)
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.19's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+		}
+	}
+
+	// The dimension type and the biome are the same entries, by reference.
+	for _, name := range []string{"minecraft:dimension_type", "minecraft:worldgen/biome"} {
+		if !reflect.DeepEqual(older[name], newer[name]) {
+			t.Errorf("1.19's %s differs from 1.19.1's, want the same: the codecs are identical in the two", name)
+		}
+	}
+
+	// The chat types are 1.19's own: eight, where 1.19.1 has seven, with the
+	// message and team message commands undivided, the system, game info
+	// and tellraw types still among them, and each entry laid out as a chat,
+	// an overlay and a narration rather than as two decorations.
+	chatTypes := older["minecraft:chat_type"]
+	if len(chatTypes) != 8 {
+		t.Errorf("1.19's chat types hold %d entries, want the 8 its jar declares", len(chatTypes))
+	}
+
+	for _, name := range []string{"minecraft:chat", "minecraft:system", "minecraft:game_info", "minecraft:say_command", "minecraft:msg_command", "minecraft:team_msg_command", "minecraft:emote_command", "minecraft:tellraw_command"} {
+		if _, ok := chatTypes[name]; !ok {
+			t.Errorf("1.19 is not sent the %s chat type, which its jar declares", name)
+		}
+	}
+
+	for _, name := range []string{"minecraft:msg_command_incoming", "minecraft:team_msg_command_outgoing"} {
+		if _, ok := chatTypes[name]; ok {
+			t.Errorf("1.19 is sent the %s chat type, which 1.19.1 introduced", name)
+		}
+	}
+
+	chat, ok := chatTypes["minecraft:chat"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.19's chat type is a %T, want a compound", chatTypes["minecraft:chat"])
+	}
+
+	section, ok := chat["chat"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.19's chat type's chat section is a %T, want a compound", chat["chat"])
+	}
+
+	if _, ok := section["decoration"].(nbt.Compound); !ok {
+		t.Errorf("1.19's chat type's chat section holds no decoration compound, want the decoration nested under it as 1.19 reads it")
+	}
+
+	if _, ok := section["translation_key"]; ok {
+		t.Error("1.19's chat type's chat section holds a translation key outright, which is 1.19.1's layout")
+	}
+
+	narration, ok := chat["narration"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.19's chat type's narration section is a %T, want a compound", chat["narration"])
+	}
+
+	if priority, ok := narration["priority"].(nbt.String); !ok || priority != "chat" {
+		t.Errorf("1.19's chat type narrates at priority %v, want chat", narration["priority"])
+	}
+
+	gameInfo, ok := chatTypes["minecraft:game_info"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.19's game info chat type is a %T, want a compound", chatTypes["minecraft:game_info"])
+	}
+
+	if _, ok := gameInfo["overlay"].(nbt.Compound); !ok || len(gameInfo) != 1 {
+		t.Errorf("1.19's game info chat type is %v, want an overlay section and nothing else", gameInfo)
+	}
+
+	// The dimension type the play login names outright, so first is where it
+	// has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_19)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.19's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	olderTags, newerTags := mustLoadTags(t, tagsMinecraft1_19), mustLoadTags(t, tagsMinecraft1_19_1)
+	if !reflect.DeepEqual(olderTags, newerTags) {
+		t.Error("1.19's tags differ from 1.19.1's, want the same sets with the same names: 1.19.1 added none and retired none")
+	}
+
+	if len(olderTags) != 10 {
+		t.Errorf("1.19 declares tags for %d registries, want ten", len(olderTags))
+	}
+}
+
 // 1.19.1 synchronizes the same three registries as 1.19.3, read off the two
 // jars: the dimension types, the biomes and the chat types, the three its
 // registry access marks as sent to the client. The chat types are 1.19.3's
@@ -2098,6 +2226,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest00000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19)
 	oldest0000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_1)
 	oldest000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_3)
 	oldest00000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_4)
@@ -2116,7 +2245,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest0000000) == 0 || len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest00000000) == 0 || len(oldest0000000) == 0 || len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -2184,6 +2313,23 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 
 	if len(firstCodec) != len(oldestCodec) {
 		t.Errorf("1.19.1's registry codec is %d bytes and 1.19.3's %d, want the same: the two hold the same entries", len(firstCodec), len(oldestCodec))
+	}
+
+	// 1.19 likewise, with a compound of its own that holds the same three
+	// registries with the chat types laid out its own way: eight entries to
+	// 1.19.1's seven, each under three optional sections, which the size
+	// sees.
+	if len(oldest00000000) != 1 {
+		t.Errorf("1.19 was sent %d packets, want the tags alone", len(oldest00000000))
+	}
+
+	earliestCodec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_19)
+	if len(earliestCodec) == 0 {
+		t.Error("1.19 has no registry codec, want the compound its play login carries")
+	}
+
+	if len(earliestCodec) <= len(firstCodec) {
+		t.Errorf("1.19's registry codec is %d bytes and 1.19.1's %d, want more for 1.19", len(earliestCodec), len(firstCodec))
 	}
 
 	if codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20_2); codec != nil {
