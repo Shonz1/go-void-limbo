@@ -282,8 +282,9 @@ var heightmapKinds = map[string]int32{
 // by the client's rules for version: the frame inflated, the id checked
 // against the one the registry gives the packet on that version, and the
 // fields read in the shape the version reads them -- the heightmaps as an NBT
-// compound before 1.21.5 and as a counted map from it, and that compound
-// named as a root before 1.20.2.
+// compound before 1.21.5 and as a counted map from it, that compound named
+// as a root before 1.20.2, and the light data behind a trust edges flag
+// before 1.20.
 func decodeChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
@@ -389,6 +390,17 @@ func decodeChunk(t *testing.T, version types.ProtocolVersion, packet types.Clien
 
 	if blockEntities != 0 {
 		t.Fatalf("chunk carries %d block entities, want none", blockEntities)
+	}
+
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_20.ID {
+		trustEdges, err := ms.ReadBoolean()
+		if err != nil {
+			t.Fatalf("reading trust edges: %v", err)
+		}
+
+		if !trustEdges {
+			t.Fatal("the light data is not trusted at the edges, which a vanilla server of that version always says it is")
+		}
 	}
 
 	chunk.SkyLightMask = readLongArray(t, ms)

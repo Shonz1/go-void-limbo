@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_19_4  ProtocolVersion
 	MINECRAFT_1_20    ProtocolVersion
 	MINECRAFT_1_20_2  ProtocolVersion
 	MINECRAFT_1_20_3  ProtocolVersion
@@ -26,9 +27,14 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
+	// 1.19.4 has 762 to itself: 1.19.3 sits on 761 and 1.20 moved to 763. It
+	// is the oldest this server speaks, and like 1.20 above it from before
+	// the configuration phase: see HasConfigurationPhase.
+	MINECRAFT_1_19_4: ProtocolVersion{ID: 762, Names: []string{"1.19.4"}},
+
 	// 1.20.1 stayed on 1.20's protocol, so a client on either of them is a
-	// client on this version. It is the oldest this server speaks, and the last
-	// before the configuration phase: see HasConfigurationPhase.
+	// client on this version. It is the last before the configuration phase:
+	// see HasConfigurationPhase.
 	MINECRAFT_1_20: ProtocolVersion{ID: 763, Names: []string{"1.20", "1.20.1"}},
 
 	// 1.20.2 has 764 to itself: 1.20 and 1.20.1 share 763 below it, and 1.20.3
@@ -89,6 +95,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_19_4,
 	ProtocolVersions.MINECRAFT_1_20,
 	ProtocolVersions.MINECRAFT_1_20_2,
 	ProtocolVersions.MINECRAFT_1_20_3,
@@ -113,6 +120,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_19_4.ID:  ProtocolVersions.MINECRAFT_1_19_4,
 	ProtocolVersions.MINECRAFT_1_20.ID:    ProtocolVersions.MINECRAFT_1_20,
 	ProtocolVersions.MINECRAFT_1_20_2.ID:  ProtocolVersions.MINECRAFT_1_20_2,
 	ProtocolVersions.MINECRAFT_1_20_3.ID:  ProtocolVersions.MINECRAFT_1_20_3,
@@ -181,8 +189,9 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
-// phase. 1.20.2 is where the phase appeared. A client before it is in play
-// the moment its login succeeds, with nothing acknowledged in between, and
+// phase. 1.20.2 is where the phase appeared. A client before it -- 1.20 and
+// 1.19.4 -- is in play the moment its login succeeds, with nothing
+// acknowledged in between, and
 // what the phase carries from 1.20.2 on -- the registries and the tags --
 // reaches such a client through the play phase instead: the registries inside
 // the play login packet itself, and the tags as a play packet right after it.
