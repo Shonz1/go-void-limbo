@@ -1,0 +1,1397 @@
+{
+	"registries": [
+		{
+			"name": "minecraft:chat_type",
+			"entries": [
+				{
+					"name": "minecraft:chat",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:emote_command",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.emote"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.emote"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:msg_command_incoming",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"style": {
+										"compound": {
+											"color": {
+												"string": "gray"
+											},
+											"italic": {
+												"byte": 1
+											}
+										}
+									},
+									"translation_key": {
+										"string": "commands.message.display.incoming"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:msg_command_outgoing",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"style": {
+										"compound": {
+											"color": {
+												"string": "gray"
+											},
+											"italic": {
+												"byte": 1
+											}
+										}
+									},
+									"translation_key": {
+										"string": "commands.message.display.outgoing"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:say_command",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.announcement"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:team_msg_command_incoming",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.team.text"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"name": "minecraft:team_msg_command_outgoing",
+					"data": {
+						"compound": {
+							"chat": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "target"
+												},
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.team.sent"
+									}
+								}
+							},
+							"narration": {
+								"compound": {
+									"parameters": {
+										"list": {
+											"of": "string",
+											"items": [
+												{
+													"string": "sender"
+												},
+												{
+													"string": "content"
+												}
+											]
+										}
+									},
+									"translation_key": {
+										"string": "chat.type.text.narrate"
+									}
+								}
+							}
+						}
+					}
+				}
+			]
+		}
+	],
+	"tags": [
+		{
+			"registry": "minecraft:block",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:all_signs"
+				},
+				{
+					"name": "minecraft:ancient_city_replaceable"
+				},
+				{
+					"name": "minecraft:animals_spawnable_on"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:axolotls_spawnable_on"
+				},
+				{
+					"name": "minecraft:azalea_grows_on"
+				},
+				{
+					"name": "minecraft:azalea_root_replaceable"
+				},
+				{
+					"name": "minecraft:bamboo_plantable_on"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:base_stone_nether"
+				},
+				{
+					"name": "minecraft:base_stone_overworld"
+				},
+				{
+					"name": "minecraft:beacon_base_blocks"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:bee_growables"
+				},
+				{
+					"name": "minecraft:beehives"
+				},
+				{
+					"name": "minecraft:big_dripleaf_placeable"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:campfires"
+				},
+				{
+					"name": "minecraft:candle_cakes"
+				},
+				{
+					"name": "minecraft:candles"
+				},
+				{
+					"name": "minecraft:cauldrons"
+				},
+				{
+					"name": "minecraft:cave_vines"
+				},
+				{
+					"name": "minecraft:climbable"
+				},
+				{
+					"name": "minecraft:coal_ores"
+				},
+				{
+					"name": "minecraft:completes_find_tree_tutorial"
+				},
+				{
+					"name": "minecraft:convertable_to_mud"
+				},
+				{
+					"name": "minecraft:copper_ores"
+				},
+				{
+					"name": "minecraft:coral_blocks"
+				},
+				{
+					"name": "minecraft:coral_plants"
+				},
+				{
+					"name": "minecraft:corals"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:crops"
+				},
+				{
+					"name": "minecraft:crystal_sound_blocks"
+				},
+				{
+					"name": "minecraft:dampens_vibrations"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:dead_bush_may_place_on"
+				},
+				{
+					"name": "minecraft:deepslate_ore_replaceables"
+				},
+				{
+					"name": "minecraft:diamond_ores"
+				},
+				{
+					"name": "minecraft:dirt"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:dragon_immune"
+				},
+				{
+					"name": "minecraft:dragon_transparent"
+				},
+				{
+					"name": "minecraft:dripstone_replaceable_blocks"
+				},
+				{
+					"name": "minecraft:emerald_ores"
+				},
+				{
+					"name": "minecraft:enderman_holdable"
+				},
+				{
+					"name": "minecraft:fall_damage_resetting"
+				},
+				{
+					"name": "minecraft:features_cannot_replace"
+				},
+				{
+					"name": "minecraft:fence_gates"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fire"
+				},
+				{
+					"name": "minecraft:flower_pots"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:foxes_spawnable_on"
+				},
+				{
+					"name": "minecraft:frog_prefer_jump_to"
+				},
+				{
+					"name": "minecraft:frogs_spawnable_on"
+				},
+				{
+					"name": "minecraft:geode_invalid_blocks"
+				},
+				{
+					"name": "minecraft:goats_spawnable_on"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:guarded_by_piglins"
+				},
+				{
+					"name": "minecraft:hoglin_repellents"
+				},
+				{
+					"name": "minecraft:ice"
+				},
+				{
+					"name": "minecraft:impermeable"
+				},
+				{
+					"name": "minecraft:infiniburn_end"
+				},
+				{
+					"name": "minecraft:infiniburn_nether"
+				},
+				{
+					"name": "minecraft:infiniburn_overworld"
+				},
+				{
+					"name": "minecraft:inside_step_sound_blocks"
+				},
+				{
+					"name": "minecraft:invalid_spawn_inside"
+				},
+				{
+					"name": "minecraft:iron_ores"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:lapis_ores"
+				},
+				{
+					"name": "minecraft:lava_pool_stone_cannot_replace"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:lush_ground_replaceable"
+				},
+				{
+					"name": "minecraft:mangrove_logs"
+				},
+				{
+					"name": "minecraft:mangrove_logs_can_grow_through"
+				},
+				{
+					"name": "minecraft:mangrove_roots_can_grow_through"
+				},
+				{
+					"name": "minecraft:mineable/axe"
+				},
+				{
+					"name": "minecraft:mineable/hoe"
+				},
+				{
+					"name": "minecraft:mineable/pickaxe"
+				},
+				{
+					"name": "minecraft:mineable/shovel"
+				},
+				{
+					"name": "minecraft:mooshrooms_spawnable_on"
+				},
+				{
+					"name": "minecraft:moss_replaceable"
+				},
+				{
+					"name": "minecraft:mushroom_grow_block"
+				},
+				{
+					"name": "minecraft:needs_diamond_tool"
+				},
+				{
+					"name": "minecraft:needs_iron_tool"
+				},
+				{
+					"name": "minecraft:needs_stone_tool"
+				},
+				{
+					"name": "minecraft:nether_carver_replaceables"
+				},
+				{
+					"name": "minecraft:nylium"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:occludes_vibration_signals"
+				},
+				{
+					"name": "minecraft:overworld_carver_replaceables"
+				},
+				{
+					"name": "minecraft:overworld_natural_logs"
+				},
+				{
+					"name": "minecraft:parrots_spawnable_on"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:polar_bears_spawnable_on_alternate"
+				},
+				{
+					"name": "minecraft:portals"
+				},
+				{
+					"name": "minecraft:pressure_plates"
+				},
+				{
+					"name": "minecraft:prevent_mob_spawning_inside"
+				},
+				{
+					"name": "minecraft:rabbits_spawnable_on"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:redstone_ores"
+				},
+				{
+					"name": "minecraft:replaceable_plants"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:sculk_replaceable"
+				},
+				{
+					"name": "minecraft:sculk_replaceable_world_gen"
+				},
+				{
+					"name": "minecraft:shulker_boxes"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_dripleaf_placeable"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:snaps_goat_horn"
+				},
+				{
+					"name": "minecraft:snow"
+				},
+				{
+					"name": "minecraft:snow_layer_can_survive_on"
+				},
+				{
+					"name": "minecraft:snow_layer_cannot_survive_on"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:soul_speed_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:standing_signs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_ore_replaceables"
+				},
+				{
+					"name": "minecraft:stone_pressure_plates"
+				},
+				{
+					"name": "minecraft:strider_warm_blocks"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:terracotta"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:underwater_bonemeals"
+				},
+				{
+					"name": "minecraft:unstable_bottom_center"
+				},
+				{
+					"name": "minecraft:valid_spawn"
+				},
+				{
+					"name": "minecraft:wall_corals"
+				},
+				{
+					"name": "minecraft:wall_post_override"
+				},
+				{
+					"name": "minecraft:wall_signs"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wart_blocks"
+				},
+				{
+					"name": "minecraft:wither_immune"
+				},
+				{
+					"name": "minecraft:wither_summon_base_blocks"
+				},
+				{
+					"name": "minecraft:wolves_spawnable_on"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				},
+				{
+					"name": "minecraft:wool_carpets"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:item",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:axolotl_tempt_items"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:beacon_payment_items"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:boats"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:candles"
+				},
+				{
+					"name": "minecraft:chest_boats"
+				},
+				{
+					"name": "minecraft:cluster_max_harvestables"
+				},
+				{
+					"name": "minecraft:coal_ores"
+				},
+				{
+					"name": "minecraft:coals"
+				},
+				{
+					"name": "minecraft:compasses"
+				},
+				{
+					"name": "minecraft:completes_find_tree_tutorial"
+				},
+				{
+					"name": "minecraft:copper_ores"
+				},
+				{
+					"name": "minecraft:creeper_drop_music_discs"
+				},
+				{
+					"name": "minecraft:creeper_igniters"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:dampens_vibrations"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:diamond_ores"
+				},
+				{
+					"name": "minecraft:dirt"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:emerald_ores"
+				},
+				{
+					"name": "minecraft:fence_gates"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fishes"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:fox_food"
+				},
+				{
+					"name": "minecraft:freeze_immune_wearables"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:ignored_by_piglin_babies"
+				},
+				{
+					"name": "minecraft:iron_ores"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:lapis_ores"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:lectern_books"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:mangrove_logs"
+				},
+				{
+					"name": "minecraft:music_discs"
+				},
+				{
+					"name": "minecraft:non_flammable_wood"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:piglin_food"
+				},
+				{
+					"name": "minecraft:piglin_loved"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:redstone_ores"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_crafting_materials"
+				},
+				{
+					"name": "minecraft:stone_tool_materials"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:terracotta"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wart_blocks"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				},
+				{
+					"name": "minecraft:wool_carpets"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:entity_type",
+			"tags": [
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:axolotl_always_hostiles"
+				},
+				{
+					"name": "minecraft:axolotl_hunt_targets"
+				},
+				{
+					"name": "minecraft:beehive_inhabitors"
+				},
+				{
+					"name": "minecraft:freeze_hurts_extra_types"
+				},
+				{
+					"name": "minecraft:freeze_immune_entity_types"
+				},
+				{
+					"name": "minecraft:frog_food"
+				},
+				{
+					"name": "minecraft:impact_projectiles"
+				},
+				{
+					"name": "minecraft:powder_snow_walkable_mobs"
+				},
+				{
+					"name": "minecraft:raiders"
+				},
+				{
+					"name": "minecraft:skeletons"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:fluid",
+			"tags": [
+				{
+					"name": "minecraft:lava"
+				},
+				{
+					"name": "minecraft:water"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:game_event",
+			"tags": [
+				{
+					"name": "minecraft:allay_can_listen"
+				},
+				{
+					"name": "minecraft:ignore_vibrations_sneaking"
+				},
+				{
+					"name": "minecraft:shrieker_can_listen"
+				},
+				{
+					"name": "minecraft:vibrations"
+				},
+				{
+					"name": "minecraft:warden_can_listen"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:point_of_interest_type",
+			"tags": [
+				{
+					"name": "minecraft:acquirable_job_site"
+				},
+				{
+					"name": "minecraft:bee_home"
+				},
+				{
+					"name": "minecraft:village"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:worldgen/biome",
+			"tags": [
+				{
+					"name": "minecraft:allows_surface_slime_spawns"
+				},
+				{
+					"name": "minecraft:allows_tropical_fish_spawns_at_any_height"
+				},
+				{
+					"name": "minecraft:has_closer_water_fog"
+				},
+				{
+					"name": "minecraft:has_structure/ancient_city"
+				},
+				{
+					"name": "minecraft:has_structure/bastion_remnant"
+				},
+				{
+					"name": "minecraft:has_structure/buried_treasure"
+				},
+				{
+					"name": "minecraft:has_structure/desert_pyramid"
+				},
+				{
+					"name": "minecraft:has_structure/end_city"
+				},
+				{
+					"name": "minecraft:has_structure/igloo"
+				},
+				{
+					"name": "minecraft:has_structure/jungle_temple"
+				},
+				{
+					"name": "minecraft:has_structure/mineshaft"
+				},
+				{
+					"name": "minecraft:has_structure/mineshaft_mesa"
+				},
+				{
+					"name": "minecraft:has_structure/nether_fortress"
+				},
+				{
+					"name": "minecraft:has_structure/nether_fossil"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_monument"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_ruin_cold"
+				},
+				{
+					"name": "minecraft:has_structure/ocean_ruin_warm"
+				},
+				{
+					"name": "minecraft:has_structure/pillager_outpost"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_desert"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_jungle"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_mountain"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_nether"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_ocean"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_standard"
+				},
+				{
+					"name": "minecraft:has_structure/ruined_portal_swamp"
+				},
+				{
+					"name": "minecraft:has_structure/shipwreck"
+				},
+				{
+					"name": "minecraft:has_structure/shipwreck_beached"
+				},
+				{
+					"name": "minecraft:has_structure/stronghold"
+				},
+				{
+					"name": "minecraft:has_structure/swamp_hut"
+				},
+				{
+					"name": "minecraft:has_structure/village_desert"
+				},
+				{
+					"name": "minecraft:has_structure/village_plains"
+				},
+				{
+					"name": "minecraft:has_structure/village_savanna"
+				},
+				{
+					"name": "minecraft:has_structure/village_snowy"
+				},
+				{
+					"name": "minecraft:has_structure/village_taiga"
+				},
+				{
+					"name": "minecraft:has_structure/woodland_mansion"
+				},
+				{
+					"name": "minecraft:is_badlands"
+				},
+				{
+					"name": "minecraft:is_beach"
+				},
+				{
+					"name": "minecraft:is_deep_ocean"
+				},
+				{
+					"name": "minecraft:is_end"
+				},
+				{
+					"name": "minecraft:is_forest"
+				},
+				{
+					"name": "minecraft:is_hill"
+				},
+				{
+					"name": "minecraft:is_jungle"
+				},
+				{
+					"name": "minecraft:is_mountain"
+				},
+				{
+					"name": "minecraft:is_nether"
+				},
+				{
+					"name": "minecraft:is_ocean"
+				},
+				{
+					"name": "minecraft:is_overworld"
+				},
+				{
+					"name": "minecraft:is_river"
+				},
+				{
+					"name": "minecraft:is_savanna"
+				},
+				{
+					"name": "minecraft:is_taiga"
+				},
+				{
+					"name": "minecraft:mineshaft_blocking"
+				},
+				{
+					"name": "minecraft:more_frequent_drowned_spawns"
+				},
+				{
+					"name": "minecraft:only_allows_snow_and_gold_rabbits"
+				},
+				{
+					"name": "minecraft:plays_underwater_music"
+				},
+				{
+					"name": "minecraft:polar_bears_spawn_on_alternate_blocks"
+				},
+				{
+					"name": "minecraft:produces_corals_from_bonemeal"
+				},
+				{
+					"name": "minecraft:reduce_water_ambient_spawns"
+				},
+				{
+					"name": "minecraft:required_ocean_monument_surrounding"
+				},
+				{
+					"name": "minecraft:spawns_cold_variant_frogs"
+				},
+				{
+					"name": "minecraft:spawns_warm_variant_frogs"
+				},
+				{
+					"name": "minecraft:stronghold_biased_to"
+				},
+				{
+					"name": "minecraft:water_on_map_outlines"
+				},
+				{
+					"name": "minecraft:without_patrol_spawns"
+				},
+				{
+					"name": "minecraft:without_wandering_trader_spawns"
+				},
+				{
+					"name": "minecraft:without_zombie_sieges"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:instrument",
+			"tags": [
+				{
+					"name": "minecraft:goat_horns"
+				},
+				{
+					"name": "minecraft:regular_goat_horns"
+				},
+				{
+					"name": "minecraft:screaming_goat_horns"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:painting_variant",
+			"tags": [
+				{
+					"name": "minecraft:placeable"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:banner_pattern",
+			"tags": [
+				{
+					"name": "minecraft:no_item_required"
+				},
+				{
+					"name": "minecraft:pattern_item/creeper"
+				},
+				{
+					"name": "minecraft:pattern_item/flower"
+				},
+				{
+					"name": "minecraft:pattern_item/globe"
+				},
+				{
+					"name": "minecraft:pattern_item/mojang"
+				},
+				{
+					"name": "minecraft:pattern_item/piglin"
+				},
+				{
+					"name": "minecraft:pattern_item/skull"
+				}
+			]
+		}
+	]
+}

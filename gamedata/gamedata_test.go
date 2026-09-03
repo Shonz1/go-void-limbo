@@ -1695,6 +1695,147 @@ func TestRegistriesFor1_19_4AreItsOwnAndNot1_20s(t *testing.T) {
 	}
 }
 
+// 1.19.3 synchronizes three registries to 1.19.4's six, read off the two
+// jars: the dimension types, the biomes and the chat types. 1.19.4 is where
+// the damage types and the armor trims appeared, so 1.19.3 declares neither,
+// and a compound naming a registry a client does not know is one it refuses.
+// The chat types are 1.19.4's entry for entry. The tag sets cover ten
+// registries to 1.19.4's eleven, there being no damage types to tag, and
+// differ by what 1.19.4 added and by the one biome tag it split in five,
+// since each version declares the tags of its own jar. The biome is 1.19.3's
+// own, with the climate's precipitation spelled as a name rather than as the
+// flag 1.19.4 turned it into.
+func TestRegistriesFor1_19_3AreItsOwnAndNot1_19_4s(t *testing.T) {
+	registries := func(load func() ([]Registry, error)) map[string]map[string]nbt.Tag {
+		data := map[string]map[string]nbt.Tag{}
+		for _, registry := range mustLoadRegistries(t, load) {
+			data[registry.Name] = map[string]nbt.Tag{}
+			for _, entry := range registry.Entries {
+				data[registry.Name][entry.Name] = entry.Data
+			}
+		}
+
+		return data
+	}
+
+	older, newer := registries(registriesMinecraft1_19_3), registries(registriesMinecraft1_19_4)
+
+	if len(older) != 3 {
+		t.Errorf("1.19.3 is sent %d registries, want 3", len(older))
+	}
+
+	for _, name := range []string{"minecraft:dimension_type", "minecraft:worldgen/biome", "minecraft:chat_type"} {
+		if _, ok := older[name]; !ok {
+			t.Errorf("1.19.3 is not sent %s, which its jar declares", name)
+		}
+	}
+
+	// The three 1.19.4 introduced, which a 1.19.3 client would refuse.
+	for _, name := range []string{"minecraft:damage_type", "minecraft:trim_pattern", "minecraft:trim_material"} {
+		if _, ok := older[name]; ok {
+			t.Errorf("1.19.3 is sent %s, which 1.19.4 introduced", name)
+		}
+
+		if _, ok := newer[name]; !ok {
+			t.Errorf("1.19.4 is no longer sent %s, which its jar does declare", name)
+		}
+	}
+
+	for name, entries := range older {
+		if len(entries) == 0 {
+			t.Errorf("1.19.3's %s holds no entries, want every registry it declares filled", name)
+		}
+
+		for entryName, data := range entries {
+			if data == nil {
+				t.Errorf("1.19.3's %s entry %s has no definition, which the one-compound shape cannot send", name, entryName)
+			}
+
+			if _, ok := newer[name][entryName]; !ok {
+				t.Errorf("1.19.3's %s holds %s, which 1.19.4's does not", name, entryName)
+			}
+		}
+	}
+
+	if len(older["minecraft:chat_type"]) != len(newer["minecraft:chat_type"]) {
+		t.Errorf("1.19.3's chat types hold %d entries and 1.19.4's %d, want the same: 1.19.4 added none", len(older["minecraft:chat_type"]), len(newer["minecraft:chat_type"]))
+	}
+
+	// The climate, spelled each version's own way.
+	plains, ok := older["minecraft:worldgen/biome"]["minecraft:plains"].(nbt.Compound)
+	if !ok {
+		t.Fatalf("1.19.3's plains biome is %T, want a compound", older["minecraft:worldgen/biome"]["minecraft:plains"])
+	}
+
+	if precipitation, ok := plains["precipitation"].(nbt.String); !ok || precipitation != "none" {
+		t.Errorf("1.19.3's plains biome has precipitation %v, want the name none", plains["precipitation"])
+	}
+
+	if _, ok := plains["has_precipitation"]; ok {
+		t.Error("1.19.3's plains biome has has_precipitation, a field 1.19.4 introduced")
+	}
+
+	if _, ok := newer["minecraft:worldgen/biome"]["minecraft:plains"].(nbt.Compound)["precipitation"]; ok {
+		t.Error("1.19.4's plains biome has precipitation, a field 1.19.4 retired")
+	}
+
+	// The dimension type the play login names outright, so first is where it
+	// has to be here as well.
+	dimensionTypes := mustLoadRegistries(t, registriesMinecraft1_19_3)[0]
+	if dimensionTypes.Name != "minecraft:dimension_type" || dimensionTypes.Entries[0].Name != "minecraft:overworld" {
+		t.Errorf("1.19.3's first registry is %s starting with %s, want minecraft:dimension_type starting with minecraft:overworld", dimensionTypes.Name, dimensionTypes.Entries[0].Name)
+	}
+
+	tags := func(load func() ([]TagSet, error)) map[string]map[string]bool {
+		names := map[string]map[string]bool{}
+		for _, set := range mustLoadTags(t, load) {
+			names[set.Registry] = map[string]bool{}
+			for _, tag := range set.Tags {
+				names[set.Registry][tag.Name] = true
+			}
+		}
+
+		return names
+	}
+
+	olderTags, newerTags := tags(tagsMinecraft1_19_3), tags(tagsMinecraft1_19_4)
+
+	if len(olderTags)+1 != len(newerTags) {
+		t.Errorf("1.19.3 declares tags for %d registries and 1.19.4 for %d, want one fewer for 1.19.3", len(olderTags), len(newerTags))
+	}
+
+	if _, ok := olderTags["minecraft:damage_type"]; ok {
+		t.Error("1.19.3 declares damage type tags, for a registry 1.19.4 introduced")
+	}
+
+	introduced := map[string][]string{
+		"minecraft:block":          {"minecraft:smelts_to_glass"},
+		"minecraft:item":           {"minecraft:tools", "minecraft:swords", "minecraft:smelts_to_glass"},
+		"minecraft:entity_type":    {"minecraft:fall_damage_immune", "minecraft:dismounts_underwater"},
+		"minecraft:worldgen/biome": {"minecraft:spawns_gold_rabbits", "minecraft:spawns_white_rabbits", "minecraft:snow_golem_melts"},
+	}
+
+	for registry, names := range introduced {
+		for _, name := range names {
+			if olderTags[registry][name] {
+				t.Errorf("1.19.3 declares %s, a %s tag 762 introduced", name, registry)
+			}
+
+			if !newerTags[registry][name] {
+				t.Errorf("1.19.4 no longer declares %s, a %s tag its jar does declare", name, registry)
+			}
+		}
+	}
+
+	if !olderTags["minecraft:worldgen/biome"]["minecraft:only_allows_snow_and_gold_rabbits"] {
+		t.Error("1.19.3 no longer declares only_allows_snow_and_gold_rabbits, a biome tag its jar does declare")
+	}
+
+	if newerTags["minecraft:worldgen/biome"]["minecraft:only_allows_snow_and_gold_rabbits"] {
+		t.Error("1.19.4 declares only_allows_snow_and_gold_rabbits, a biome tag it split up")
+	}
+}
+
 // 1.20.3's dimension type is 1.21.9's but for the monster spawn light level,
 // whose int provider 1.20.4 reads with its fields nested under value, the
 // way a dispatch lays out a plain codec; the flat shape is 1.20.5's, where
@@ -1839,6 +1980,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	oldest000000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_3)
 	oldest00000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_19_4)
 	oldest0000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20)
 	oldest000 := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_20_2)
@@ -1855,7 +1997,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
 
-	if len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -1893,6 +2035,21 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 
 	if len(olderCodec) >= len(newerCodec) {
 		t.Errorf("1.19.4's registry codec is %d bytes and 1.20's %d, want fewer for 1.19.4", len(olderCodec), len(newerCodec))
+	}
+
+	// 1.19.3 likewise, with a compound of its own: three registries to
+	// 1.19.4's six, which the size sees.
+	if len(oldest000000) != 1 {
+		t.Errorf("1.19.3 was sent %d packets, want the tags alone", len(oldest000000))
+	}
+
+	oldestCodec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_19_3)
+	if len(oldestCodec) == 0 {
+		t.Error("1.19.3 has no registry codec, want the compound its play login carries")
+	}
+
+	if len(oldestCodec) >= len(olderCodec) {
+		t.Errorf("1.19.3's registry codec is %d bytes and 1.19.4's %d, want fewer for 1.19.3", len(oldestCodec), len(olderCodec))
 	}
 
 	if codec := provider.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20_2); codec != nil {
