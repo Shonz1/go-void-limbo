@@ -19,7 +19,10 @@ import (
 // itself added four that sort before the player -- the armadillo, the bogged,
 // the breeze's wind charge and the ominous item spawner -- so 1.20.3 sits
 // four lower. And 1.20.3 added two of its own, the breeze and its wind
-// charge, both before the player, so 1.20.2 sits two lower again.
+// charge, both before the player, so 1.20.2 sits two lower again. 1.20.2
+// added no entity type, so 1.20 numbers the player as 1.20.2 does -- though
+// it spawns one from a packet of its own, which the 1.20.2 step rewrites the
+// add entity packet into.
 const (
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155

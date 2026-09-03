@@ -51,19 +51,30 @@ const (
 // HandleAcknowledgeFinishConfigurationServerboundPacket moves a client that is
 // done configuring into play and sends it the join, and after the join the
 // world, when the server holds one.
-//
-// Four packets are what the join itself needs, and this sends exactly those
-// before the world. What a vanilla server also sends -- difficulty, abilities,
-// held slot, recipes, world border, time, spawn position -- is either a value
-// the client already defaults to or a fact this server does not track. Keep
-// alives are what a joined client needs after this, and they are not sent from
-// here: they belong to a clock rather than to a packet that arrived.
 func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, packet types.ServerboundPacket) error {
 	_, ok := packet.(*configuration.AcknowledgeFinishConfigurationServerboundPacket)
 	if !ok {
 		return fmt.Errorf("expected *configuration.AcknowledgeFinishConfigurationServerboundPacket, got %T", packet)
 	}
 
+	return enterPlay(client)
+}
+
+// enterPlay moves a client into play and sends it the join, and after the
+// join the world, when the server holds one. It is the one way into the world
+// on every version: a client with a configuration phase arrives here from its
+// acknowledgement that the phase is over, and a client without one from its
+// login success, since nothing separates the two on such a version.
+//
+// Four packets are what the join itself needs, and this sends exactly those
+// before the world -- five on a version with no configuration phase, which
+// reads the tags in play. What a vanilla server also sends -- difficulty,
+// abilities, held slot, recipes, world border, time, spawn position -- is
+// either a value the client already defaults to or a fact this server does
+// not track. Keep alives are what a joined client needs after this, and they
+// are not sent from here: they belong to a clock rather than to a packet that
+// arrived.
+func enterPlay(client types.Client) error {
 	// The phase has to move first: WritePacket resolves a packet id from the
 	// phase the client is currently in, and none of what follows is registered
 	// anywhere but play.
@@ -113,6 +124,19 @@ func HandleAcknowledgeFinishConfigurationServerboundPacket(client types.Client, 
 
 	if err := client.WritePacket(&login); err != nil {
 		return err
+	}
+
+	// A version with no configuration phase reads in play what the phase
+	// carries from 1.20.2 on. The registries went inside the login packet
+	// above, which is package gamedata's and the transformers' doing; what is
+	// left is the tags, which such a version reads as a play packet right
+	// after the login, where a vanilla server of that version sends them.
+	if !client.ProtocolVersion().HasConfigurationPhase() {
+		for _, packet := range client.RegistryPackets() {
+			if err := client.WritePacket(packet); err != nil {
+				return err
+			}
+		}
 	}
 
 	// The login packet says nothing about where the player is, so a teleport is

@@ -269,7 +269,7 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 
 // testRegistry is the one registry every test loads and decodes through: it
 // is the same table each time, and building it is not free.
-var testRegistry = protocol.NewDefaultRegistry()
+var testRegistry = protocol.NewDefaultRegistry(nil)
 
 // heightmapKinds maps the names the heightmaps travel under before 1.21.5,
 // as keys of an NBT compound, back to the numbers they travel as after it.
@@ -282,7 +282,8 @@ var heightmapKinds = map[string]int32{
 // by the client's rules for version: the frame inflated, the id checked
 // against the one the registry gives the packet on that version, and the
 // fields read in the shape the version reads them -- the heightmaps as an NBT
-// compound before 1.21.5 and as a counted map from it.
+// compound before 1.21.5 and as a counted map from it, and that compound
+// named as a root before 1.20.2.
 func decodeChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
@@ -327,8 +328,19 @@ func decodeChunk(t *testing.T, version types.ProtocolVersion, packet types.Clien
 	}
 
 	if version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID {
-		tag, err := nbt.Read(ms)
-		if err != nil {
+		var tag nbt.Tag
+
+		if version.ID < types.ProtocolVersions.MINECRAFT_1_20_2.ID {
+			var name string
+
+			if name, tag, err = nbt.ReadNamed(ms); err != nil {
+				t.Fatalf("reading heightmaps: %v", err)
+			}
+
+			if name != "" {
+				t.Fatalf("heightmaps are named %q, want the empty name a vanilla server writes", name)
+			}
+		} else if tag, err = nbt.Read(ms); err != nil {
 			t.Fatalf("reading heightmaps: %v", err)
 		}
 

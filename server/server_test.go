@@ -34,7 +34,7 @@ func TestALoginIsEncryptedAndAuthenticated(t *testing.T) {
 
 	sessionServer := &testutil.FakeSessionServer{Profile: authenticated}
 
-	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: true}
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(nil), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: true}
 
 	conn, clientConn := net.Pipe()
 	defer clientConn.Close()
@@ -274,7 +274,7 @@ func readLoginSuccess(t *testing.T, peer *testutil.LoginPeer) (string, string, i
 func TestALoginWithoutEncryptionIsTakenAtTheClientsWord(t *testing.T) {
 	sessionServer := &testutil.FakeSessionServer{}
 
-	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(nil), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
 
 	conn, clientConn := net.Pipe()
 	defer clientConn.Close()
@@ -331,7 +331,7 @@ const forwardedHandshakeAddress = "limbo.example\x00203.0.113.7\x00069a79f444e94
 func TestALoginBehindAProxyIsTheAccountTheProxyForwarded(t *testing.T) {
 	sessionServer := &testutil.FakeSessionServer{}
 
-	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(nil), keyPair: testutil.KeyPair(), sessionServer: sessionServer, encryptionEnabled: false}
 
 	conn, clientConn := net.Pipe()
 	defer clientConn.Close()
@@ -394,7 +394,7 @@ func forwardingServerOn(t *testing.T, encryptionEnabled bool, sessionServer clie
 	t.Helper()
 
 	srv := &Server{
-		packetRegistry:    protocol.NewDefaultRegistry(),
+		packetRegistry:    protocol.NewDefaultRegistry(nil),
 		keyPair:           testutil.KeyPair(),
 		sessionServer:     sessionServer,
 		encryptionEnabled: encryptionEnabled,
@@ -703,7 +703,7 @@ func TestAForwardedAddressCannotStandInForASignedLogin(t *testing.T) {
 func newStatusServer(t *testing.T, description string) *Server {
 	t.Helper()
 
-	return &Server{packetRegistry: protocol.NewDefaultRegistry(), status: status{description: description}}
+	return &Server{packetRegistry: protocol.NewDefaultRegistry(nil), status: status{description: description}}
 }
 
 // statusServer builds a server that answers pings, opens a connection to it and
@@ -884,6 +884,7 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 		// client on either of them see a server it can join. The name is the
 		// first the version goes by, since a release that shares a protocol with
 		// another shares everything a client checks.
+		{name: "1.20", version: types.ProtocolVersions.MINECRAFT_1_20, want: types.ServerVersion{Name: "1.20", Protocol: types.ProtocolVersions.MINECRAFT_1_20.ID}},
 		{name: "1.20.2", version: types.ProtocolVersions.MINECRAFT_1_20_2, want: types.ServerVersion{Name: "1.20.2", Protocol: types.ProtocolVersions.MINECRAFT_1_20_2.ID}},
 		{name: "1.20.3", version: types.ProtocolVersions.MINECRAFT_1_20_3, want: types.ServerVersion{Name: "1.20.3", Protocol: types.ProtocolVersions.MINECRAFT_1_20_3.ID}},
 		{name: "1.20.5", version: types.ProtocolVersions.MINECRAFT_1_20_5, want: types.ServerVersion{Name: "1.20.5", Protocol: types.ProtocolVersions.MINECRAFT_1_20_5.ID}},
@@ -918,7 +919,7 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 // the sweep visits are the registered ones, so the test registers its client
 // the way handleConnection registers every real one.
 func TestTheKeepAliveSweepDropsAClientThatNeverAnswers(t *testing.T) {
-	srv := &Server{packetRegistry: protocol.NewDefaultRegistry()}
+	srv := &Server{packetRegistry: protocol.NewDefaultRegistry(nil)}
 
 	conn, clientConn := net.Pipe()
 	defer clientConn.Close()

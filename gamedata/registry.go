@@ -1,5 +1,6 @@
 // Package gamedata holds the Minecraft registries a server sends to a client
-// during the configuration phase, and resolves which content a given protocol
+// during the configuration phase -- or, for a client from before there was
+// one, inside its play login -- and resolves which content a given protocol
 // version should be sent.
 //
 // It is deliberately separate from package protocol, which maps packet ids to
@@ -41,13 +42,20 @@ type Registry struct {
 
 // combinedRegistryDataProtocol is the first version to read one registry data
 // packet per registry. Every version below it reads a single packet holding
-// every registry at once, in the shape encodeCombined writes.
+// every registry at once, in the shape encodeCombined writes -- or, below
+// registryCodecProtocol, no packet at all.
 var combinedRegistryDataProtocol = types.ProtocolVersions.MINECRAFT_1_20_5.ID
 
-// encodeCombined writes the one packet body a client before 1.20.5 reads every
-// registry from: a compound keyed by registry name, holding for each registry
-// its name again under "type" and under "value" a list of its entries, each
-// an entry's name, its id and its definition under "element".
+// registryCodecProtocol is the first version to read the registries out of
+// packets of their own, in the configuration phase. Every version below it
+// has no such phase and reads them out of its play login instead, as the
+// same one compound named as a root: see encodeRegistryCodec.
+var registryCodecProtocol = types.ProtocolVersions.MINECRAFT_1_20_2.ID
+
+// combinedCompound is the one compound a client before 1.20.5 reads every
+// registry from: keyed by registry name, holding for each registry its name
+// again under "type" and under "value" a list of its entries, each an entry's
+// name, its id and its definition under "element".
 //
 // The id is explicit here where the per-registry packets leave it to the
 // entry's position, and it is written as that position, so the two shapes
@@ -55,7 +63,7 @@ var combinedRegistryDataProtocol = types.ProtocolVersions.MINECRAFT_1_20_5.ID
 // by the same index on either side of 1.20.5. A definition is not optional in
 // this shape: nothing before 1.20.5 knows a pack to fall back on, so an entry
 // with no data is refused rather than sent as a name the client cannot fill.
-func encodeCombined(registries []Registry) ([]byte, error) {
+func combinedCompound(registries []Registry) (nbt.Compound, error) {
 	compound := nbt.Compound{}
 
 	for _, registry := range registries {
@@ -79,10 +87,42 @@ func encodeCombined(registries []Registry) ([]byte, error) {
 		}
 	}
 
+	return compound, nil
+}
+
+// encodeCombined writes the one packet body a client from 1.20.2 up to 1.20.5
+// reads every registry from: the combined compound as a nameless root, the
+// network NBT 1.20.2 introduced.
+func encodeCombined(registries []Registry) ([]byte, error) {
+	compound, err := combinedCompound(registries)
+	if err != nil {
+		return nil, err
+	}
+
+	return encodeNbt(func(ms *streams.MinecraftStream) error { return nbt.Write(ms, compound) })
+}
+
+// encodeRegistryCodec writes the registries as a client before 1.20.2 reads
+// them out of its play login: the same combined compound, as a root named
+// with the empty string, the way every NBT on the wire was named before
+// 1.20.2. It is not a packet body but a field of one, which the 1.20.2
+// step's login transformer writes into the packet where that version reads
+// it.
+func encodeRegistryCodec(registries []Registry) ([]byte, error) {
+	compound, err := combinedCompound(registries)
+	if err != nil {
+		return nil, err
+	}
+
+	return encodeNbt(func(ms *streams.MinecraftStream) error { return nbt.WriteNamed(ms, "", compound) })
+}
+
+// encodeNbt runs one NBT write into a buffer and returns what it wrote.
+func encodeNbt(write func(ms *streams.MinecraftStream) error) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	ms := streams.NewMinecraftStreamFromBuffer(buf)
 
-	if err := nbt.Write(ms, compound); err != nil {
+	if err := write(ms); err != nil {
 		return nil, err
 	}
 

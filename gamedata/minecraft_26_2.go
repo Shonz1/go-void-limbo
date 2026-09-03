@@ -23,6 +23,7 @@ func NewDefaultProvider() (*Provider, error) {
 		registries  func() ([]Registry, error)
 		tags        func() ([]TagSet, error)
 	}{
+		{types.ProtocolVersions.MINECRAFT_1_20.ID, registriesMinecraft1_20, tagsMinecraft1_20},
 		{types.ProtocolVersions.MINECRAFT_1_20_2.ID, registriesMinecraft1_20_2, tagsMinecraft1_20_2},
 		{types.ProtocolVersions.MINECRAFT_1_20_3.ID, registriesMinecraft1_20_3, tagsMinecraft1_20_3},
 		{types.ProtocolVersions.MINECRAFT_1_20_5.ID, registriesMinecraft1_20_5, tagsMinecraft1_20_5},

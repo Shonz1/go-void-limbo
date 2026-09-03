@@ -153,11 +153,14 @@ type KeepAliveConfirmer interface {
 	ConfirmKeepAlive(id int64) error
 }
 
-// GameDataSource hands out the game content the configuration phase sends.
+// GameDataSource hands out the game content the configuration phase sends,
+// or that the play phase sends on a version from before there was one.
 type GameDataSource interface {
-	// RegistryPackets returns the configuration-phase registry packets for this
-	// client's protocol version. The slice is shared across connections and must
-	// not be modified.
+	// RegistryPackets returns the registry packets for this client's protocol
+	// version: what the configuration phase sends from 1.20.2 on, and what
+	// the join sends right after the play login before it, which is the tags
+	// alone since such a version reads its registries out of the login. The
+	// slice is shared across connections and must not be modified.
 	RegistryPackets() []ClientboundPacket
 }
 

@@ -14,11 +14,16 @@ import (
 	"github.com/Shonz1/go-void-limbo/packets/serverbound/login"
 	serverboundStatus "github.com/Shonz1/go-void-limbo/packets/serverbound/status"
 	"github.com/Shonz1/go-void-limbo/types"
+	"reflect"
 	"slices"
 	"testing"
 )
 
 type fakeClient struct {
+	// protocolVersion is what the connection speaks. The zero value is no
+	// version at all, which reads as one from before the configuration
+	// phase, so a test that finishes a login says which side of that phase
+	// its client is on.
 	protocolVersion types.ProtocolVersion
 	phase           types.Phase
 	profile         types.GameProfile
@@ -523,7 +528,7 @@ func TestHandleLoginStartServerboundPacketReportsAFailureToBeginEncryption(t *te
 }
 
 func TestHandleLoginStartServerboundPacketFinishesALoginWithoutEncryption(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
+	client := &fakeClient{protocolVersion: types.LatestProtocolVersion, phase: types.PhaseLogin, publicKey: []byte("a public key"), verifyToken: []byte{0x01, 0x02, 0x03, 0x04}}
 	packet := &login.LoginStartServerboundPacket{Name: "Notch", Uuid: "00000000-0000-0000-0000-000000000001"}
 
 	if err := HandleLoginStartServerboundPacket(client, packet); err != nil {
@@ -603,7 +608,7 @@ func TestHandleLoginStartServerboundPacketFinishesTheLoginTheProxyForwarded(t *t
 		Properties: []types.ProfileProperty{{Name: "textures", Value: "a base64 blob", Signature: &signature}},
 	}
 
-	client := &fakeClient{phase: types.PhaseLogin, forwarded: true, forwardedLogin: forwarded}
+	client := &fakeClient{protocolVersion: types.LatestProtocolVersion, phase: types.PhaseLogin, forwarded: true, forwardedLogin: forwarded}
 
 	// The uuid the packet carries is the proxy's own choosing and is not the one
 	// the login is finished with; the name is, because the proxy sends it here
@@ -768,6 +773,7 @@ func TestHandleLoginPluginResponseServerboundPacketFinishesTheLoginTheProxySigne
 	}
 
 	client := &fakeClient{
+		protocolVersion:  types.LatestProtocolVersion,
 		phase:            types.PhaseLogin,
 		profile:          types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "somebody else"},
 		forwardingSecret: forwardingSecret,
@@ -868,6 +874,7 @@ func TestHandleLoginPluginResponseServerboundPacketAsksMojangWhenNoProxyForwarde
 // as it would be on a server no proxy was ever pointed at.
 func TestHandleLoginPluginResponseServerboundPacketTakesTheClientsWordWhenNoProxyForwarded(t *testing.T) {
 	client := &fakeClient{
+		protocolVersion:  types.LatestProtocolVersion,
 		phase:            types.PhaseLogin,
 		profile:          types.GameProfile{Uuid: "00000000-0000-0000-0000-000000000001", Username: "Notch"},
 		forwardingSecret: forwardingSecret,
@@ -1064,7 +1071,7 @@ func TestHandleEncryptionResponseServerboundPacketAuthenticatesAndWritesLoginSuc
 		Properties: []types.ProfileProperty{{Name: "textures", Value: "a skin", Signature: &signature}},
 	}
 
-	client := &fakeClient{phase: types.PhaseLogin, profile: claimed, authenticated: authenticated}
+	client := &fakeClient{protocolVersion: types.LatestProtocolVersion, phase: types.PhaseLogin, profile: claimed, authenticated: authenticated}
 	packet := &login.EncryptionResponseServerboundPacket{SharedSecret: []byte("an encrypted secret"), VerifyToken: []byte("an encrypted token")}
 
 	if err := HandleEncryptionResponseServerboundPacket(client, packet); err != nil {
@@ -1545,5 +1552,94 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 
 	if err := HandlePingRequestServerboundPacket(client, &handshake.HandshakeServerboundPacket{}); err == nil {
 		t.Error("expected an error for a mismatched packet type")
+	}
+}
+
+// A client from before the configuration phase is in play the moment it
+// reads the success packet, so the join follows the success packet straight
+// away: the play login, then the tags the version reads in play, then the
+// rest of the join as any other version gets it. Nothing is written in the
+// login phase but the success packet itself.
+func TestHandleLoginStartServerboundPacketEntersPlayOnAVersionWithNoConfigurationPhase(t *testing.T) {
+	tags := clientboundConfiguration.NewUpdateTagsClientboundPacket(1, 1, []byte{0x01})
+	client := &fakeClient{
+		protocolVersion: types.ProtocolVersions.MINECRAFT_1_20,
+		phase:           types.PhaseLogin,
+		registryPackets: []types.ClientboundPacket{tags},
+	}
+
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client.Phase() != types.PhasePlay {
+		t.Errorf("expected phase %d, got %d", types.PhasePlay, client.Phase())
+	}
+
+	want := []reflect.Type{
+		reflect.TypeOf(&clientboundLogin.LoginSuccessClientboundPacket{}),
+		reflect.TypeOf(&clientboundPlay.LoginClientboundPacket{}),
+		reflect.TypeOf(tags),
+		reflect.TypeOf(&clientboundPlay.PlayerPositionClientboundPacket{}),
+		reflect.TypeOf(&clientboundPlay.PlayerInfoUpdateClientboundPacket{}),
+		reflect.TypeOf(&clientboundPlay.GameEventClientboundPacket{}),
+	}
+
+	if len(client.written) != len(want) {
+		t.Fatalf("expected %d written packets, got %d: %v", len(want), len(client.written), client.written)
+	}
+
+	for i, packet := range client.written {
+		if reflect.TypeOf(packet) != want[i] {
+			t.Errorf("packet %d is %T, want %v", i, packet, want[i])
+		}
+	}
+
+	// The tags are the packets the version reads in play, handed over as
+	// they are.
+	if client.written[2] != tags {
+		t.Errorf("packet 2 = %v, want the tags as they were handed over", client.written[2])
+	}
+
+	// The success packet is the login phase's last word, and everything after
+	// it resolves its id in play.
+	for i, phase := range client.writePhases {
+		want := types.PhasePlay
+		if i == 0 {
+			want = types.PhaseLogin
+		}
+
+		if phase != want {
+			t.Errorf("expected packet %d to be written in phase %d, got %d", i, want, phase)
+		}
+	}
+
+	if client.joinedPlayerSync != 1 {
+		t.Errorf("joined the player sync %d times, want once", client.joinedPlayerSync)
+	}
+}
+
+// A version with a configuration phase was sent its registries and tags
+// there, and reads nothing of the kind in play: the join sends none of them
+// again.
+func TestHandleAcknowledgeFinishConfigurationServerboundPacketSendsNoRegistriesInPlay(t *testing.T) {
+	client := &fakeClient{
+		protocolVersion: types.ProtocolVersions.MINECRAFT_1_20_2,
+		phase:           types.PhaseConfiguration,
+		registryPackets: []types.ClientboundPacket{clientboundConfiguration.NewUpdateTagsClientboundPacket(1, 1, []byte{0x01})},
+	}
+
+	if err := HandleAcknowledgeFinishConfigurationServerboundPacket(client, &configuration.AcknowledgeFinishConfigurationServerboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, packet := range client.written {
+		if _, ok := packet.(*clientboundConfiguration.UpdateTagsClientboundPacket); ok {
+			t.Fatal("the join sent the tags to a version that read them in configuration")
+		}
+	}
+
+	if len(client.written) != 4 {
+		t.Errorf("expected 4 written packets, got %d", len(client.written))
 	}
 }

@@ -46,7 +46,7 @@ func main() {
 	// always was. With one named and unreadable, the server stops rather than
 	// starts empty, because an operator who pointed at a world wants that
 	// world or the reason there is none.
-	packetRegistry := protocol.NewDefaultRegistry()
+	packetRegistry := protocol.NewDefaultRegistry(gameData)
 
 	var lobby server.WorldProvider
 	if dir, ok := config.WorldDir(); ok {
