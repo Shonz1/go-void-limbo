@@ -98,7 +98,7 @@ jobs:
       # Pulled ahead of the suite so the download has its own step and log,
       # and the launch timeouts inside the suite measure the client alone.
       - name: Pull the client image
-        run: docker pull --quiet ghcr.io/caunt/portable-minecraft-client:offline
+        run: docker pull --quiet ghcr.io/void-community/portable-minecraft-client:offline
 
       # Two clients at once is what a hosted runner's memory holds alongside
       # the anchor the position sync test keeps in the world.
