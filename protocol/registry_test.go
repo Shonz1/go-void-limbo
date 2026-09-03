@@ -273,40 +273,58 @@ func TestEncodeClientboundRefusesWhatTheVersionDoesNotCarry(t *testing.T) {
 }
 
 // registryCodecs is the one thing a default registry is built from beyond
-// its tables: what a 1.20 play login carries the registries as.
-type registryCodecs []byte
+// its tables: what a play login before 1.20.2 carries the registries as,
+// each version's own.
+type registryCodecs map[types.ProtocolId][]byte
 
 func (r registryCodecs) RegistryCodecFor(version types.ProtocolVersion) []byte {
-	if version.ID != types.ProtocolVersions.MINECRAFT_1_20.ID {
-		return nil
-	}
-
-	return r
+	return r[version.ID]
 }
 
-// A 1.20 play login carries the registries, which the packet encoded at the
-// latest version has nothing of: they come from the source the registry was
-// built with, and a registry built without one refuses the login rather than
-// send it without them. Every other version's login is untouched by the
-// source, since none of them reads registries there.
-func TestEncodeClientboundWritesTheRegistriesIntoA1_20Login(t *testing.T) {
-	codec := registryCodecs{0x0A, 0x00, 0x00, 0x00}
+// A play login before 1.20.2 carries the registries, which the packet
+// encoded at the latest version has nothing of: they come from the source
+// the registry was built with, each version's own -- a 1.19.4 login carries
+// 1.19.4's and not 1.20's, which the chain writes in on the way down -- and
+// a registry built without one refuses the login rather than send it without
+// them. Every other version's login is untouched by the source, since none
+// of them reads registries there.
+func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T) {
+	codecs := registryCodecs{
+		types.ProtocolVersions.MINECRAFT_1_19_4.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x61, 0x02, 0x00},
+		types.ProtocolVersions.MINECRAFT_1_20.ID:   {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x62, 0x03, 0x00},
+	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	body, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_20, login)
-	if err != nil {
-		t.Fatalf("EncodeClientbound() error: %v", err)
+	for _, version := range types.SupportedProtocolVersions[:2] {
+		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
+		if err != nil {
+			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
+		}
+
+		if !bytes.Contains(body, codecs[version.ID]) {
+			t.Errorf("protocol %d: the login % x does not carry its registries % x", version.ID, body, codecs[version.ID])
+		}
+
+		for other, codec := range codecs {
+			if other != version.ID && bytes.Contains(body, codec) {
+				t.Errorf("protocol %d: the login carries protocol %d's registries", version.ID, other)
+			}
+		}
+
+		if _, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, version, login); err == nil {
+			t.Errorf("protocol %d: EncodeClientbound() of a login with no registries succeeded, want a refusal", version.ID)
+		}
 	}
 
-	if !bytes.Contains(body, codec) {
-		t.Errorf("the 1.20 login % x does not carry the registries % x", body, codec)
+	// A registry with 1.20's registries and not 1.19.4's refuses the 1.19.4
+	// login: the chain does not hand a version another's.
+	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_20.ID: codecs[types.ProtocolVersions.MINECRAFT_1_20.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_19_4, login); err == nil {
+		t.Error("EncodeClientbound() of a 1.19.4 login with only 1.20's registries succeeded, want a refusal")
 	}
 
-	if _, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_20, login); err == nil {
-		t.Error("EncodeClientbound() of a 1.20 login with no registries succeeded, want a refusal")
-	}
+	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[1:] {
+	for _, version := range types.SupportedProtocolVersions[2:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)

@@ -84,10 +84,16 @@ type blockStateProperty struct {
 // its own below that: 765 is where the crafter, the trial spawner, the
 // copper and tuff sets landed and where grass became short grass, fifty-six
 // blocks in for the one name gone, so 764 numbers 24,276 states. And 1.20
-// its own at the very bottom, with the same blocks as 1.20.2 and fewer
-// states: 764 is where the heads and skulls gained their powered property
-// and the barrier its waterlogged one, so 763 numbers 24,135 states.
+// its own below that, with the same blocks as 1.20.2 and fewer states: 764
+// is where the heads and skulls gained their powered property and the
+// barrier its waterlogged one, so 763 numbers 24,135 states. And 1.19.4 its
+// own at the very bottom: 763 is where the calibrated sculk sensor, the
+// pitcher plant and its crop, the sniffer egg and the suspicious gravel
+// landed, five blocks in all, and where the decorated pot gained its cracked
+// property and the torchflower crop lost one of its three ages, so 762
+// numbers 23,725 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_19_4.ID:  "blockstates_minecraft_1_19_4.json",
 	types.ProtocolVersions.MINECRAFT_1_20.ID:    "blockstates_minecraft_1_20.json",
 	types.ProtocolVersions.MINECRAFT_1_20_2.ID:  "blockstates_minecraft_1_20_2.json",
 	types.ProtocolVersions.MINECRAFT_1_20_3.ID:  "blockstates_minecraft_1_20_3.json",
@@ -113,6 +119,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // short grass, the one rename among the versions this server speaks, so
 // every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_19_4.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_20.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_20_2.ID: {"minecraft:short_grass": "minecraft:grass"},
 }

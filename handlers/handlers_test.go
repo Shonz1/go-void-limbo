@@ -1555,15 +1555,25 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 	}
 }
 
-// A client from before the configuration phase is in play the moment it
-// reads the success packet, so the join follows the success packet straight
-// away: the play login, then the tags the version reads in play, then the
-// rest of the join as any other version gets it. Nothing is written in the
-// login phase but the success packet itself.
+// A client from before the configuration phase -- 1.19.4 or 1.20 -- is in
+// play the moment it reads the success packet, so the join follows the
+// success packet straight away: the play login, then the tags the version
+// reads in play, then the rest of the join as any other version gets it.
+// Nothing is written in the login phase but the success packet itself.
 func TestHandleLoginStartServerboundPacketEntersPlayOnAVersionWithNoConfigurationPhase(t *testing.T) {
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20} {
+		t.Run(version.Names[0], func(t *testing.T) {
+			entersPlayFromTheLogin(t, version)
+		})
+	}
+}
+
+func entersPlayFromTheLogin(t *testing.T, version types.ProtocolVersion) {
+	t.Helper()
+
 	tags := clientboundConfiguration.NewUpdateTagsClientboundPacket(1, 1, []byte{0x01})
 	client := &fakeClient{
-		protocolVersion: types.ProtocolVersions.MINECRAFT_1_20,
+		protocolVersion: version,
 		phase:           types.PhaseLogin,
 		registryPackets: []types.ClientboundPacket{tags},
 	}
