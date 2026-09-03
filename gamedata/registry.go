@@ -52,6 +52,12 @@ var combinedRegistryDataProtocol = types.ProtocolVersions.MINECRAFT_1_20_5.ID
 // same one compound named as a root: see encodeRegistryCodec.
 var registryCodecProtocol = types.ProtocolVersions.MINECRAFT_1_20_2.ID
 
+// inlineDimensionTypeProtocol is the first version to read the dimension
+// type its play login puts it into as a name, one of the entries the
+// registries the login carries hold. Every version below it reads the entry
+// itself there, spelled out in full a second time: see encodeDimensionType.
+var inlineDimensionTypeProtocol = types.ProtocolVersions.MINECRAFT_1_19.ID
+
 // combinedCompound is the one compound a client before 1.20.5 reads every
 // registry from: keyed by registry name, holding for each registry its name
 // again under "type" and under "value" a list of its entries, each an entry's
@@ -116,6 +122,38 @@ func encodeRegistryCodec(registries []Registry) ([]byte, error) {
 
 	return encodeNbt(func(ms *streams.MinecraftStream) error { return nbt.WriteNamed(ms, "", compound) })
 }
+
+// encodeDimensionType writes the dimension type a client before 1.19 reads
+// out of its play login: the definition of the first dimension type among
+// registries, which is the one the login puts the player into, as a root
+// named with the empty string the way every NBT on the wire was named before
+// 1.20.2. It is not a packet body but a field of one, alongside the
+// registries the same login carries, and a set with no dimension type to
+// spell out is refused, since such a login has nowhere to send the client.
+func encodeDimensionType(registries []Registry) ([]byte, error) {
+	for _, registry := range registries {
+		if registry.Name != dimensionTypeRegistry {
+			continue
+		}
+
+		if len(registry.Entries) == 0 {
+			return nil, fmt.Errorf("registry %s holds no entry to put the player into", registry.Name)
+		}
+
+		entry := registry.Entries[0]
+		if entry.Data == nil || entry.Data.Type() == nbt.TagEnd {
+			return nil, fmt.Errorf("registry %s: entry %s has no definition, which a play login before 1.19 spells out", registry.Name, entry.Name)
+		}
+
+		return encodeNbt(func(ms *streams.MinecraftStream) error { return nbt.WriteNamed(ms, "", entry.Data) })
+	}
+
+	return nil, fmt.Errorf("no %s registry to take the play login's dimension type from", dimensionTypeRegistry)
+}
+
+// dimensionTypeRegistry is the registry the play login's dimension type is
+// an entry of.
+const dimensionTypeRegistry = "minecraft:dimension_type"
 
 // encodeNbt runs one NBT write into a buffer and returns what it wrote.
 func encodeNbt(write func(ms *streams.MinecraftStream) error) ([]byte, error) {

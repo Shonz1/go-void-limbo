@@ -14,7 +14,7 @@ import (
 //
 // Each set is encoded as soon as it is loaded, before the next is read. A
 // version's registries parse into a tree several times the size of the bytes
-// they encode to, and eighteen of those held at once until the last is read
+// they encode to, and nineteen of those held at once until the last is read
 // is what this process would peak at for no reason; one at a time, the peak
 // is one tree.
 func NewDefaultProvider() (*Provider, error) {
@@ -23,6 +23,7 @@ func NewDefaultProvider() (*Provider, error) {
 		registries  func() ([]Registry, error)
 		tags        func() ([]TagSet, error)
 	}{
+		{types.ProtocolVersions.MINECRAFT_1_18_2.ID, registriesMinecraft1_18_2, tagsMinecraft1_18_2},
 		{types.ProtocolVersions.MINECRAFT_1_19.ID, registriesMinecraft1_19, tagsMinecraft1_19},
 		{types.ProtocolVersions.MINECRAFT_1_19_1.ID, registriesMinecraft1_19_1, tagsMinecraft1_19_1},
 		{types.ProtocolVersions.MINECRAFT_1_19_3.ID, registriesMinecraft1_19_3, tagsMinecraft1_19_3},

@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_18_2  ProtocolVersion
 	MINECRAFT_1_19    ProtocolVersion
 	MINECRAFT_1_19_1  ProtocolVersion
 	MINECRAFT_1_19_3  ProtocolVersion
@@ -30,11 +31,18 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.19 has 759 to itself: 1.19.1 moved to 760. It is the oldest this
-	// server speaks, and like the four above it from before the configuration
-	// phase: see HasConfigurationPhase. It is the first on which a client may
-	// sign the encryption challenge rather than encrypt it, since 1.19 is
-	// where the profile key appeared: see MaySignEncryptionChallenge.
+	// 1.18.2 has 758 to itself: 1.18.1 sits on 757 and 1.19 moved to 759. It
+	// is the oldest this server speaks, and like the five above it from
+	// before the configuration phase: see HasConfigurationPhase. It is from
+	// before the profile key as well, so a client on it always encrypts the
+	// encryption challenge: see MaySignEncryptionChallenge.
+	MINECRAFT_1_18_2: ProtocolVersion{ID: 758, Names: []string{"1.18.2"}},
+
+	// 1.19 has 759 to itself: 1.18.2 sits on 758 and 1.19.1 moved to 760.
+	// Like the four above it, it is from before the configuration phase: see
+	// HasConfigurationPhase. It is the first on which a client may sign the
+	// encryption challenge rather than encrypt it, since 1.19 is where the
+	// profile key appeared: see MaySignEncryptionChallenge.
 	MINECRAFT_1_19: ProtocolVersion{ID: 759, Names: []string{"1.19"}},
 
 	// 1.19.2 stayed on 1.19.1's protocol, so a client on either of them is a
@@ -115,6 +123,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_18_2,
 	ProtocolVersions.MINECRAFT_1_19,
 	ProtocolVersions.MINECRAFT_1_19_1,
 	ProtocolVersions.MINECRAFT_1_19_3,
@@ -143,6 +152,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_18_2.ID:  ProtocolVersions.MINECRAFT_1_18_2,
 	ProtocolVersions.MINECRAFT_1_19.ID:    ProtocolVersions.MINECRAFT_1_19,
 	ProtocolVersions.MINECRAFT_1_19_1.ID:  ProtocolVersions.MINECRAFT_1_19_1,
 	ProtocolVersions.MINECRAFT_1_19_3.ID:  ProtocolVersions.MINECRAFT_1_19_3,
@@ -231,11 +241,12 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // client holding one -- which is every client logged into an account --
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
-// so from it on the challenge is always encrypted, and 1.19 and 1.19.1 are
-// the two versions that may sign. A signature is a thing
-// this server cannot check, since it does not keep the key the client sent
-// with its hello, and a version that may sign is a version whose response is
-// let through without the challenge: see CompleteEncryption.
+// so from it on the challenge is always encrypted, and 1.18.2, from before
+// the key, has nothing to sign with and encrypts it as well: 1.19 and 1.19.1
+// are the two versions that may sign. A signature is a thing this server
+// cannot check, since it does not keep the key the client sent with its
+// hello, and a version that may sign is a version whose response is let
+// through without the challenge: see CompleteEncryption.
 func (v ProtocolVersion) MaySignEncryptionChallenge() bool {
-	return IsSupportedProtocolVersion(v) && v.ID < ProtocolVersions.MINECRAFT_1_19_3.ID
+	return IsSupportedProtocolVersion(v) && v.ID >= ProtocolVersions.MINECRAFT_1_19.ID && v.ID < ProtocolVersions.MINECRAFT_1_19_3.ID
 }
