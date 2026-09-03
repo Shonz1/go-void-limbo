@@ -281,17 +281,32 @@ func (r registryCodecs) RegistryCodecFor(version types.ProtocolVersion) []byte {
 	return r[version.ID]
 }
 
+// dimensionType1_18_2 stands in for the dimension type a 1.18.2 play login
+// spells out, which comes from the same source as the registries and only
+// for that version.
+var dimensionType1_18_2 = []byte{0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xC0, 0x00}
+
+func (r registryCodecs) DimensionTypeFor(version types.ProtocolVersion) []byte {
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_19.ID && r[version.ID] != nil {
+		return dimensionType1_18_2
+	}
+
+	return nil
+}
+
 // A play login before 1.20.2 carries the registries, which the packet
 // encoded at the latest version has nothing of: they come from the source
 // the registry was built with, each version's own -- a 1.19.4 login carries
 // 1.19.4's and not 1.20's, which the chain writes in on the way down, a
 // 1.19.3 login 1.19.3's and neither of the others', a 1.19.1 login
-// 1.19.1's, and a 1.19 login 1.19's -- and
+// 1.19.1's, a 1.19 login 1.19's, and a 1.18.2 login 1.18.2's, with the
+// dimension type it spells out from the same source -- and
 // a registry built without one refuses the login rather than send it without
 // them. Every other version's login is untouched by the source, since none
 // of them reads registries there.
 func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T) {
 	codecs := registryCodecs{
+		types.ProtocolVersions.MINECRAFT_1_18_2.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5D, 0x05, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_19.ID:   {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5E, 0x04, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_19_1.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5F, 0x00, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_19_3.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x60, 0x01, 0x00},
@@ -300,7 +315,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:5] {
+	for _, version := range types.SupportedProtocolVersions[:6] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -308,6 +323,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 		if !bytes.Contains(body, codecs[version.ID]) {
 			t.Errorf("protocol %d: the login % x does not carry its registries % x", version.ID, body, codecs[version.ID])
+		}
+
+		// 1.18.2 spells the dimension type out behind the registries, and no
+		// other version does.
+		if spelled, want := bytes.Contains(body, dimensionType1_18_2), version.ID == types.ProtocolVersions.MINECRAFT_1_18_2.ID; spelled != want {
+			t.Errorf("protocol %d: the login spells the dimension type out: %t, want %t", version.ID, spelled, want)
 		}
 
 		for other, codec := range codecs {
@@ -322,10 +343,10 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 
 	// A registry with 1.20's registries and not 1.19.4's refuses the 1.19.4
-	// login, one with 1.19.4's and not 1.19.3's the 1.19.3 login, and one
-	// with 1.19.3's and not 1.19.1's the 1.19.1 login, and one with 1.19.1's
-	// and not 1.19's the 1.19 login: the chain does not hand a version
-	// another's.
+	// login, one with 1.19.4's and not 1.19.3's the 1.19.3 login, one with
+	// 1.19.3's and not 1.19.1's the 1.19.1 login, one with 1.19.1's and not
+	// 1.19's the 1.19 login, and one with 1.19's and not 1.18.2's the 1.18.2
+	// login: the chain does not hand a version another's.
 	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_20.ID: codecs[types.ProtocolVersions.MINECRAFT_1_20.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_19_4, login); err == nil {
 		t.Error("EncodeClientbound() of a 1.19.4 login with only 1.20's registries succeeded, want a refusal")
 	}
@@ -342,9 +363,13 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		t.Error("EncodeClientbound() of a 1.19 login with only 1.19.1's registries succeeded, want a refusal")
 	}
 
+	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_19.ID: codecs[types.ProtocolVersions.MINECRAFT_1_19.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_18_2, login); err == nil {
+		t.Error("EncodeClientbound() of a 1.18.2 login with only 1.19's registries succeeded, want a refusal")
+	}
+
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[5:] {
+	for _, version := range types.SupportedProtocolVersions[6:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)

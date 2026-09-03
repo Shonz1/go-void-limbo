@@ -9,6 +9,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		want ProtocolVersion
 	}{
 		{"zero", ProtocolVersions.ZERO.ID, ProtocolVersions.ZERO},
+		{"minecraft_1_18_2", ProtocolVersions.MINECRAFT_1_18_2.ID, ProtocolVersions.MINECRAFT_1_18_2},
 		{"minecraft_1_19", ProtocolVersions.MINECRAFT_1_19.ID, ProtocolVersions.MINECRAFT_1_19},
 		{"minecraft_1_19_1", ProtocolVersions.MINECRAFT_1_19_1.ID, ProtocolVersions.MINECRAFT_1_19_1},
 		{"minecraft_1_19_3", ProtocolVersions.MINECRAFT_1_19_3.ID, ProtocolVersions.MINECRAFT_1_19_3},
@@ -227,6 +228,15 @@ func TestPreviousProtocolVersion(t *testing.T) {
 		t.Errorf("expected 1.19 below 1.19.1, got %d", previous.ID)
 	}
 
+	previous, ok = PreviousProtocolVersion(ProtocolVersions.MINECRAFT_1_19)
+	if !ok {
+		t.Fatal("expected a version below 1.19")
+	}
+
+	if previous.ID != ProtocolVersions.MINECRAFT_1_18_2.ID {
+		t.Errorf("expected 1.18.2 below 1.19, got %d", previous.ID)
+	}
+
 	if _, ok := PreviousProtocolVersion(SupportedProtocolVersions[0]); ok {
 		t.Error("expected nothing below the oldest version")
 	}
@@ -251,10 +261,10 @@ func TestIsSupportedProtocolVersion(t *testing.T) {
 }
 
 // 1.20.2 is where the configuration phase appeared: every version from it on
-// passes through the phase, and the five versions below it go from their
+// passes through the phase, and the six versions below it go from their
 // login straight into play.
 func TestHasConfigurationPhase(t *testing.T) {
-	for _, version := range SupportedProtocolVersions[:5] {
+	for _, version := range SupportedProtocolVersions[:6] {
 		if version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has a configuration phase, want the login to lead straight into play", version.ID)
 		}
@@ -280,7 +290,11 @@ func TestHasConfigurationPhase(t *testing.T) {
 		t.Error("1.19 has a configuration phase, want the login to lead straight into play")
 	}
 
-	for _, version := range SupportedProtocolVersions[5:] {
+	if ProtocolVersions.MINECRAFT_1_18_2.HasConfigurationPhase() {
+		t.Error("1.18.2 has a configuration phase, want the login to lead straight into play")
+	}
+
+	for _, version := range SupportedProtocolVersions[6:] {
 		if !version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has no configuration phase, want one on every version from 1.20.2", version.ID)
 		}
@@ -294,8 +308,12 @@ func TestHasConfigurationPhase(t *testing.T) {
 // 1.19.3 is where the profile key left the login, and with it the client's
 // way of signing the encryption challenge: the two versions below it may
 // sign, since 1.19 is where the key appeared, and every version from it on
-// encrypts.
+// encrypts, as does 1.18.2 below the two, from before there was a key.
 func TestMaySignEncryptionChallenge(t *testing.T) {
+	if ProtocolVersions.MINECRAFT_1_18_2.MaySignEncryptionChallenge() {
+		t.Error("1.18.2 may sign the encryption challenge, want a client from before the profile key to encrypt it")
+	}
+
 	if !ProtocolVersions.MINECRAFT_1_19.MaySignEncryptionChallenge() {
 		t.Error("1.19 may not sign the encryption challenge, want a client with a profile key allowed to")
 	}
@@ -304,7 +322,7 @@ func TestMaySignEncryptionChallenge(t *testing.T) {
 		t.Error("1.19.1 may not sign the encryption challenge, want a client with a profile key allowed to")
 	}
 
-	for _, version := range SupportedProtocolVersions[2:] {
+	for _, version := range SupportedProtocolVersions[3:] {
 		if version.MaySignEncryptionChallenge() {
 			t.Errorf("protocol %d may sign the encryption challenge, want every version from 1.19.3 to encrypt it", version.ID)
 		}

@@ -69,11 +69,23 @@ const (
 // How long each wait may take is split by what is being waited for. A launch
 // unpacks a version's assets from the image and boots the client, minutes at
 // the outside on a cold cache; the join is the game connecting to a server on
-// the same machine the moment it has a window; and the hold is two keep alive
-// rounds, which is the proof the connection settled into the play phase rather
-// than merely reaching it.
+// the same machine once it has a window and has loaded; and the hold is two
+// keep alive rounds, which is the proof the connection settled into the play
+// phase rather than merely reaching it.
+//
+// The client is pointed at the limbo only after loadSettle has passed since
+// its window came up, rather than told to join as it launches. A client told
+// to join at launch connects before its first resource reload is through, and
+// a login that completes inside that window -- a limbo's does, in
+// milliseconds -- has the client drawing a world whose block atlas and
+// shaders do not exist yet, which crashes it on the spot: the versions from
+// 1.19 on happen to sit out the window on a profile key fetch that fails
+// slowly offline, and 1.18.2, with no key to fetch, does not. A player joins
+// from a loaded client anyway, which is what this waits for; the reload takes
+// a few seconds here, and the settle is what a slow machine may need.
 const (
 	launchTimeout = 20 * time.Minute
+	loadSettle    = 15 * time.Second
 	joinTimeout   = 3 * time.Minute
 	stopTimeout   = 3 * time.Minute
 	holdFor       = 35 * time.Second
@@ -479,15 +491,20 @@ func (c *voidClient) joinLimbo(t *testing.T, version, username string, port int)
 	c.ensureStopped(t)
 
 	c.post(t, "/api/game/start/vanilla", map[string]any{
-		"version": version,
-		"arguments": []string{
-			"--username", username,
-			"--join-server", serverHostFromContainer,
-			"--join-server-port", strconv.Itoa(port),
-		},
+		"version":   version,
+		"arguments": []string{"--username", username},
 	})
 
 	c.awaitState(t, "ready", launchTimeout)
+
+	// The window is up before the client has loaded: see loadSettle.
+	time.Sleep(loadSettle)
+
+	c.post(t, "/api/game/connect", map[string]any{
+		"host": serverHostFromContainer,
+		"port": port,
+	})
+
 	c.awaitJoined(t, joinTimeout)
 }
 

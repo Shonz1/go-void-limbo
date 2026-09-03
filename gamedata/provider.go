@@ -25,6 +25,12 @@ type bucket struct {
 	// out of its play login rather than out of a packet: see
 	// encodeRegistryCodec. Nil for a version that is sent them as packets.
 	registryCodec []byte
+
+	// dimensionType is the dimension type the play login puts the player
+	// into as a version before 1.19 reads it, spelled out in the login
+	// itself: see encodeDimensionType. Nil for a version that reads a name
+	// there.
+	dimensionType []byte
 }
 
 // Provider resolves the registry packets for a client's protocol version, and
@@ -60,14 +66,16 @@ func NewProvider(sets ...Set) (*Provider, error) {
 func encodeSet(set Set) (bucket, error) {
 	packets := make([]types.ClientboundPacket, 0, len(set.Registries)+1)
 
-	var registryCodec []byte
+	var registryCodec, dimensionType []byte
 
 	// The shape is the set's version's own. A set that starts below 1.20.5
-	// is read by clients that take every registry in one packet, and one
-	// that starts below 1.20.2 by clients that take them inside the play
-	// login, with no packet at all. Those are the two differences in this
-	// package's output between the versions: the content of a set is what
-	// varies, and the shape only at those two steps.
+	// is read by clients that take every registry in one packet, one that
+	// starts below 1.20.2 by clients that take them inside the play login,
+	// with no packet at all, and one that starts below 1.19 by clients that
+	// read the dimension type they are put into out of that login as well,
+	// spelled out rather than named. Those are the three differences in
+	// this package's output between the versions: the content of a set is
+	// what varies, and the shape only at those three steps.
 	if set.MinProtocol < registryCodecProtocol {
 		codec, err := encodeRegistryCodec(set.Registries)
 		if err != nil {
@@ -75,6 +83,15 @@ func encodeSet(set Set) (bucket, error) {
 		}
 
 		registryCodec = codec
+
+		if set.MinProtocol < inlineDimensionTypeProtocol {
+			encoded, err := encodeDimensionType(set.Registries)
+			if err != nil {
+				return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+			}
+
+			dimensionType = encoded
+		}
 	} else if set.MinProtocol < combinedRegistryDataProtocol {
 		body, err := encodeCombined(set.Registries)
 		if err != nil {
@@ -104,7 +121,7 @@ func encodeSet(set Set) (bucket, error) {
 		packets = append(packets, configuration.NewUpdateTagsClientboundPacket(len(set.Tags), countTags(set.Tags), body))
 	}
 
-	return bucket{minProtocol: set.MinProtocol, packets: packets, registryCodec: registryCodec}, nil
+	return bucket{minProtocol: set.MinProtocol, packets: packets, registryCodec: registryCodec, dimensionType: dimensionType}, nil
 }
 
 // newProvider orders encoded buckets by version and refuses two that start at
@@ -147,6 +164,20 @@ func (p *Provider) PacketsFor(version types.ProtocolVersion) []types.Clientbound
 func (p *Provider) RegistryCodecFor(version types.ProtocolVersion) []byte {
 	if b := p.bucketFor(version); b != nil {
 		return b.registryCodec
+	}
+
+	return nil
+}
+
+// DimensionTypeFor returns the dimension type a client on version is put
+// into as it reads it out of its play login: the entry itself, named as a
+// root, which is how every version before 1.19 reads the field. A version
+// from 1.19 on reads a name there, one of the entries the registries it
+// carries hold, and gets nil. The bytes are shared across connections and
+// must not be modified.
+func (p *Provider) DimensionTypeFor(version types.ProtocolVersion) []byte {
+	if b := p.bucketFor(version); b != nil {
+		return b.dimensionType
 	}
 
 	return nil

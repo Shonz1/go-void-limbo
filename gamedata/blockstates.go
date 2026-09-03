@@ -94,14 +94,20 @@ type blockStateProperty struct {
 // states. And 1.19.3 its own below that: 762 is where the cherry wood set,
 // the pink petals, the torchflower and its crop, the decorated pot and the
 // suspicious sand landed, twenty-six blocks in all, so 761 numbers 23,232
-// states. And 1.19.1 its own at the very bottom: 761 is where the bamboo
+// states. And 1.19.1 its own below that: 761 is where the bamboo
 // wood set, the hanging signs of every wood, the chiseled bookshelf and the
 // piglin heads landed, thirty-nine blocks in all, and where the note block
 // gained its seven mob head instruments, so 760 numbers 21,448 states. 1.19
 // shares that table the way 1.21.9 shares 1.21.11's: 1.19.1 added no block
 // and no property -- the two jars' blocks reports produce byte-identical
-// tables -- so 759 numbers every state as 760 does.
+// tables -- so 759 numbers every state as 760 does. And 1.18.2 its own
+// below the two: 759 is where the mangrove wood set, the mud and its
+// bricks, the sculk set, the froglights, the frogspawn and the reinforced
+// deepslate landed, thirty-five blocks in all, and where the leaves of
+// every wood gained their waterlogged property, so 758 numbers 20,342
+// states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_18_2.ID:  "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_19.ID:    "blockstates_minecraft_1_19_1.json",
 	types.ProtocolVersions.MINECRAFT_1_19_1.ID:  "blockstates_minecraft_1_19_1.json",
 	types.ProtocolVersions.MINECRAFT_1_19_3.ID:  "blockstates_minecraft_1_19_3.json",
@@ -131,6 +137,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // short grass, the one rename among the versions this server speaks, so
 // every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_18_2.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19_1.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_19_3.ID: {"minecraft:short_grass": "minecraft:grass"},
