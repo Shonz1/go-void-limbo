@@ -349,10 +349,13 @@ func clientCount(t *testing.T) int {
 }
 
 // voidClient is the containerized Minecraft client, spoken to over its HTTP
-// API on the host port Docker picked for it.
+// API on the host port Docker picked for it. The container id is kept for the
+// one thing the API does not offer, which is the game's own log after a
+// failure: see dumpGameLog.
 type voidClient struct {
-	baseURL string
-	http    *http.Client
+	container string
+	baseURL   string
+	http      *http.Client
 }
 
 // gameStatus is the shape /api/game/status answers with, down to the fields
@@ -369,6 +372,19 @@ func describe(s gameStatus) string {
 	return fmt.Sprintf("state=%q operation=%q operationState=%q message=%q error=%q",
 		s.State, s.Operation, s.OperationState, s.Message, s.Error)
 }
+
+// gameJvmOptions is what every game's JVM is started with, handed to it as
+// JAVA_TOOL_OPTIONS, which a JVM reads on its own: the container's launcher
+// passes its environment through and sets no heap size of its own, and a JVM
+// told nothing takes a quarter of the memory it can see. The memory it can
+// see is the whole of Docker's, so five clients that each grow into their
+// quarter of it outgrow it together, and the kernel's answer is to kill one
+// of the games where it stands -- a client the suite last saw in the world,
+// gone from it mid-hold with "Game exited" for a status, and a player list
+// that was fine a moment ago. The two gigabytes are what Mojang's own launcher
+// gives a release, and are enough for every one of them at the render
+// distance the options file asks for.
+const gameJvmOptions = "-Xmx2G"
 
 // startClientContainer runs the client image and waits for its API to answer.
 // The test is skipped where there is no Docker to run it with; anything else
@@ -389,10 +405,12 @@ func startClientContainer(t *testing.T) *voidClient {
 	// Port zero on the host side keeps parallel checkouts from fighting over a
 	// port; docker port says what was picked. The add-host flag is a no-op on
 	// Docker Desktop and is what makes host.docker.internal exist on plain
-	// Linux engines.
+	// Linux engines. The environment reaches the game's JVM through the
+	// launcher: see gameJvmOptions.
 	run := exec.Command("docker", "run", "--rm", "--detach",
 		"--publish", "127.0.0.1:0:80",
 		"--add-host", "host.docker.internal:host-gateway",
+		"--env", "JAVA_TOOL_OPTIONS="+gameJvmOptions,
 		image)
 
 	out, err := run.CombinedOutput()
@@ -422,8 +440,9 @@ func startClientContainer(t *testing.T) *voidClient {
 	address := strings.TrimSpace(strings.Split(strings.TrimSpace(string(portOut)), "\n")[0])
 
 	client := &voidClient{
-		baseURL: "http://" + address,
-		http:    &http.Client{Timeout: time.Minute},
+		container: id,
+		baseURL:   "http://" + address,
+		http:      &http.Client{Timeout: time.Minute},
 	}
 
 	client.awaitHealthy(t, 5*time.Minute)
@@ -461,22 +480,33 @@ func (c *voidClient) awaitHealthy(t *testing.T, timeout time.Duration) {
 func (c *voidClient) post(t *testing.T, path string, body any) {
 	t.Helper()
 
+	if err := c.tryPost(path, body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// tryPost is post reporting the refusal rather than failing the test on it,
+// for the one request a refusal is not the end of: see joinLimbo. The error
+// carries what the API said, which is what decides what the refusal is worth.
+func (c *voidClient) tryPost(path string, body any) error {
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		t.Fatalf("encoding the request for %s: %v", path, err)
+		return fmt.Errorf("encoding the request for %s: %w", path, err)
 	}
 
 	resp, err := c.http.Post(c.baseURL+path, "application/json", bytes.NewReader(encoded))
 	if err != nil {
-		t.Fatalf("POST %s: %v", path, err)
+		return fmt.Errorf("POST %s: %w", path, err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		answer, _ := io.ReadAll(resp.Body)
-		t.Fatalf("POST %s answered %s: %s", path, resp.Status, answer)
+		return fmt.Errorf("POST %s answered %s: %s", path, resp.Status, answer)
 	}
+
+	return nil
 }
 
 // put sends a plain text body to path and fails the test on anything but a
@@ -528,15 +558,92 @@ func clientOptions(version types.ProtocolVersion) string {
 	return options
 }
 
-// joinLimbo drives one full join: launch name, a release of version, with the
-// limbo on port as its quick play server, and wait until the game has a player
-// in the world. The join is the client's own doing -- the launcher hands the
-// release the server the way the launcher's own play button would -- so the
-// game is on the limbo the moment it has a window, with no menus driven and
-// nothing to retry. The arguments are the launcher's, not the game's: the
-// container runs PortableMC, whose start command takes --join-server and the
-// port beside it.
+// joinAttempts is how many launches a join may take before it is a failure:
+// the one every join needs, and one more for a client that broke the connect
+// on its own side. Why one more is fair is with clientSideConnectFailures.
+const joinAttempts = 2
+
+// clientSideConnectFailures is what the client's API answers a connect with
+// when the client, not the server, is what broke it. Each of these is a
+// failure the suite has seen and traced to the client's own side, and the one
+// thing a retry with a fresh launch is fair for: a limbo that broke the join
+// breaks it again on the next launch and still fails the test, only one launch
+// later.
+//
+// The disconnect timeout is the client's own thirty seconds of reading
+// nothing, and the way this suite meets it is a race in the client's connect
+// on the releases from before 1.20.2. Those send the handshake and the login
+// start from the thread that opened the socket, and a send whose phase is not
+// the channel's disables auto read there while the channel's own activation,
+// on the event loop, is what enables it; Netty defers the read-interest clear
+// the disabling asks for onto the loop, and with five clients booting on one
+// machine the activation can run first, so the deferred clear lands last and
+// the channel never reads again. The server's answer sits in the socket, the
+// client counts thirty seconds of silence, and the limbo's log shows a joined
+// client whose keep alive went unanswered. Nothing the limbo sends reaches a
+// client that is not reading; a fresh launch does not sit on the same race.
+//
+// The empty agent response is the client's own driver -- the agent inside the
+// game that the container's API drives the menus through -- not answering the
+// container, with no connection to the limbo made yet.
+var clientSideConnectFailures = []string{
+	"disconnect.timeout",
+	"The Minecraft agent returned an empty response",
+}
+
+// isClientSideConnectFailure reports whether a refused connect is one of the
+// client's own, and so worth one more launch.
+func isClientSideConnectFailure(err error) bool {
+	for _, failure := range clientSideConnectFailures {
+		if strings.Contains(err.Error(), failure) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// joinLimbo drives one full join: launch name, a release of version, point it
+// at the limbo on port once it has loaded, and wait until the game has a
+// player in the world. A connect the client refused on its own side is given
+// one more launch, since a client that broke its own connect is not evidence
+// about the limbo: see clientSideConnectFailures. Any other refusal, and a
+// second one of these, fails the test with what the client said.
 func (c *voidClient) joinLimbo(t *testing.T, version types.ProtocolVersion, name, username string, port int) {
+	t.Helper()
+
+	// Whatever the game has to say about a failure is in its own log, which
+	// the next launch on this container overwrites: read now, before the
+	// container goes back to the pool, and only when there is a failure to
+	// explain.
+	t.Cleanup(func() {
+		if t.Failed() {
+			c.dumpGameLog(t)
+		}
+	})
+
+	for attempt := 1; ; attempt++ {
+		c.launch(t, version, name, username)
+
+		err := c.connect(port)
+		if err == nil {
+			break
+		}
+
+		if attempt == joinAttempts || !isClientSideConnectFailure(err) {
+			t.Fatalf("launch %d of %s: %v", attempt, name, err)
+		}
+
+		t.Logf("launch %d of %s broke the connect on the client's own side, launching again: %v", attempt, name, err)
+	}
+
+	c.awaitJoined(t, joinTimeout)
+}
+
+// launch starts name, a release of version, under username, and returns once
+// the game has a window and has had loadSettle to load behind it. Whatever the
+// container was running before is stopped first.
+func (c *voidClient) launch(t *testing.T, version types.ProtocolVersion, name, username string) {
 	t.Helper()
 
 	c.ensureStopped(t)
@@ -555,13 +662,42 @@ func (c *voidClient) joinLimbo(t *testing.T, version types.ProtocolVersion, name
 
 	// The window is up before the client has loaded: see loadSettle.
 	time.Sleep(loadSettle)
+}
 
-	c.post(t, "/api/game/connect", map[string]any{
+// gameLogScript is what dumpGameLog runs inside the container: the end of the
+// game's log, and the head of every crash report the game has written, which
+// is where a game that exited says why.
+const gameLogScript = `tail -n 60 /root/.minecraft/logs/latest.log 2>/dev/null;
+for report in /root/.minecraft/crash-reports/*; do
+	[ -f "$report" ] && { echo "== $report"; head -n 40 "$report"; }
+done; exit 0`
+
+// dumpGameLog logs what the game in this container wrote, for a failure the
+// API's status cannot explain on its own: a game that exited, or a client
+// that stopped answering. The image has no diagnostics endpoint, so the log
+// is read straight off the container's filesystem.
+func (c *voidClient) dumpGameLog(t *testing.T) {
+	t.Helper()
+
+	out, err := exec.Command("docker", "exec", c.container, "sh", "-c", gameLogScript).CombinedOutput()
+	if err != nil {
+		t.Logf("reading the game's log from the container: %v\n%s", err, out)
+		return
+	}
+
+	t.Logf("the game's log ends:\n%s", out)
+}
+
+// connect points the running game at the limbo on port, the way the game's
+// own direct connect screen would, and returns once the client says it is in
+// the world or how it refused. The API drives the game's menus for this and
+// waits on the game's own answer, so a refusal is what the client would have
+// shown on its disconnect screen.
+func (c *voidClient) connect(port int) error {
+	return c.tryPost("/api/game/connect", map[string]any{
 		"host": serverHostFromContainer,
 		"port": port,
 	})
-
-	c.awaitJoined(t, joinTimeout)
 }
 
 // The shapes /api/game/players answers with, down to the fields the tests
