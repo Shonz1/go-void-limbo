@@ -198,6 +198,62 @@ func TestSendKeepAliveSendsNothingInPhasesWithoutOne(t *testing.T) {
 	}
 }
 
+func TestSendKeepAliveSendsNothingBetweenFinishConfigurationAndItsAcknowledgement(t *testing.T) {
+	client, buf := newTestClient(types.PhaseConfiguration)
+
+	if err := client.WritePacket(&clientboundConfiguration.FinishConfigurationClientboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf.Reset()
+
+	// The client left configuration on reading the packet above, and would
+	// read a configuration keep alive sent now under a play id. This end is
+	// still in configuration until the acknowledgement arrives, so the sweep
+	// has to go by what was sent rather than by the phase.
+	if err := client.SendKeepAlive(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("wrote % x, want nothing until the client is in play on this end too", buf.Bytes())
+	}
+
+	if client.pendingKeepAlive != 0 {
+		t.Errorf("waiting on keep alive %d, want none", client.pendingKeepAlive)
+	}
+
+	// The acknowledgement moves this end on, and keep alives resume as play
+	// ones.
+	client.SetPhase(types.PhasePlay)
+
+	if err := client.SendKeepAlive(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	keepAliveIdIn(t, buf.Bytes(), 0x2C)
+}
+
+func TestWritePacketRefusesAConfigurationPacketAfterFinishConfiguration(t *testing.T) {
+	client, buf := newTestClient(types.PhaseConfiguration)
+
+	if err := client.WritePacket(&clientboundConfiguration.FinishConfigurationClientboundPacket{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf.Reset()
+
+	// Anything of the configuration phase sent now reaches a client that is
+	// no longer in it, so it is a mistake in the caller rather than a packet.
+	if err := client.WritePacket(&clientboundCommon.KeepAliveClientboundPacket{Id: 1}); err == nil {
+		t.Error("error = nil, want a refusal for a configuration packet the client has already moved past")
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("wrote % x, want nothing", buf.Bytes())
+	}
+}
+
 func TestSendKeepAliveReportsOneThatWentUnanswered(t *testing.T) {
 	client, _ := newTestClient(types.PhasePlay)
 

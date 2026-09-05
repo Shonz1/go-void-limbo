@@ -119,7 +119,9 @@ func (c *Client) ConfirmKeepAlive(id int64) error {
 // once per connection per interval, which across a large crowd costs more than
 // the sends themselves.
 //
-// Only configuration and play have a keep alive packet, so only they get one.
+// Only configuration and play have a keep alive packet, so only they get one,
+// and configuration only until finish configuration has gone out: after that
+// the client is already in play, and hears nothing more until this end is too.
 // The phases before them need none: a handshake, a status ping and a login are
 // exchanges the client drives from one packet to the next, and a client that
 // stops driving one has stopped connecting rather than gone quiet. What ends one
@@ -137,6 +139,15 @@ func (c *Client) SendKeepAlive() error {
 	defer c.mu.Unlock()
 
 	if c.phase != types.PhaseConfiguration && c.phase != types.PhasePlay {
+		return nil
+	}
+
+	// A client that has been sent finish configuration is in play already,
+	// whatever this end's phase says until the acknowledgement arrives, and a
+	// configuration keep alive sent to it now is a play packet it cannot read.
+	// The gap is one round trip, which readTimeout covers many times over, so
+	// the client goes without one until it is in play on this end too.
+	if c.phase == types.PhaseConfiguration && c.configurationFinished {
 		return nil
 	}
 

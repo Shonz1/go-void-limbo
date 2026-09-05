@@ -126,7 +126,7 @@ func TestEveryVersionJoinsWithARealClient(t *testing.T) {
 				client := pool.acquire(t)
 				username := usernameFor(name)
 
-				client.joinLimbo(t, name, username, port)
+				client.joinLimbo(t, version, name, username, port)
 
 				// A client that failed the configuration phase, choked on a
 				// mistransformed packet, or missed its keep alives would be
@@ -179,7 +179,8 @@ func TestPositionSyncsWithEveryVersion(t *testing.T) {
 
 	t.Cleanup(func() { anchor.ensureStopped(t) })
 
-	anchor.joinLimbo(t, types.LatestProtocolVersion.Names[len(types.LatestProtocolVersion.Names)-1], anchorUsername, port)
+	latest := types.LatestProtocolVersion
+	anchor.joinLimbo(t, latest, latest.Names[len(latest.Names)-1], anchorUsername, port)
 
 	for _, version := range types.SupportedProtocolVersions {
 		for _, name := range version.Names {
@@ -196,7 +197,7 @@ func TestPositionSyncsWithEveryVersion(t *testing.T) {
 				}
 
 				username := usernameFor(name)
-				roamer.joinLimbo(t, name, username, port)
+				roamer.joinLimbo(t, version, name, username, port)
 
 				// Each side is shown the other, under the name it logged in
 				// as. The name proves the player info entry; the position
@@ -478,20 +479,75 @@ func (c *voidClient) post(t *testing.T, path string, body any) {
 	}
 }
 
-// joinLimbo drives one full join: launch the named release with the limbo on
-// port as its quick play server, and wait until the game has a player in the
-// world. The join is the client's own doing -- the launcher hands the release
-// the server the way the launcher's own play button would -- so the game is on
-// the limbo the moment it has a window, with no menus driven and nothing to
-// retry. The arguments are the launcher's, not the game's: the container runs
-// PortableMC, whose start command takes --join-server and the port beside it.
-func (c *voidClient) joinLimbo(t *testing.T, version, username string, port int) {
+// put sends a plain text body to path and fails the test on anything but a
+// 2xx, with whatever the API said about it. It is what the options file goes
+// up as: the one endpoint that takes a file rather than JSON.
+func (c *voidClient) put(t *testing.T, path, body string) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPut, c.baseURL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building the request for %s: %v", path, err)
+	}
+
+	req.Header.Set("Content-Type", "text/plain")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", path, err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		answer, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PUT %s answered %s: %s", path, resp.Status, answer)
+	}
+}
+
+// clientOptions is the options.txt a release is launched with, in the file's
+// own key:value lines. The client fills in every option the file leaves out
+// with its default, so only what the tests need said is said here.
+//
+// The frame cap and the render distance keep a client that draws nothing worth
+// seeing from taking every core it can find, which matters with several of
+// them booting on one machine. A container has no focus to lose, and a client
+// that pauses on losing it would sit on the pause menu instead of in the
+// world.
+//
+// From 1.19.4 the first launch opens an accessibility onboarding screen
+// ahead of the title, which no earlier release knows the option for; it is
+// turned off where the release reads it and left unsaid where it would not.
+func clientOptions(version types.ProtocolVersion) string {
+	options := "maxFps:5\nrenderDistance:2\npauseOnLostFocus:false\n"
+
+	if version.ID >= types.ProtocolVersions.MINECRAFT_1_19_4.ID {
+		options += "onboardAccessibility:false\n"
+	}
+
+	return options
+}
+
+// joinLimbo drives one full join: launch name, a release of version, with the
+// limbo on port as its quick play server, and wait until the game has a player
+// in the world. The join is the client's own doing -- the launcher hands the
+// release the server the way the launcher's own play button would -- so the
+// game is on the limbo the moment it has a window, with no menus driven and
+// nothing to retry. The arguments are the launcher's, not the game's: the
+// container runs PortableMC, whose start command takes --join-server and the
+// port beside it.
+func (c *voidClient) joinLimbo(t *testing.T, version types.ProtocolVersion, name, username string, port int) {
 	t.Helper()
 
 	c.ensureStopped(t)
 
+	// The options are read as the game boots, so they go up before it does,
+	// and again before every launch: the file is the container's, and the
+	// release before may have rewritten it on its way out.
+	c.put(t, "/api/game/options", clientOptions(version))
+
 	c.post(t, "/api/game/start/vanilla", map[string]any{
-		"version":   version,
+		"version":   name,
 		"arguments": []string{"--username", username},
 	})
 
@@ -560,7 +616,11 @@ func (c *voidClient) localPlayer(t *testing.T) livePlayer {
 
 	players, err := c.players()
 	if err != nil {
-		t.Fatalf("asking the client about its world: %v", err)
+		// A game that crashed and a client sitting on a disconnect screen
+		// both have no world to ask about; the status is what tells the two
+		// apart, and it is worth the extra request when the test is failing
+		// anyway.
+		t.Fatalf("asking the client about its world: %v (%s)", err, describe(c.status(t)))
 	}
 
 	return players.Local
