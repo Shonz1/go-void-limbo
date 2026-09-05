@@ -16,6 +16,7 @@ import (
 
 	"github.com/Shonz1/go-void-limbo/auth"
 	"github.com/Shonz1/go-void-limbo/gamedata"
+	clientboundConfiguration "github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
 	clientboundLogin "github.com/Shonz1/go-void-limbo/packets/clientbound/login"
 	"github.com/Shonz1/go-void-limbo/protocol"
 	"github.com/Shonz1/go-void-limbo/streams"
@@ -211,6 +212,15 @@ type Client struct {
 	// pendingKeepAlive is the id of the keep alive the client has not answered
 	// yet, or zero when the server is not waiting on one.
 	pendingKeepAlive int64
+
+	// configurationFinished says finish configuration has gone out. The client
+	// leaves the configuration phase the moment it reads that packet, before
+	// its acknowledgement has crossed back and moved this end on, so the two
+	// ends disagree about the phase for a round trip. A configuration packet
+	// sent into that gap reaches a client already in play, which reads it under
+	// a play id and fails on it; from this point until the acknowledgement,
+	// nothing of the configuration phase may be sent.
+	configurationFinished bool
 
 	// readScratch backs the frame body the read loop is consuming, reused from
 	// one packet to the next so a client streaming position updates is not a
@@ -760,6 +770,13 @@ func (c *Client) WritePacket(packet types.ClientboundPacket) error {
 // writePacket is WritePacket with the lock already held, for the callers that
 // took it to decide what to write in the first place.
 func (c *Client) writePacket(packet types.ClientboundPacket) error {
+	// The client left configuration on reading finish configuration, and reads
+	// whatever arrives next as play. Refused here rather than sent, since a
+	// packet the client cannot make sense of is a connection it drops.
+	if c.phase == types.PhaseConfiguration && c.configurationFinished {
+		return fmt.Errorf("%s follows finish configuration, which the client has already left configuration on", packet)
+	}
+
 	if prepared, ok := packet.(*types.PreparedPacket); ok {
 		return c.writePrepared(prepared)
 	}
@@ -781,6 +798,12 @@ func (c *Client) writePacket(packet types.ClientboundPacket) error {
 
 	if err := c.stream.WriteFrame(body); err != nil {
 		return err
+	}
+
+	// Sent, so from here on the client is on its way out of configuration and
+	// nothing else of that phase may follow it.
+	if _, ok := packet.(*clientboundConfiguration.FinishConfigurationClientboundPacket); ok {
+		c.configurationFinished = true
 	}
 
 	logPacket("packet sent", packet)
