@@ -30,7 +30,7 @@ func encodeStatus(t *testing.T, packet *StatusResponseClientboundPacket) *stream
 func TestEncodeStatusResponseClientboundPacket(t *testing.T) {
 	packet := &StatusResponseClientboundPacket{
 		Status: types.ServerStatus{
-			Version:     types.ServerVersion{Name: "26.2", Protocol: 776},
+			Version:     types.ServerVersion{Name: "26.3", Protocol: 777},
 			Players:     types.ServerPlayers{Online: 3, Max: 4},
 			Description: types.TextComponent{Text: "A void limbo"},
 		},
@@ -43,7 +43,7 @@ func TestEncodeStatusResponseClientboundPacket(t *testing.T) {
 		t.Fatalf("reading the document: %v", err)
 	}
 
-	want := `{"version":{"name":"26.2","protocol":776},"players":{"max":4,"online":3},"description":{"text":"A void limbo"}}`
+	want := `{"version":{"name":"26.3","protocol":777},"players":{"max":4,"online":3},"description":{"text":"A void limbo"}}`
 	if document != want {
 		t.Errorf("encoded %s, want %s", document, want)
 	}
@@ -72,13 +72,13 @@ func TestEncodeStatusResponseClientboundPacketEscapesTheDescription(t *testing.T
 func TestStatusResponseClientboundPacketString(t *testing.T) {
 	p := &StatusResponseClientboundPacket{
 		Status: types.ServerStatus{
-			Version:     types.ServerVersion{Name: "26.2", Protocol: 776},
+			Version:     types.ServerVersion{Name: "26.3", Protocol: 777},
 			Players:     types.ServerPlayers{Online: 3, Max: 4},
 			Description: types.TextComponent{Text: "A void limbo"},
 		},
 	}
 
-	want := "StatusResponseClientboundPacket{Version:26.2 Protocol:776 Players:3/4 Description:A void limbo}"
+	want := "StatusResponseClientboundPacket{Version:26.3 Protocol:777 Players:3/4 Description:A void limbo}"
 	if got := p.String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}

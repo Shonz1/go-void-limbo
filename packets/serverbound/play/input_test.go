@@ -2,32 +2,6 @@ package play
 
 import "testing"
 
-func TestDecodeSwingServerboundPacket(t *testing.T) {
-	tests := []struct {
-		name    string
-		body    []byte
-		offHand bool
-	}{
-		{name: "main hand", body: []byte{0x00}},
-		{name: "off hand", body: []byte{0x01}, offHand: true},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			packet := decode(t, DecodeSwingServerboundPacket, test.body)
-
-			swing, ok := packet.(*SwingServerboundPacket)
-			if !ok {
-				t.Fatalf("expected *SwingServerboundPacket, got %T", packet)
-			}
-
-			if swing.OffHand != test.offHand {
-				t.Errorf("OffHand = %t, want %t", swing.OffHand, test.offHand)
-			}
-		})
-	}
-}
-
 func TestDecodePlayerInputServerboundPacketReadsEachFlagOnItsOwn(t *testing.T) {
 	tests := []struct {
 		flags byte

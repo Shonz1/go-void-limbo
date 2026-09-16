@@ -12,14 +12,14 @@ import (
 // version, which is what every client below speaks unless its test says
 // otherwise.
 const (
-	addEntityId26_2        = 0x01
-	animateId26_2          = 0x02
-	positionSyncId26_2     = 0x23
-	playerInfoRemoveId26_2 = 0x45
-	playerInfoUpdateId26_2 = 0x46
-	removeEntitiesId26_2   = 0x4D
-	rotateHeadId26_2       = 0x53
-	setEntityDataId26_2    = 0x63
+	addEntityId26_3        = 0x01
+	swingAnimationId26_3   = 0x7B
+	positionSyncId26_3     = 0x23
+	playerInfoRemoveId26_3 = 0x46
+	playerInfoUpdateId26_3 = 0x47
+	removeEntitiesId26_3   = 0x4E
+	rotateHeadId26_3       = 0x55
+	setEntityDataId26_3    = 0x65
 )
 
 // newSyncClient builds a joined player on the roster's server: in play, with
@@ -95,7 +95,7 @@ func TestJoinPlayerSyncShowsThePlayersToEachOther(t *testing.T) {
 	// Each side gets the same pair about the other: the list entry first,
 	// because the client refuses a player entity whose uuid it has no entry
 	// for, then the entity.
-	wantIds := []byte{playerInfoUpdateId26_2, addEntityId26_2}
+	wantIds := []byte{playerInfoUpdateId26_3, addEntityId26_3}
 
 	if got := packetIds(t, aOut); !bytes.Equal(got, wantIds) {
 		t.Errorf("a was sent packets % x, want % x", got, wantIds)
@@ -152,7 +152,7 @@ func TestMovesAreRelayedToThoseShown(t *testing.T) {
 	// the body, and only the head packet turns what everyone watches.
 	a.SyncPositionRotation(1, 65, 2, 90, 10, true)
 
-	if got, want := packetIds(t, bOut), []byte{positionSyncId26_2, rotateHeadId26_2}; !bytes.Equal(got, want) {
+	if got, want := packetIds(t, bOut), []byte{positionSyncId26_3, rotateHeadId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after a turn, want % x", got, want)
 	}
 
@@ -165,7 +165,7 @@ func TestMovesAreRelayedToThoseShown(t *testing.T) {
 	// A move that did not turn moves the entity and nothing else.
 	a.SyncPosition(2, 65, 2, true)
 
-	if got, want := packetIds(t, bOut), []byte{positionSyncId26_2}; !bytes.Equal(got, want) {
+	if got, want := packetIds(t, bOut), []byte{positionSyncId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after a straight move, want % x", got, want)
 	}
 }
@@ -182,7 +182,7 @@ func TestMovesAreDroppedWhereThePlayerWasNeverShown(t *testing.T) {
 	ps.add(c)
 
 	a.SyncPosition(1, 65, 2, true)
-	a.SyncSwing(false)
+	a.SyncSwing()
 	a.SyncInput(true, false)
 
 	if cOut.Len() != 0 {
@@ -205,7 +205,7 @@ func TestLeaveHidesThePlayerEverywhere(t *testing.T) {
 
 	// The body goes first and the list entry after it, the reverse of the
 	// spawn.
-	if got, want := packetIds(t, aOut), []byte{removeEntitiesId26_2, playerInfoRemoveId26_2}; !bytes.Equal(got, want) {
+	if got, want := packetIds(t, aOut), []byte{removeEntitiesId26_3, playerInfoRemoveId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("a was sent packets % x after b left, want % x", got, want)
 	}
 
@@ -243,7 +243,7 @@ func TestSyncInputRelaysOnlyChanges(t *testing.T) {
 
 	a.SyncInput(true, false)
 
-	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_2}; !bytes.Equal(got, want) {
+	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after a sneak, want % x", got, want)
 	}
 
@@ -259,7 +259,7 @@ func TestSyncInputRelaysOnlyChanges(t *testing.T) {
 
 	a.SyncInput(false, false)
 
-	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_2}; !bytes.Equal(got, want) {
+	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after standing back up, want % x", got, want)
 	}
 }
@@ -274,17 +274,20 @@ func TestSyncSwingRelaysTheArm(t *testing.T) {
 	b.JoinPlayerSync()
 	bOut.Reset()
 
-	a.SyncSwing(false)
-	a.SyncSwing(true)
+	a.SyncSwing()
+	a.SyncSwing()
 
 	got := frames(t, bOut)
-	if len(got) != 2 || got[0][0] != animateId26_2 || got[1][0] != animateId26_2 {
-		t.Fatalf("b was sent % x, want two animate packets", bOut.Bytes())
+	if len(got) != 2 || got[0][0] != swingAnimationId26_3 || got[1][0] != swingAnimationId26_3 {
+		t.Fatalf("b was sent % x, want two swing animation packets", bOut.Bytes())
 	}
 
-	// Each animate is the entity, then the animation: main arm 0, offhand 3.
-	if got[0][2] != 0x00 || got[1][2] != 0x03 {
-		t.Errorf("animations = %#x and %#x, want the main arm then the offhand", got[0][2], got[1][2])
+	// Each swing is the entity, then the hand, the kind of swing and its
+	// duration: the main arm's whack, for the six ticks the default takes.
+	for i, frame := range got {
+		if want := []byte{swingAnimationId26_3, 0x01, 0x00, 0x01, 0x06}; !bytes.Equal(frame, want) {
+			t.Errorf("swing %d = % x, want % x: the main arm's whack for six ticks", i, frame, want)
+		}
 	}
 }
 
@@ -301,7 +304,7 @@ func TestShowPlayerCarriesTheStance(t *testing.T) {
 
 	b.JoinPlayerSync()
 
-	want := []byte{playerInfoUpdateId26_2, addEntityId26_2, setEntityDataId26_2}
+	want := []byte{playerInfoUpdateId26_3, addEntityId26_3, setEntityDataId26_3}
 	if got := packetIds(t, bOut); !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x joining beside a sneaking player, want % x", got, want)
 	}
@@ -372,8 +375,8 @@ func TestShowPlayerCarriesThePlayersOwnGameMode(t *testing.T) {
 	b.JoinPlayerSync()
 
 	entry := frames(t, bOut)[0]
-	if entry[0] != playerInfoUpdateId26_2 {
-		t.Fatalf("b's first packet = %#02x, want the player info update %#02x", entry[0], playerInfoUpdateId26_2)
+	if entry[0] != playerInfoUpdateId26_3 {
+		t.Fatalf("b's first packet = %#02x, want the player info update %#02x", entry[0], playerInfoUpdateId26_3)
 	}
 
 	// The entry ends with the game mode, the listed flag and the hat flag.

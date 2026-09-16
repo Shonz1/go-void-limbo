@@ -125,7 +125,7 @@ type fakeClient struct {
 	// gameMode the mode it is put in.
 	// joinedPlayerSync counts the handler putting it among the other players.
 	// The synced fields record what the move and input handlers passed along,
-	// syncedSwings which arms they swung, and syncedAfter how many packets had
+	// syncedSwings how many times they swung, and syncedAfter how many packets had
 	// been written when the join happened: the other players may only be shown
 	// a player that has already been sent its world.
 	entityId         int32
@@ -140,7 +140,7 @@ type fakeClient struct {
 	syncedOnGround   bool
 	syncedSneaking   bool
 	syncedSprinting  bool
-	syncedSwings     []bool
+	syncedSwings     int
 }
 
 func (c *fakeClient) EntityId() int32 { return c.entityId }
@@ -167,7 +167,7 @@ func (c *fakeClient) SyncRotation(yaw, pitch float32, onGround bool) {
 
 func (c *fakeClient) SyncGround(onGround bool) { c.syncedOnGround = onGround }
 
-func (c *fakeClient) SyncSwing(offHand bool) { c.syncedSwings = append(c.syncedSwings, offHand) }
+func (c *fakeClient) SyncSwing() { c.syncedSwings++ }
 
 func (c *fakeClient) SyncInput(sneaking, sprinting bool) {
 	c.syncedSneaking, c.syncedSprinting = sneaking, sprinting

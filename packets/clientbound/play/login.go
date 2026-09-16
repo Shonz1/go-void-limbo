@@ -103,11 +103,21 @@ func (s SpawnInfo) encode(ms *streams.MinecraftStream) error {
 		return err
 	}
 
-	if err := ms.WriteByte(byte(s.GameMode)); err != nil {
+	if err := ms.WriteVarInt(int32(s.GameMode)); err != nil {
 		return err
 	}
 
-	if err := ms.WriteByte(byte(s.PreviousGameMode)); err != nil {
+	// The previous mode is an optional, spelled as a var int that is zero
+	// for none and one more than the mode otherwise. 26.3 is where it took
+	// that form, and where the mode itself became a var int rather than a
+	// byte; every version before it reads a byte for each, with -1 for none,
+	// which the 26.3 step writes back.
+	previous := int32(0)
+	if s.PreviousGameMode != types.GameModeNone {
+		previous = int32(s.PreviousGameMode) + 1
+	}
+
+	if err := ms.WriteVarInt(previous); err != nil {
 		return err
 	}
 

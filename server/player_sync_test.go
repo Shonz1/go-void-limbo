@@ -12,15 +12,15 @@ import (
 	"github.com/Shonz1/go-void-limbo/types"
 )
 
-// The play phase packet ids at the version the peers below speak, 26.2.
+// The play phase packet ids at the version the peers below speak, 26.3.
 const (
 	addEntityId        = 0x01
-	gameEventId        = 0x26
-	playLoginId        = 0x31
-	playerInfoRemoveId = 0x45
-	playerInfoUpdateId = 0x46
-	playerPositionId   = 0x48
-	removeEntitiesId   = 0x4D
+	gameEventId        = 0x27
+	playLoginId        = 0x32
+	playerInfoRemoveId = 0x46
+	playerInfoUpdateId = 0x47
+	playerPositionId   = 0x49
+	removeEntitiesId   = 0x4E
 )
 
 // joinPlay drives one connection all the way into the world: an offline login,
@@ -45,7 +45,7 @@ func joinPlay(t *testing.T, srv *Server, username string) *testutil.LoginPeer {
 
 	peer := &testutil.LoginPeer{T: t, Conn: clientConn}
 
-	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseLogin))
+	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseLogin))
 	sendLoginStart(t, peer, username)
 	readSetCompression(t, peer)
 	readLoginSuccess(t, peer)

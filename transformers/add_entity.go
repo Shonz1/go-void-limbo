@@ -9,7 +9,9 @@ import (
 // registry gains entries almost every version, and the ones that sort before
 // the player shift its number, so the add entity packet -- encoded once, with
 // the latest id -- has its type field rewritten at every step where the number
-// moved. Each id here is read out of that version's own registry report. The
+// moved. Each id here is read out of that version's own registry report. 26.3
+// added three that sort before the player -- the cushion and the poplar boat
+// and chest boat -- so 26.2 sits three lower. The
 // number is not monotonic: 1.21.2 still had the transient creaking, which
 // 1.21.4 retired, so the player sits one higher there than on 1.21.4. And
 // 1.21.2 is where the biggest jump is, twenty entries: the boats and chest
@@ -24,6 +26,7 @@ import (
 // it spawns one from a packet of its own, which the 1.20.2 step rewrites the
 // add entity packet into.
 const (
+	playerEntityType26_3    = 159
 	playerEntityType26_2    = 156
 	playerEntityType26_1    = 155
 	playerEntityType1_21_11 = 155

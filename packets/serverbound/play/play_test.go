@@ -21,15 +21,33 @@ func decode(t *testing.T, decoder func(*streams.MinecraftStream) (types.Serverbo
 }
 
 func TestDecodeAcceptTeleportationServerboundPacket(t *testing.T) {
-	packet := decode(t, DecodeAcceptTeleportationServerboundPacket, []byte{0x80, 0x01})
+	body := []byte{0x80, 0x01} // the teleport id, 128
+	body = append(body,
+		0x3F, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // x, 0.5
+		0x40, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // y, 64
+		0xBF, 0xE0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // z, -0.5
+		0x42, 0xB4, 0x00, 0x00, // yaw, 90
+		0xC2, 0xB4, 0x00, 0x00, // pitch, -90
+	)
+
+	packet := decode(t, DecodeAcceptTeleportationServerboundPacket, body)
 
 	acceptTeleportation, ok := packet.(*AcceptTeleportationServerboundPacket)
 	if !ok {
 		t.Fatalf("expected *AcceptTeleportationServerboundPacket, got %T", packet)
 	}
 
-	if acceptTeleportation.TeleportId != 128 {
-		t.Errorf("TeleportId = %d, want 128", acceptTeleportation.TeleportId)
+	want := AcceptTeleportationServerboundPacket{TeleportId: 128, X: 0.5, Y: 64, Z: -0.5, Yaw: 90, Pitch: -90}
+	if *acceptTeleportation != want {
+		t.Errorf("decoded %+v, want %+v", *acceptTeleportation, want)
+	}
+}
+
+func TestDecodeAcceptTeleportationServerboundPacketRejectsABodyWithoutThePosition(t *testing.T) {
+	stream := streams.NewMinecraftStreamFromBuffer(bytes.NewBuffer([]byte{0x80, 0x01}))
+
+	if _, err := DecodeAcceptTeleportationServerboundPacket(stream); err == nil {
+		t.Error("error = nil, want an error for a body that stops after the teleport id")
 	}
 }
 
@@ -49,6 +67,7 @@ func TestDecodeEmptyBodiedPacketsConsumeNothing(t *testing.T) {
 	}{
 		{name: "player loaded", decoder: DecodePlayerLoadedServerboundPacket, want: &PlayerLoadedServerboundPacket{}},
 		{name: "client tick end", decoder: DecodeClientTickEndServerboundPacket, want: &ClientTickEndServerboundPacket{}},
+		{name: "punch", decoder: DecodePunchServerboundPacket, want: &PunchServerboundPacket{}},
 	}
 
 	for _, test := range tests {

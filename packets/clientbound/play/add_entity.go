@@ -10,7 +10,7 @@ import (
 // moves whenever a version adds an entity type that sorts before it; the
 // versions that number it differently get a transformer rewriting it on the
 // way down.
-const PlayerEntityTypeId = 156
+const PlayerEntityTypeId = 159
 
 // Angle converts degrees to the single byte the protocol packs an angle into:
 // 256 steps around the circle. Every rotation an entity packet carries is one

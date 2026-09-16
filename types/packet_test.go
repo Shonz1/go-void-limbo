@@ -11,13 +11,13 @@ import (
 func TestPrepareClientboundHoldsTheBodyDeflatedAndGivesItBackWhole(t *testing.T) {
 	body := append([]byte{0x2C}, bytes.Repeat([]byte("section"), 200)...)
 
-	prepared, err := PrepareClientbound(PhasePlay, ProtocolVersions.MINECRAFT_26_2, "LevelChunkWithLightClientboundPacket", body)
+	prepared, err := PrepareClientbound(PhasePlay, ProtocolVersions.MINECRAFT_26_3, "LevelChunkWithLightClientboundPacket", body)
 	if err != nil {
 		t.Fatalf("PrepareClientbound() error: %v", err)
 	}
 
-	if prepared.Phase != PhasePlay || prepared.Version != ProtocolVersions.MINECRAFT_26_2.ID {
-		t.Errorf("prepared for phase %d on protocol %d, want play on %d", prepared.Phase, prepared.Version, ProtocolVersions.MINECRAFT_26_2.ID)
+	if prepared.Phase != PhasePlay || prepared.Version != ProtocolVersions.MINECRAFT_26_3.ID {
+		t.Errorf("prepared for phase %d on protocol %d, want play on %d", prepared.Phase, prepared.Version, ProtocolVersions.MINECRAFT_26_3.ID)
 	}
 
 	if prepared.Size != int32(len(body)) {
@@ -43,7 +43,7 @@ func TestPrepareClientboundHoldsTheBodyDeflatedAndGivesItBackWhole(t *testing.T)
 		t.Errorf("Body() = % x, want the body as prepared", inflated)
 	}
 
-	if got := prepared.String(); !strings.Contains(got, "LevelChunkWithLightClientboundPacket") || !strings.Contains(got, "776") {
+	if got := prepared.String(); !strings.Contains(got, "LevelChunkWithLightClientboundPacket") || !strings.Contains(got, "777") {
 		t.Errorf("String() = %q, want the name and the protocol", got)
 	}
 

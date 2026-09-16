@@ -14,10 +14,10 @@ import (
 	"time"
 )
 
-// The protocol version the bots handshake as. 776 is Minecraft 26.2, the latest
+// The protocol version the bots handshake as. 777 is Minecraft 26.3, the latest
 // version this limbo speaks, so a bot is a client the server has no reason to
 // turn away.
-const protocolVersion = 776
+const protocolVersion = 777
 
 // The spawn the limbo teleports a joining player to, which is where a bot's
 // position updates wander around. It has to match the server's own spawn so the
@@ -40,9 +40,9 @@ const (
 	configFinish    = 0x03
 	configKeepAlive = 0x04
 
-	playKeepAlive      = 0x2C
-	playLogin          = 0x31
-	playPlayerPosition = 0x48
+	playKeepAlive      = 0x2D
+	playLogin          = 0x32
+	playPlayerPosition = 0x49
 )
 
 // The serverbound packet ids a bot sends. These are the ids the limbo resolves
@@ -205,9 +205,28 @@ func (b *bot) run(stop <-chan struct{}, onJoin func()) error {
 					return err
 				}
 			case playPlayerPosition:
-				teleportId, _, _ := readVarInt(bytes.NewReader(body))
+				// The acknowledgement is the teleport id, then where the bot
+				// put itself for it: the position and the rotation the packet
+				// carries, which sit right behind the id.
+				r := bytes.NewReader(body)
+				teleportId, _, _ := readVarInt(r)
 				ack := new(bytes.Buffer)
 				writeVarInt(ack, teleportId)
+				position := make([]byte, 24)
+				if _, err := io.ReadFull(r, position); err != nil {
+					return fmt.Errorf("player position: %w", err)
+				}
+				ack.Write(position)
+				// Past the position sit the delta movement, three doubles the
+				// acknowledgement does not repeat, and then the rotation.
+				if _, err := r.Seek(24, io.SeekCurrent); err != nil {
+					return fmt.Errorf("player position: %w", err)
+				}
+				rotation := make([]byte, 8)
+				if _, err := io.ReadFull(r, rotation); err != nil {
+					return fmt.Errorf("player position: %w", err)
+				}
+				ack.Write(rotation)
 				if err := b.write(sbAcceptTeleport, ack.Bytes()); err != nil {
 					return err
 				}

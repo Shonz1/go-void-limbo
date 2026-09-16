@@ -394,10 +394,10 @@ func decodeChunk(t *testing.T, version types.ProtocolVersion, packets []types.Cl
 		}
 	}
 
-	chunk.SkyLightMask = readLongArray(t, ms)
-	chunk.BlockLightMask = readLongArray(t, ms)
-	chunk.EmptySkyLightMask = readLongArray(t, ms)
-	chunk.EmptyBlockLightMask = readLongArray(t, ms)
+	chunk.SkyLightMask = readBitSet(t, version, ms)
+	chunk.BlockLightMask = readBitSet(t, version, ms)
+	chunk.EmptySkyLightMask = readBitSet(t, version, ms)
+	chunk.EmptyBlockLightMask = readBitSet(t, version, ms)
 	chunk.SkyLight = readByteArrays(t, ms)
 	chunk.BlockLight = readByteArrays(t, ms)
 
@@ -478,10 +478,10 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		t.Fatal("the light is not trusted at the edges, which a vanilla server of that version always says it is")
 	}
 
-	chunk.SkyLightMask = readLongArray(t, light)
-	chunk.BlockLightMask = readLongArray(t, light)
-	chunk.EmptySkyLightMask = readLongArray(t, light)
-	chunk.EmptyBlockLightMask = readLongArray(t, light)
+	chunk.SkyLightMask = readBitSet(t, version, light)
+	chunk.BlockLightMask = readBitSet(t, version, light)
+	chunk.EmptySkyLightMask = readBitSet(t, version, light)
+	chunk.EmptyBlockLightMask = readBitSet(t, version, light)
 	chunk.SkyLight = readByteArrays(t, light)
 	chunk.BlockLight = readByteArrays(t, light)
 
@@ -607,6 +607,35 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	}
 
 	return chunk
+}
+
+// readBitSet reads a light mask as the version lays a bit set out -- counted
+// bytes from 26.3 on, counted longs before it -- into at least one long, the
+// way the client's own bit set reads either back.
+func readBitSet(t *testing.T, version types.ProtocolVersion, ms *streams.MinecraftStream) []int64 {
+	t.Helper()
+
+	var longs []int64
+
+	if version.ID >= types.ProtocolVersions.MINECRAFT_26_3.ID {
+		bytes, err := ms.ReadByteArray(64)
+		if err != nil {
+			t.Fatalf("reading bit set bytes: %v", err)
+		}
+
+		longs = make([]int64, (len(bytes)+7)/8)
+		for i, b := range bytes {
+			longs[i/8] |= int64(b) << (8 * (i % 8))
+		}
+	} else {
+		longs = readLongArray(t, ms)
+	}
+
+	if len(longs) == 0 {
+		longs = []int64{0}
+	}
+
+	return longs
 }
 
 func readLongArray(t *testing.T, ms *streams.MinecraftStream) []int64 {
