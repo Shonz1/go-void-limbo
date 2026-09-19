@@ -178,7 +178,10 @@ Each version takes well under a minute, most of it the client's own wait for
 a spawn chunk, and the versions are spread over a pool of client containers
 that run at once. `E2E_CLIENTS` sets the pool's size and defaults to two; each
 client is a full Minecraft client that wants a few gigabytes of memory, so
-raise it as far as the machine running Docker allows.
+raise it as far as the machine running Docker allows. `E2E_SHARD`, written as
+`index/count` with the index counted from zero, keeps a run to its share of the
+versions, which is how several machines split the suite: `E2E_SHARD=0/8` is the
+first of eight.
 
 A load generator under [`cmd/loadtest`](cmd/loadtest/README.md) connects a
 crowd of simulated clients and reports what serving them costs.
@@ -187,8 +190,8 @@ crowd of simulated clients and reports what serving them costs.
 
 - Every pull request is built, vetted, formatted-checked and tested under the
   race detector, the Docker image is built without being pushed, and the
-  end-to-end suite has the real client of every version join the limbo on a
-  hosted runner.
+  end-to-end suite has the real client of every version join the limbo, the
+  versions dealt out over a matrix of hosted runners.
 - Every push to `main` builds the multi-platform image and publishes it to the
   GitHub Container Registry.
 

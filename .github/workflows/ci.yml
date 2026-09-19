@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 # A pull request that is pushed to again only needs its newest commit tested,
-# and the e2e job below is too heavy to leave running for a commit nobody will
+# and the e2e shards below are too heavy to leave running for a commit nobody will
 # merge. Runs on main are never cancelled, so every commit there keeps its
 # own verdict.
 concurrency:
@@ -72,13 +72,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  e2e:
-    name: Join with a real client
+  # The e2e suite launches a real client for every release name the server
+  # answers to, which is most of an hour on one runner. The matrix deals the
+  # releases out to this many runners instead, and the run takes as long as one
+  # share does. The count lives here alone: E2E_SHARD below carries it to the
+  # suite, which does the dealing.
+  e2e-shard:
+    name: Join with a real client (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # A cold run is the image download plus a launch of every version on two
-    # clients; the suite's own timeout is the ceiling, and this is a little
+    strategy:
+      # One shard failing says nothing about the releases in the others, and
+      # their verdicts are worth having in the same run.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      SHARD_COUNT: 8
+    # A share is a handful of versions, minutes of work after the image
+    # download; the suite's own timeout is the ceiling, and this is a little
     # above it so a hung run is reported by the suite rather than the runner.
-    timeout-minutes: 75
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
 
@@ -102,7 +115,26 @@ jobs:
 
       # Two clients at once is what a hosted runner's memory holds alongside
       # the anchor the position sync test keeps in the world.
-      - name: Test with a real client of every version
+      - name: Test with a real client of this shard's versions
         env:
           E2E_CLIENTS: "2"
-        run: go test -tags e2e -count=1 -timeout 60m -v ./e2e
+          E2E_SHARD: ${{ matrix.shard }}/${{ env.SHARD_COUNT }}
+        run: go test -tags e2e -count=1 -timeout 30m -v ./e2e
+
+  # The one check the shards answer to. The ruleset on main requires a check
+  # of this name, and a matrix reports one per shard under names that change
+  # with the shard count, so this job stands for all of them: it passes only
+  # when every shard did, and fails -- rather than being skipped, which a
+  # required check counts as passing -- when one failed or was cancelled.
+  e2e:
+    name: Join with a real client
+    runs-on: ubuntu-latest
+    needs: e2e-shard
+    if: ${{ always() }}
+    steps:
+      - name: Check every shard passed
+        env:
+          RESULT: ${{ needs.e2e-shard.result }}
+        run: |
+          echo "the shards finished with: $RESULT"
+          [ "$RESULT" = "success" ]
