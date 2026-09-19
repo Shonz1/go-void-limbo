@@ -23,7 +23,8 @@ func NewDefaultProvider() (*Provider, error) {
 		registries  func() ([]Registry, error)
 		tags        func() ([]TagSet, error)
 	}{
-		{types.ProtocolVersions.MINECRAFT_1_17_1.ID, registriesMinecraft1_17_1, tagsMinecraft1_17_1},
+		// 1.17 shares 1.17.1's set: the codecs and the tags' names are the same.
+		{types.ProtocolVersions.MINECRAFT_1_17.ID, registriesMinecraft1_17_1, tagsMinecraft1_17_1},
 		{types.ProtocolVersions.MINECRAFT_1_18.ID, registriesMinecraft1_18, tagsMinecraft1_18},
 		{types.ProtocolVersions.MINECRAFT_1_18_2.ID, registriesMinecraft1_18_2, tagsMinecraft1_18_2},
 		{types.ProtocolVersions.MINECRAFT_1_19.ID, registriesMinecraft1_19, tagsMinecraft1_19},
