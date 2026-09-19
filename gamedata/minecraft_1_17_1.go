@@ -16,6 +16,10 @@ import "github.com/Shonz1/go-void-limbo/nbt"
 // field the same in the two, read off the jars, the infiniburn tag named
 // plainly in both. The biome is 1.17.1's own, for two fields: see
 // plainsBiome1_17_1.
+//
+// A 1.17 client is sent this set as well: 1.17.1 changed no codec, added no
+// tag and retired none, the two jars' classes and tag directories agree, so
+// the set starts at 755 and serves 756 with it.
 func registriesMinecraft1_17_1() ([]Registry, error) {
 	registries := []Registry{
 		{Name: "minecraft:dimension_type", Entries: []Entry{

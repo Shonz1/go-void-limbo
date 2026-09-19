@@ -114,8 +114,9 @@ type blockStateProperty struct {
 // byte-identical tables -- so 757 numbers every state as 758 does. And so
 // does 1.17.1 below it: 1.18 raised the world and added no block to it, its
 // jar's report byte-identical to the two above, so 756 numbers every state
-// as 758 does as well.
+// as 758 does as well, and 755 with it: 1.17.1 changed no block.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_17.ID:    "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID:  "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_18.ID:    "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_18_2.ID:  "blockstates_minecraft_1_18_2.json",
@@ -149,6 +150,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // short grass, the one rename among the versions this server speaks, so
 // every version before it answers to both names.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_17.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_18.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_18_2.ID: {"minecraft:short_grass": "minecraft:grass"},

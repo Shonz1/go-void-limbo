@@ -322,26 +322,33 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:8] {
+	for _, version := range types.SupportedProtocolVersions[:9] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
 		}
 
-		if !bytes.Contains(body, codecs[version.ID]) {
-			t.Errorf("protocol %d: the login % x does not carry its registries % x", version.ID, body, codecs[version.ID])
+		// 1.17 reads 1.17.1's login as it stands, registries and dimension
+		// type included: nothing rewrites the login on the step between them.
+		source := version.ID
+		if source == types.ProtocolVersions.MINECRAFT_1_17.ID {
+			source = types.ProtocolVersions.MINECRAFT_1_17_1.ID
+		}
+
+		if !bytes.Contains(body, codecs[source]) {
+			t.Errorf("protocol %d: the login % x does not carry its registries % x", version.ID, body, codecs[source])
 		}
 
 		// 1.18.2, 1.18 and 1.17.1 spell the dimension type out behind the
 		// registries, each its own, and no other version does.
 		for other, dimensionType := range dimensionTypes {
-			if spelled, want := bytes.Contains(body, dimensionType), version.ID == other; spelled != want {
+			if spelled, want := bytes.Contains(body, dimensionType), source == other; spelled != want {
 				t.Errorf("protocol %d: the login spells protocol %d's dimension type out: %t, want %t", version.ID, other, spelled, want)
 			}
 		}
 
 		for other, codec := range codecs {
-			if other != version.ID && bytes.Contains(body, codec) {
+			if other != source && bytes.Contains(body, codec) {
 				t.Errorf("protocol %d: the login carries protocol %d's registries", version.ID, other)
 			}
 		}
@@ -388,7 +395,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[8:] {
+	for _, version := range types.SupportedProtocolVersions[9:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -402,5 +409,36 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		if !bytes.Equal(with, without) {
 			t.Errorf("protocol %d: the login differs with and without a registry codec, want it untouched", version.ID)
 		}
+	}
+}
+
+// 1.17 alone takes an entity out of the world with the id and nothing else,
+// where 1.17.1 and everything above it read a list: the packet keeps its id
+// on the step between the two and loses its count.
+func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
+	removal := &clientboundPlay.RemoveEntitiesClientboundPacket{EntityIds: []int32{128}}
+
+	cases := []struct {
+		version types.ProtocolVersion
+		want    []byte
+	}{
+		{types.ProtocolVersions.MINECRAFT_1_17, []byte{0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_17_1, []byte{0x01, 0x80, 0x01}},
+	}
+
+	for _, c := range cases {
+		body, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, c.version, removal)
+		if err != nil {
+			t.Fatalf("protocol %d: EncodeClientbound() error: %v", c.version.ID, err)
+		}
+
+		if !bytes.HasSuffix(body, c.want) || len(body) != len(c.want)+1 || body[0] != 0x3A {
+			t.Errorf("protocol %d: the removal is % x, want the id 0x3a and % x", c.version.ID, body, c.want)
+		}
+	}
+
+	several := &clientboundPlay.RemoveEntitiesClientboundPacket{EntityIds: []int32{1, 2}}
+	if _, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_17, several); err == nil {
+		t.Error("EncodeClientbound() of two entities in one 1.17 removal succeeded, want a refusal")
 	}
 }
