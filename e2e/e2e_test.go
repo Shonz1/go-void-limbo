@@ -18,6 +18,8 @@
 // how many clients run at once -- each is a full Minecraft client, a few
 // gigabytes of memory and every core it can find while it boots -- and the
 // versions are spread over that many containers. It defaults to two.
+// E2E_SHARD, as index/count, keeps a run to its share of the versions so
+// several machines can split the suite between them.
 package e2e
 
 import (
@@ -61,6 +63,11 @@ const (
 	clientsEnv     = "E2E_CLIENTS"
 	defaultClients = 2
 )
+
+// shardEnv names the environment variable that gives a run its share of the
+// releases, as index/count: 0/8 is the first of eight shards. It is how CI
+// spreads the suite over a matrix of runners; unset, a run launches them all.
+const shardEnv = "E2E_SHARD"
 
 // The client launches in demo mode, so the login is offline and the limbo has
 // to take the username on the connection's word: encryption stays off, exactly
@@ -115,32 +122,33 @@ const (
 // with another is still launched under each of its names, because the point of
 // this suite is the clients themselves, not the protocol table.
 func TestEveryVersionJoinsWithARealClient(t *testing.T) {
+	releases := releasesUnderTest(t)
 	port := startLimbo(t)
 	pool := startClientPool(t)
 
-	for _, version := range types.SupportedProtocolVersions {
-		for _, name := range version.Names {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
+	for _, release := range releases {
+		version, name := release.version, release.name
 
-				client := pool.acquire(t)
-				username := usernameFor(name)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-				client.joinLimbo(t, version, name, username, port)
+			client := pool.acquire(t)
+			username := usernameFor(name)
 
-				// A client that failed the configuration phase, choked on a
-				// mistransformed packet, or missed its keep alives would be
-				// back on the menu by now, with no player to report. Still
-				// having one after two keep alive intervals is the join
-				// having actually held.
-				time.Sleep(holdFor)
+			client.joinLimbo(t, version, name, username, port)
 
-				local := client.localPlayer(t)
-				if local.Name != username {
-					t.Fatalf("the client is in the world as %q, want %q", local.Name, username)
-				}
-			})
-		}
+			// A client that failed the configuration phase, choked on a
+			// mistransformed packet, or missed its keep alives would be
+			// back on the menu by now, with no player to report. Still
+			// having one after two keep alive intervals is the join
+			// having actually held.
+			time.Sleep(holdFor)
+
+			local := client.localPlayer(t)
+			if local.Name != username {
+				t.Fatalf("the client is in the world as %q, want %q", local.Name, username)
+			}
+		})
 	}
 }
 
@@ -172,6 +180,7 @@ const anchorUsername = "e2eSyncAnchor"
 // version leaving is checked as its own name going, not as the anchor being
 // left alone.
 func TestPositionSyncsWithEveryVersion(t *testing.T) {
+	releases := releasesUnderTest(t)
 	port := startLimbo(t)
 
 	anchor := startClientContainer(t)
@@ -182,74 +191,74 @@ func TestPositionSyncsWithEveryVersion(t *testing.T) {
 	latest := types.LatestProtocolVersion
 	anchor.joinLimbo(t, latest, latest.Names[len(latest.Names)-1], anchorUsername, port)
 
-	for _, version := range types.SupportedProtocolVersions {
-		for _, name := range version.Names {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
+	for _, release := range releases {
+		version, name := release.version, release.name
 
-				roamer := pool.acquire(t)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-				// Every subtest leans on the one anchor, so an anchor that
-				// fell off the server fails loudly here rather than as ten
-				// mysteries.
-				if _, err := anchor.players(); err != nil {
-					t.Fatalf("the anchor is no longer in the world: %v", err)
+			roamer := pool.acquire(t)
+
+			// Every subtest leans on the one anchor, so an anchor that
+			// fell off the server fails loudly here rather than as ten
+			// mysteries.
+			if _, err := anchor.players(); err != nil {
+				t.Fatalf("the anchor is no longer in the world: %v", err)
+			}
+
+			username := usernameFor(name)
+			roamer.joinLimbo(t, version, name, username, port)
+
+			// Each side is shown the other, under the name it logged in
+			// as. The name proves the player info entry; the position
+			// beside it is the spawn.
+			roamer.awaitRemotePlayer(t, anchorUsername, playersTimeout)
+			anchor.awaitRemotePlayer(t, username, playersTimeout)
+
+			// The anchor's endless fall shows on this version's screen
+			// almost at once, and this version's own fall shows on the
+			// anchor's once its chunk wait times out.
+			roamer.awaitRemoteFall(t, anchorUsername, anchorFallTimeout)
+			anchor.awaitRemoteFall(t, username, roamerFallTimeout)
+
+			// And what each client shows is where the other actually is,
+			// read back-to-back from both APIs. The tolerance covers the
+			// moments between the two reads -- a falling player covers
+			// ground quickly -- while staying far under the thousands of
+			// blocks a frozen view would be off by.
+			for _, side := range []struct {
+				name     string
+				observer *voidClient
+				subject  *voidClient
+			}{
+				{name: anchorUsername, observer: roamer, subject: anchor},
+				{name: username, observer: anchor, subject: roamer},
+			} {
+				seen := side.observer.remotePlayer(t, side.name).Position
+				actual := side.subject.localPlayer(t).Position
+
+				t.Logf("%s is shown at %+v and stands at %+v", side.name, seen, actual)
+
+				if diff := seen.Y - actual.Y; diff > positionTolerance || diff < -positionTolerance {
+					t.Errorf("%s is shown at y=%g but stands at y=%g", side.name, seen.Y, actual.Y)
 				}
 
-				username := usernameFor(name)
-				roamer.joinLimbo(t, version, name, username, port)
-
-				// Each side is shown the other, under the name it logged in
-				// as. The name proves the player info entry; the position
-				// beside it is the spawn.
-				roamer.awaitRemotePlayer(t, anchorUsername, playersTimeout)
-				anchor.awaitRemotePlayer(t, username, playersTimeout)
-
-				// The anchor's endless fall shows on this version's screen
-				// almost at once, and this version's own fall shows on the
-				// anchor's once its chunk wait times out.
-				roamer.awaitRemoteFall(t, anchorUsername, anchorFallTimeout)
-				anchor.awaitRemoteFall(t, username, roamerFallTimeout)
-
-				// And what each client shows is where the other actually is,
-				// read back-to-back from both APIs. The tolerance covers the
-				// moments between the two reads -- a falling player covers
-				// ground quickly -- while staying far under the thousands of
-				// blocks a frozen view would be off by.
-				for _, side := range []struct {
-					name     string
-					observer *voidClient
-					subject  *voidClient
-				}{
-					{name: anchorUsername, observer: roamer, subject: anchor},
-					{name: username, observer: anchor, subject: roamer},
-				} {
-					seen := side.observer.remotePlayer(t, side.name).Position
-					actual := side.subject.localPlayer(t).Position
-
-					t.Logf("%s is shown at %+v and stands at %+v", side.name, seen, actual)
-
-					if diff := seen.Y - actual.Y; diff > positionTolerance || diff < -positionTolerance {
-						t.Errorf("%s is shown at y=%g but stands at y=%g", side.name, seen.Y, actual.Y)
-					}
-
-					// Nothing moves a falling player sideways, so the
-					// horizontal coordinates are the spawn's to within a step.
-					if dx := seen.X - actual.X; dx > 1 || dx < -1 {
-						t.Errorf("%s is shown at x=%g but stands at x=%g", side.name, seen.X, actual.X)
-					}
-
-					if dz := seen.Z - actual.Z; dz > 1 || dz < -1 {
-						t.Errorf("%s is shown at z=%g but stands at z=%g", side.name, seen.Z, actual.Z)
-					}
+				// Nothing moves a falling player sideways, so the
+				// horizontal coordinates are the spawn's to within a step.
+				if dx := seen.X - actual.X; dx > 1 || dx < -1 {
+					t.Errorf("%s is shown at x=%g but stands at x=%g", side.name, seen.X, actual.X)
 				}
 
-				// Leaving is half the sync too: the player has to come back
-				// off the anchor's screen, list and world both.
-				roamer.ensureStopped(t)
-				anchor.awaitRemoteGone(t, username, playersTimeout)
-			})
-		}
+				if dz := seen.Z - actual.Z; dz > 1 || dz < -1 {
+					t.Errorf("%s is shown at z=%g but stands at z=%g", side.name, seen.Z, actual.Z)
+				}
+			}
+
+			// Leaving is half the sync too: the player has to come back
+			// off the anchor's screen, list and world both.
+			roamer.ensureStopped(t)
+			anchor.awaitRemoteGone(t, username, playersTimeout)
+		})
 	}
 }
 
@@ -346,6 +355,66 @@ func clientCount(t *testing.T) int {
 	}
 
 	return count
+}
+
+// release is one client the suite launches: a Mojang release identifier and
+// the protocol version it speaks.
+type release struct {
+	version types.ProtocolVersion
+	name    string
+}
+
+// releasesUnderTest is every name a supported version answers to, or this
+// shard's share of them when E2E_SHARD is set. The share is dealt round-robin
+// rather than cut in runs, so every shard holds old and new releases alike and
+// none of them is left with all the slow ones.
+func releasesUnderTest(t *testing.T) []release {
+	t.Helper()
+
+	var all []release
+
+	for _, version := range types.SupportedProtocolVersions {
+		for _, name := range version.Names {
+			all = append(all, release{version: version, name: name})
+		}
+	}
+
+	index, count := shard(t)
+
+	var mine []release
+
+	for i, r := range all {
+		if i%count == index {
+			mine = append(mine, r)
+		}
+	}
+
+	if len(mine) == 0 {
+		t.Skipf("shard %d of %d has no release to launch: there are only %d", index, count, len(all))
+	}
+
+	return mine
+}
+
+// shard reads E2E_SHARD, written as index/count with the index counted from
+// zero, or reports the one shard that holds everything when it is unset.
+func shard(t *testing.T) (index, count int) {
+	t.Helper()
+
+	raw, ok := os.LookupEnv(shardEnv)
+	if !ok || raw == "" {
+		return 0, 1
+	}
+
+	rawIndex, rawCount, found := strings.Cut(raw, "/")
+	index, indexErr := strconv.Atoi(rawIndex)
+	count, countErr := strconv.Atoi(rawCount)
+
+	if !found || indexErr != nil || countErr != nil || count < 1 || index < 0 || index >= count {
+		t.Fatalf("%s must be index/count with the index below the count, got %q", shardEnv, raw)
+	}
+
+	return index, count
 }
 
 // voidClient is the containerized Minecraft client, spoken to over its HTTP
