@@ -169,9 +169,9 @@ func (c *fakeClient) SyncGround(onGround bool) { c.syncedOnGround = onGround }
 
 func (c *fakeClient) SyncSwing() { c.syncedSwings++ }
 
-func (c *fakeClient) SyncInput(sneaking, sprinting bool) {
-	c.syncedSneaking, c.syncedSprinting = sneaking, sprinting
-}
+func (c *fakeClient) SyncSneaking(sneaking bool) { c.syncedSneaking = sneaking }
+
+func (c *fakeClient) SyncSprinting(sprinting bool) { c.syncedSprinting = sprinting }
 
 func (c *fakeClient) RegistryPackets() []types.ClientboundPacket { return c.registryPackets }
 

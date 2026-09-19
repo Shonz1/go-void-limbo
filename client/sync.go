@@ -228,17 +228,36 @@ func (c *Client) SyncSwing() {
 	}
 }
 
-// SyncInput records the movement keys this player is holding and, when the
-// two stances other players can see changed, shows them the change.
-func (c *Client) SyncInput(sneaking, sprinting bool) {
+// SyncSneaking records whether this player is sneaking and, when that
+// changed, shows the other players the change.
+func (c *Client) SyncSneaking(sneaking bool) {
+	c.syncStance(func() bool {
+		changed := c.sneaking != sneaking
+		c.sneaking = sneaking
+		return changed
+	})
+}
+
+// SyncSprinting is SyncSneaking for the other stance.
+func (c *Client) SyncSprinting(sprinting bool) {
+	c.syncStance(func() bool {
+		changed := c.sprinting != sprinting
+		c.sprinting = sprinting
+		return changed
+	})
+}
+
+// syncStance runs set under the lock and, when it reports a change, relays
+// both stances: they travel as one byte of entity data.
+func (c *Client) syncStance(set func() bool) {
 	ps := c.playerSync
 	if ps == nil {
 		return
 	}
 
 	c.mu.Lock()
-	changed := c.sneaking != sneaking || c.sprinting != sprinting
-	c.sneaking, c.sprinting = sneaking, sprinting
+	changed := set()
+	sneaking, sprinting := c.sneaking, c.sprinting
 	c.mu.Unlock()
 
 	// The client resends its input byte whenever any key changes, and most of

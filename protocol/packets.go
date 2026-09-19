@@ -283,6 +283,16 @@ var serverboundPackets = []serverboundPacket{
 		handler: handlers.HandleMovePlayerStatusServerboundPacket,
 		ids:     packetIds{protocol1_17: 0x14, protocol1_17_1: 0x14, protocol1_18: 0x14, protocol1_18_2: 0x14, protocol1_19: 0x16, protocol1_19_1: 0x17, protocol1_19_3: 0x16, protocol1_19_4: 0x17, protocol1_20: 0x17, protocol1_20_2: 0x19, protocol1_20_3: 0x1A, protocol1_20_5: 0x1D, protocol1_21: 0x1D, protocol1_21_2: 0x1F, protocol1_21_4: 0x1F, protocol1_21_5: 0x1F, protocol1_21_6: 0x20, protocol1_21_7: 0x20, protocol1_21_9: 0x20, protocol1_21_11: 0x20, protocol26_1: 0x21, protocol26_2: 0x21, protocol26_3: 0x21},
 	},
+	// The player command packet sits right in front of the player input at
+	// every version. It is where sprinting is reported, and below 1.21.6
+	// sneaking too.
+	{
+		phase:   types.PhasePlay,
+		packet:  reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}),
+		decoder: serverboundPlay.DecodePlayerCommandServerboundPacket,
+		handler: handlers.HandlePlayerCommandServerboundPacket,
+		ids:     packetIds{protocol1_17: 0x1B, protocol1_17_1: 0x1B, protocol1_18: 0x1B, protocol1_18_2: 0x1B, protocol1_19: 0x1D, protocol1_19_1: 0x1E, protocol1_19_3: 0x1D, protocol1_19_4: 0x1E, protocol1_20: 0x1E, protocol1_20_2: 0x21, protocol1_20_3: 0x22, protocol1_20_5: 0x25, protocol1_21: 0x25, protocol1_21_2: 0x27, protocol1_21_4: 0x28, protocol1_21_5: 0x28, protocol1_21_6: 0x29, protocol1_21_7: 0x29, protocol1_21_9: 0x29, protocol1_21_11: 0x29, protocol26_1: 0x2A, protocol26_2: 0x2A, protocol26_3: 0x2A},
+	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}),
@@ -1332,7 +1342,7 @@ func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodec
 		transformers.DowngradeRemoveEntitiesTo1_17,
 	)
 
-	// The seven packets this server reads that an older version lays out
+	// The eight packets this server reads that an older version lays out
 	// differently. An upgrade is registered against the version the client
 	// sent it at.
 	packetRegistry.RegisterUpgrade(
@@ -1340,6 +1350,13 @@ func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodec
 		types.ProtocolVersions.MINECRAFT_1_21,
 		reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}),
 		transformers.UpgradePlayerInputFrom1_21,
+	)
+
+	packetRegistry.RegisterUpgrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_21_5,
+		reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}),
+		transformers.UpgradePlayerCommandFrom1_21_5,
 	)
 
 	packetRegistry.RegisterUpgrade(
