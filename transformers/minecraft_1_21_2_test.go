@@ -241,7 +241,9 @@ func encodeEntityPositionSync(t *testing.T, packet *play.EntityPositionSyncClien
 // What comes out is a 1.21 teleport entity body: id, position, the two
 // rotations as angle bytes, on ground.
 func TestDowngradeEntityPositionSyncTo1_21IsATeleport(t *testing.T) {
-	body := encodeEntityPositionSync(t, &play.EntityPositionSyncClientboundPacket{
+	// The step reads the 26.2 body, which is what the packet writes carried
+	// down the 26.3 step first.
+	body := runTransformer(t, DowngradeEntityPositionSyncTo26_2, encodeEntityPositionSync(t, &play.EntityPositionSyncClientboundPacket{
 		EntityId: 2,
 		X:        0.5,
 		Y:        64,
@@ -249,7 +251,7 @@ func TestDowngradeEntityPositionSyncTo1_21IsATeleport(t *testing.T) {
 		Yaw:      90,
 		Pitch:    -90,
 		OnGround: true,
-	})
+	}))
 
 	got := runTransformer(t, DowngradeEntityPositionSyncTo1_21, body)
 
@@ -269,8 +271,8 @@ func TestDowngradeEntityPositionSyncTo1_21IsATeleport(t *testing.T) {
 }
 
 func TestDowngradeEntityPositionSyncTo1_21RefusesADelta(t *testing.T) {
-	// The packet's own encoder always writes a zero delta, so the body with
-	// one is built by hand: the id, the position, then a delta x of 1.
+	// The 26.3 step always writes a zero delta, so the body with one is
+	// built by hand: the id, the position, then a delta x of 1.
 	body := []byte{0x02}
 	body = append(body, make([]byte, 24)...)
 	body = binary.BigEndian.AppendUint64(body, math.Float64bits(1))

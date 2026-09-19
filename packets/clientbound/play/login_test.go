@@ -91,7 +91,7 @@ func TestLoginClientboundPacketEncode(t *testing.T) {
 		0x03, 'a', ':', 'b', // dimension
 		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // hashed seed
 		0x03,                // spectator
-		0x02,                // previous mode, adventure
+		0x03,                // previous mode, adventure, as one more than its number
 		0x01,                // is debug
 		0x00,                // is flat
 		0x01,                // a death location follows
@@ -132,9 +132,9 @@ func TestLoginClientboundPacketEncodeWithoutDeathLocation(t *testing.T) {
 		0x03, 'a', ':', 'b', // dimension
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // hashed seed
 		0x03, // spectator
-		// The absent previous mode is a signed byte the client reads as none,
-		// not a mode of its own.
-		0xff,
+		// The absent previous mode is a zero the client reads as none, every
+		// mode of its own sitting one above its number.
+		0x00,
 		0x00, // is debug
 		0x00, // is flat
 		0x00, // no death location, and so nothing follows it

@@ -450,7 +450,7 @@ func TestDefaultProviderCoversTheSupportedVersion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	packets := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
+	packets := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_3)
 	if len(packets) == 0 {
 		t.Fatal("expected registry packets for the supported protocol version")
 	}
@@ -481,7 +481,7 @@ func TestDefaultProviderCoversTheSupportedVersion(t *testing.T) {
 // mid-join and reports it as a missing element.
 func TestCrossRegistryReferencesResolve(t *testing.T) {
 	entries := map[string]map[string]bool{}
-	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_2) {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_3) {
 		names := make(map[string]bool, len(registry.Entries))
 		for _, entry := range registry.Entries {
 			names[entry.Name] = true
@@ -514,7 +514,7 @@ func TestDefaultProviderSendsTagsLast(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	packets := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
+	packets := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_3)
 	if len(packets) < 2 {
 		t.Fatalf("expected registries and a tags packet, got %d packets", len(packets))
 	}
@@ -559,7 +559,7 @@ func TestEncodeTags(t *testing.T) {
 // TestDefaultProviderEntriesRoundTrip decodes what the provider produced, so a
 // definition that encodes but is structurally wrong does not pass unnoticed.
 func TestDefaultProviderEntriesRoundTrip(t *testing.T) {
-	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_2) {
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_3) {
 		for _, entry := range registry.Entries {
 			if entry.Data == nil {
 				continue
@@ -2866,8 +2866,9 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 	old := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_1_21_11)
 	older := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_1)
 	newer := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_2)
+	latest := provider.PacketsFor(types.ProtocolVersions.MINECRAFT_26_3)
 
-	if len(oldest00000000) == 0 || len(oldest0000000) == 0 || len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 {
+	if len(oldest00000000) == 0 || len(oldest0000000) == 0 || len(oldest000000) == 0 || len(oldest00000) == 0 || len(oldest0000) == 0 || len(oldest000) == 0 || len(oldest00) == 0 || len(oldest0) == 0 || len(oldest1) == 0 || len(oldest2) == 0 || len(earliest) == 0 || len(first) == 0 || len(oldest) == 0 || len(old7) == 0 || len(old9) == 0 || len(old) == 0 || len(older) == 0 || len(newer) == 0 {
 		t.Fatal("a version was sent no packets at all, which is a client that never reaches the world")
 	}
 
@@ -3082,6 +3083,88 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 
 	if len(older) >= len(newer) {
 		t.Errorf("26.1 was sent %d packets and 26.2 %d, want fewer for 26.1", len(older), len(newer))
+	}
+
+	if len(newer) >= len(latest) {
+		t.Errorf("26.2 was sent %d packets and 26.3 %d, want fewer for 26.2", len(newer), len(latest))
+	}
+}
+
+// What 26.3 adds is what 26.2 must not be sent: the three registries 26.3
+// began to synchronize are registries a 26.2 client has never heard of, and a
+// registry it does not expect is not one it skips.
+func TestRegistriesFor26_2LeaveOutWhat26_3Added(t *testing.T) {
+	registries := map[string]bool{}
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_2) {
+		registries[registry.Name] = true
+	}
+
+	latest := map[string]bool{}
+	for _, registry := range mustLoadRegistries(t, registriesMinecraft26_3) {
+		latest[registry.Name] = true
+	}
+
+	for _, name := range []string{"minecraft:decorated_pot_pattern", "minecraft:block_transformer", "minecraft:worldgen/block_state_provider"} {
+		if registries[name] {
+			t.Errorf("26.2 is sent %s, which it does not synchronize", name)
+		}
+
+		if !latest[name] {
+			t.Errorf("26.3 is not sent %s, which it synchronizes", name)
+		}
+	}
+
+	if got, want := len(latest), 32; got != want {
+		t.Errorf("26.3 is sent %d registries, want the %d it synchronizes", got, want)
+	}
+
+	if got, want := len(registries), 29; got != want {
+		t.Errorf("26.2 is sent %d registries, want the %d it synchronizes", got, want)
+	}
+}
+
+// The tags each version asks for are its own jar's: 26.3 retired a handful of
+// block and item tags and added a good many more, and a client asking for a
+// tag it was never declared throws.
+func TestTagsFor26_2DeclareTheNamesThatVersionAsksFor(t *testing.T) {
+	names := func(sets []TagSet, registry string) map[string]bool {
+		for _, set := range sets {
+			if set.Registry != registry {
+				continue
+			}
+
+			out := make(map[string]bool, len(set.Tags))
+			for _, tag := range set.Tags {
+				out[tag.Name] = true
+			}
+
+			return out
+		}
+
+		return nil
+	}
+
+	older := names(mustLoadTags(t, tagsMinecraft26_2), "minecraft:item")
+	newer := names(mustLoadTags(t, tagsMinecraft26_3), "minecraft:item")
+
+	if older == nil || newer == nil {
+		t.Fatal("no item tags in one of the sets")
+	}
+
+	if !older["minecraft:brewing_fuel"] {
+		t.Error("26.2 is not sent minecraft:brewing_fuel, which it asks for")
+	}
+
+	if newer["minecraft:brewing_fuel"] {
+		t.Error("26.3 is sent minecraft:brewing_fuel, which it retired")
+	}
+
+	if !newer["minecraft:cushions"] {
+		t.Error("26.3 is not sent minecraft:cushions, which it asks for")
+	}
+
+	if older["minecraft:cushions"] {
+		t.Error("26.2 is sent minecraft:cushions, which it has never heard of")
 	}
 }
 

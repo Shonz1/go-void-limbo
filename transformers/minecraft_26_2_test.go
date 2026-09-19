@@ -9,23 +9,14 @@ import (
 	"testing"
 )
 
-// encode is what the packet writes at 26.2, which is the only version it knows
-// how to be and the input every downgrade starts from.
+// encode is the play login as a 26.2 client is sent it: what the packet writes
+// at 26.3, carried one step down. It is the input every downgrade below this
+// step starts from, which is why the 26.3 step is folded in here rather than
+// repeated by every test that needs a 26.2 body.
 func encode(t *testing.T, packet *play.LoginClientboundPacket) []byte {
 	t.Helper()
 
-	buf := new(bytes.Buffer)
-	stream := streams.NewMinecraftStreamFromBuffer(buf)
-
-	if err := packet.Encode(stream); err != nil {
-		t.Fatalf("failed to encode: %v", err)
-	}
-
-	if err := stream.Flush(); err != nil {
-		t.Fatalf("failed to flush: %v", err)
-	}
-
-	return buf.Bytes()
+	return runTransformer(t, DowngradePlayLoginTo26_2, encodePlayLogin(t, packet))
 }
 
 func downgrade(t *testing.T, body []byte) []byte {

@@ -36,6 +36,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 		types.ProtocolVersions.MINECRAFT_1_21_11.ID: 29671,
 		types.ProtocolVersions.MINECRAFT_26_1.ID:    29873,
 		types.ProtocolVersions.MINECRAFT_26_2.ID:    32366,
+		types.ProtocolVersions.MINECRAFT_26_3.ID:    35723,
 	}
 
 	for _, version := range types.SupportedProtocolVersions {

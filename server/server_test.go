@@ -47,7 +47,7 @@ func TestALoginIsEncryptedAndAuthenticated(t *testing.T) {
 
 	peer := &testutil.LoginPeer{T: t, Conn: clientConn}
 
-	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseLogin))
+	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseLogin))
 	sendLoginStart(t, peer, "notch")
 
 	request := peer.ReadPacket()
@@ -287,7 +287,7 @@ func TestALoginWithoutEncryptionIsTakenAtTheClientsWord(t *testing.T) {
 
 	peer := &testutil.LoginPeer{T: t, Conn: clientConn}
 
-	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseLogin))
+	sendHandshake(t, peer, "localhost", types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseLogin))
 	sendLoginStart(t, peer, "notch")
 
 	// Set compression rather than an encryption request: the login went
@@ -344,7 +344,7 @@ func TestALoginBehindAProxyIsTheAccountTheProxyForwarded(t *testing.T) {
 
 	peer := &testutil.LoginPeer{T: t, Conn: clientConn}
 
-	sendHandshake(t, peer, forwardedHandshakeAddress, types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseLogin))
+	sendHandshake(t, peer, forwardedHandshakeAddress, types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseLogin))
 	sendLoginStart(t, peer, "Notch")
 
 	// Set compression rather than an encryption request: the account was settled
@@ -419,7 +419,7 @@ func forwardingServerOn(t *testing.T, encryptionEnabled bool, sessionServer clie
 func openForwardedLogin(t *testing.T, peer *testutil.LoginPeer, serverAddress, username string) (int32, string) {
 	t.Helper()
 
-	sendHandshake(t, peer, serverAddress, types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseLogin))
+	sendHandshake(t, peer, serverAddress, types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseLogin))
 	sendLoginStart(t, peer, username)
 
 	request := peer.ReadPacket()
@@ -821,7 +821,7 @@ func ping(t *testing.T, peer *testutil.LoginPeer, payload int64) int64 {
 // asks before it has decided to connect, and the two answers it draws the entry
 // in its server list from.
 func TestAPingIsAnsweredWithWhatTheServerSaysAboutItself(t *testing.T) {
-	peer := statusServer(t, "A void limbo", types.ProtocolVersions.MINECRAFT_26_2.ID)
+	peer := statusServer(t, "A void limbo", types.ProtocolVersions.MINECRAFT_26_3.ID)
 
 	serverStatus := askStatus(t, peer)
 
@@ -831,7 +831,7 @@ func TestAPingIsAnsweredWithWhatTheServerSaysAboutItself(t *testing.T) {
 
 	// The version the client speaks, since this server speaks it too. Anything
 	// else here is a client that draws the server as one it cannot join.
-	want := types.ServerVersion{Name: "26.2", Protocol: types.ProtocolVersions.MINECRAFT_26_2.ID}
+	want := types.ServerVersion{Name: "26.3", Protocol: types.ProtocolVersions.MINECRAFT_26_3.ID}
 	if serverStatus.Version != want {
 		t.Errorf("version = %+v, want %+v", serverStatus.Version, want)
 	}
@@ -904,7 +904,7 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 		{name: "1.21.9", version: types.ProtocolVersions.MINECRAFT_1_21_9, want: types.ServerVersion{Name: "1.21.9", Protocol: types.ProtocolVersions.MINECRAFT_1_21_9.ID}},
 		{name: "1.21.11", version: types.ProtocolVersions.MINECRAFT_1_21_11, want: types.ServerVersion{Name: "1.21.11", Protocol: types.ProtocolVersions.MINECRAFT_1_21_11.ID}},
 		{name: "26.1", version: types.ProtocolVersions.MINECRAFT_26_1, want: types.ServerVersion{Name: "26.1", Protocol: types.ProtocolVersions.MINECRAFT_26_1.ID}},
-		{name: "26.2", version: types.ProtocolVersions.MINECRAFT_26_2, want: types.ServerVersion{Name: "26.2", Protocol: types.ProtocolVersions.MINECRAFT_26_2.ID}},
+		{name: "26.3", version: types.ProtocolVersions.MINECRAFT_26_3, want: types.ServerVersion{Name: "26.3", Protocol: types.ProtocolVersions.MINECRAFT_26_3.ID}},
 
 		// A version this server does not speak, which is what a handshake it
 		// could not place leaves behind, is told the latest instead.
@@ -932,7 +932,7 @@ func TestTheKeepAliveSweepDropsAClientThatNeverAnswers(t *testing.T) {
 	defer clientConn.Close()
 
 	c := client.New(conn, client.Config{PacketRegistry: srv.packetRegistry, Status: &srv.status})
-	c.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_26_2)
+	c.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_26_3)
 	c.SetPhase(types.PhasePlay)
 
 	srv.addClient(c)
@@ -956,8 +956,8 @@ func TestTheKeepAliveSweepDropsAClientThatNeverAnswers(t *testing.T) {
 		t.Fatalf("reading the keep alive: %v", err)
 	}
 
-	if frame[1] != 0x2C {
-		t.Fatalf("packet id = %#02x, want the play phase's keep alive %#02x", frame[1], 0x2C)
+	if frame[1] != 0x2D {
+		t.Fatalf("packet id = %#02x, want the play phase's keep alive %#02x", frame[1], 0x2D)
 	}
 
 	// Nothing is sent back, so the next sweep finds the keep alive unanswered.
@@ -972,7 +972,7 @@ func TestTheKeepAliveSweepDropsAClientThatNeverAnswers(t *testing.T) {
 // package's own tests.
 func TestStatusCountsPlayersJoiningAndLeaving(t *testing.T) {
 	s := &status{description: "A void limbo"}
-	version := types.ProtocolVersions.MINECRAFT_26_2
+	version := types.ProtocolVersions.MINECRAFT_26_3
 
 	if got, want := s.Status(version).Players, (types.ServerPlayers{Online: 0, Max: 1}); got != want {
 		t.Errorf("players = %+v, want %+v on a server nobody has joined", got, want)
@@ -1008,10 +1008,10 @@ func TestAHandshakeCannotPutAConnectionStraightIntoPlay(t *testing.T) {
 		int32(types.PhasePlay) + 256,
 		int32(types.PhasePlay) + 512,
 	} {
-		connect(t, srv, types.ProtocolVersions.MINECRAFT_26_2.ID, intent)
+		connect(t, srv, types.ProtocolVersions.MINECRAFT_26_3.ID, intent)
 	}
 
-	pinging := connect(t, srv, types.ProtocolVersions.MINECRAFT_26_2.ID, int32(types.PhaseStatus))
+	pinging := connect(t, srv, types.ProtocolVersions.MINECRAFT_26_3.ID, int32(types.PhaseStatus))
 
 	if got, want := askStatus(t, pinging).Players, (types.ServerPlayers{Online: 0, Max: 1}); got != want {
 		t.Errorf("players = %+v, want %+v: a handshake is not a login", got, want)

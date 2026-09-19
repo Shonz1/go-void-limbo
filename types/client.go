@@ -213,8 +213,11 @@ type PlayerSync interface {
 	SyncRotation(yaw, pitch float32, onGround bool)
 	SyncGround(onGround bool)
 
-	// SyncSwing plays this player's arm swing on everyone else's view of it.
-	SyncSwing(offHand bool)
+	// SyncSwing plays this player's main arm swing on everyone else's view
+	// of it. It is the main arm alone because 26.3's punch packet, which is
+	// what a swing reaches this server as, names no hand: an offhand swing
+	// is an item use there, which a limbo does not read.
+	SyncSwing()
 
 	// SyncInput records the movement keys this player is holding and shows the
 	// two stances other players can see -- sneaking and sprinting -- when they

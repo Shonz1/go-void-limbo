@@ -16,6 +16,13 @@ import (
 // rounding, which a server would have to track and correct. Absolute positions
 // need neither, and a limbo relaying a handful of players is not the situation
 // the deltas' smaller wire size was for.
+//
+// 26.3 describes the position as a path: a type, and for the one type this
+// server sends -- a straight line -- the point it ends at. The other type
+// spells out the steps in between, which is for an entity the server moved
+// through several points in one tick, and nothing here does. 26.2 and every
+// version before it read the point and then the delta movement the entity is
+// left with, which the 26.3 step puts back as zero.
 type EntityPositionSyncClientboundPacket struct {
 	EntityId int32
 
@@ -29,6 +36,10 @@ type EntityPositionSyncClientboundPacket struct {
 	OnGround bool
 }
 
+// positionPathLinear is the type of a path that is one straight line to its
+// end, the first of the two types the client knows.
+const positionPathLinear int32 = 0
+
 func (p *EntityPositionSyncClientboundPacket) String() string {
 	return fmt.Sprintf("EntityPositionSyncClientboundPacket{EntityId:%d X:%g Y:%g Z:%g Yaw:%g Pitch:%g OnGround:%t}",
 		p.EntityId, p.X, p.Y, p.Z, p.Yaw, p.Pitch, p.OnGround)
@@ -36,6 +47,10 @@ func (p *EntityPositionSyncClientboundPacket) String() string {
 
 func (p *EntityPositionSyncClientboundPacket) Encode(ms *streams.MinecraftStream) error {
 	if err := ms.WriteVarInt(p.EntityId); err != nil {
+		return err
+	}
+
+	if err := ms.WriteVarInt(positionPathLinear); err != nil {
 		return err
 	}
 
@@ -49,15 +64,6 @@ func (p *EntityPositionSyncClientboundPacket) Encode(ms *streams.MinecraftStream
 
 	if err := ms.WriteDouble(p.Z); err != nil {
 		return err
-	}
-
-	// The delta movement the entity is left with, zero because the next
-	// position is coming as another one of these rather than being
-	// extrapolated from a velocity.
-	for range 3 {
-		if err := ms.WriteDouble(0); err != nil {
-			return err
-		}
 	}
 
 	if err := ms.WriteFloat(p.Yaw); err != nil {

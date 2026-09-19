@@ -30,6 +30,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		{"minecraft_1_21_11", ProtocolVersions.MINECRAFT_1_21_11.ID, ProtocolVersions.MINECRAFT_1_21_11},
 		{"minecraft_26_1", ProtocolVersions.MINECRAFT_26_1.ID, ProtocolVersions.MINECRAFT_26_1},
 		{"minecraft_26_2", ProtocolVersions.MINECRAFT_26_2.ID, ProtocolVersions.MINECRAFT_26_2},
+		{"minecraft_26_3", ProtocolVersions.MINECRAFT_26_3.ID, ProtocolVersions.MINECRAFT_26_3},
 		{"unknown falls back to zero", 9999, ProtocolVersions.ZERO},
 	}
 
@@ -58,13 +59,13 @@ func TestSupportedProtocolVersionsAreOldestFirst(t *testing.T) {
 }
 
 func TestNextProtocolVersion(t *testing.T) {
-	next, ok := NextProtocolVersion(ProtocolVersions.MINECRAFT_26_1)
+	next, ok := NextProtocolVersion(ProtocolVersions.MINECRAFT_26_2)
 	if !ok {
-		t.Fatal("expected a version above 26.1")
+		t.Fatal("expected a version above 26.2")
 	}
 
-	if next.ID != ProtocolVersions.MINECRAFT_26_2.ID {
-		t.Errorf("expected 26.2 above 26.1, got %d", next.ID)
+	if next.ID != ProtocolVersions.MINECRAFT_26_3.ID {
+		t.Errorf("expected 26.3 above 26.2, got %d", next.ID)
 	}
 
 	if _, ok := NextProtocolVersion(LatestProtocolVersion); ok {
@@ -77,13 +78,13 @@ func TestNextProtocolVersion(t *testing.T) {
 }
 
 func TestPreviousProtocolVersion(t *testing.T) {
-	previous, ok := PreviousProtocolVersion(ProtocolVersions.MINECRAFT_26_2)
+	previous, ok := PreviousProtocolVersion(ProtocolVersions.MINECRAFT_26_3)
 	if !ok {
-		t.Fatal("expected a version below 26.2")
+		t.Fatal("expected a version below 26.3")
 	}
 
-	if previous.ID != ProtocolVersions.MINECRAFT_26_1.ID {
-		t.Errorf("expected 26.1 below 26.2, got %d", previous.ID)
+	if previous.ID != ProtocolVersions.MINECRAFT_26_2.ID {
+		t.Errorf("expected 26.2 below 26.3, got %d", previous.ID)
 	}
 
 	previous, ok = PreviousProtocolVersion(ProtocolVersions.MINECRAFT_26_1)

@@ -30,6 +30,7 @@ var ProtocolVersions = struct {
 	MINECRAFT_1_21_11 ProtocolVersion
 	MINECRAFT_26_1    ProtocolVersion
 	MINECRAFT_26_2    ProtocolVersion
+	MINECRAFT_26_3    ProtocolVersion
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
@@ -126,7 +127,14 @@ var ProtocolVersions = struct {
 	// The three releases of the 26.1 cycle share a protocol, so a client on any
 	// of them is a client on this version.
 	MINECRAFT_26_1: ProtocolVersion{ID: 775, Names: []string{"26.1", "26.1.1", "26.1.2"}},
+
+	// 26.2 has 776 to itself: the 26.1 releases share 775 below it and 26.3
+	// moved to 777.
 	MINECRAFT_26_2: ProtocolVersion{ID: 776, Names: []string{"26.2"}},
+
+	// 26.3 is the latest version, the one everything is implemented at: see
+	// LatestProtocolVersion.
+	MINECRAFT_26_3: ProtocolVersion{ID: 777, Names: []string{"26.3"}},
 }
 
 // SupportedProtocolVersions is every version a client may connect on, oldest
@@ -163,6 +171,7 @@ var SupportedProtocolVersions = []ProtocolVersion{
 	ProtocolVersions.MINECRAFT_1_21_11,
 	ProtocolVersions.MINECRAFT_26_1,
 	ProtocolVersions.MINECRAFT_26_2,
+	ProtocolVersions.MINECRAFT_26_3,
 }
 
 // LatestProtocolVersion is the version every packet is implemented at. Older
@@ -194,6 +203,7 @@ var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.MINECRAFT_1_21_11.ID: ProtocolVersions.MINECRAFT_1_21_11,
 	ProtocolVersions.MINECRAFT_26_1.ID:    ProtocolVersions.MINECRAFT_26_1,
 	ProtocolVersions.MINECRAFT_26_2.ID:    ProtocolVersions.MINECRAFT_26_2,
+	ProtocolVersions.MINECRAFT_26_3.ID:    ProtocolVersions.MINECRAFT_26_3,
 }
 
 func GetProtocolVersionById(id ProtocolId) ProtocolVersion {

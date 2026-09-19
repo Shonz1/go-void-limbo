@@ -115,9 +115,15 @@ func (p *LevelChunkWithLightClientboundPacket) Encode(ms *streams.MinecraftStrea
 
 // encode writes the light the way both packets carry it: the four masks,
 // then the sky arrays and the block arrays, each counted.
+//
+// A mask is a bit set, and 26.3 is where a bit set on the wire became a
+// counted array of bytes -- the set's own bytes, the low eight bits first,
+// with nothing after the last byte that holds a bit -- where every version
+// before it reads a counted array of longs, laid out the same way in longs.
+// The 26.3 step's transformers write the longs back for the versions below.
 func (l *LightData) encode(ms *streams.MinecraftStream) error {
 	for _, mask := range [][]int64{l.SkyLightMask, l.BlockLightMask, l.EmptySkyLightMask, l.EmptyBlockLightMask} {
-		if err := writeLongArray(ms, mask); err != nil {
+		if err := ms.WriteByteArray(BitSetBytes(mask)); err != nil {
 			return err
 		}
 	}
@@ -151,4 +157,22 @@ func writeLongArray(ms *streams.MinecraftStream, values []int64) error {
 	}
 
 	return nil
+}
+
+// BitSetBytes lays a bit set held as longs out as the bytes 26.3 sends it as:
+// each long's eight bytes lowest first, and the trailing bytes that hold no
+// bit left off, which is what the client's own bit set writes.
+func BitSetBytes(longs []int64) []byte {
+	bytes := make([]byte, 0, 8*len(longs))
+	for _, long := range longs {
+		for shift := 0; shift < 64; shift += 8 {
+			bytes = append(bytes, byte(long>>shift))
+		}
+	}
+
+	for len(bytes) > 0 && bytes[len(bytes)-1] == 0 {
+		bytes = bytes[:len(bytes)-1]
+	}
+
+	return bytes
 }

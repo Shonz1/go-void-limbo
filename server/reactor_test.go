@@ -64,7 +64,7 @@ func TestTheReactorServesAJoinedConnection(t *testing.T) {
 	serverConn, peer := tcpPair(t)
 
 	c := client.New(serverConn, client.Config{PacketRegistry: srv.packetRegistry, Status: &srv.status})
-	c.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_26_2)
+	c.SetProtocolVersion(types.ProtocolVersions.MINECRAFT_26_3)
 	c.SetPhase(types.PhasePlay)
 
 	srv.addClient(c)
@@ -89,8 +89,8 @@ func TestTheReactorServesAJoinedConnection(t *testing.T) {
 		t.Fatalf("reading the keep alive: %v", err)
 	}
 
-	if frame[1] != 0x2C {
-		t.Fatalf("packet id = %#02x, want the play phase's keep alive %#02x", frame[1], 0x2C)
+	if frame[1] != 0x2D {
+		t.Fatalf("packet id = %#02x, want the play phase's keep alive %#02x", frame[1], 0x2D)
 	}
 
 	// The answer, deliberately split across two writes with a breath between
@@ -143,7 +143,7 @@ func TestTheReactorServesAJoinedConnection(t *testing.T) {
 
 	left := false
 
-	version := types.ProtocolVersions.MINECRAFT_26_2
+	version := types.ProtocolVersions.MINECRAFT_26_3
 
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
 		if len(srv.snapshotClients()) == 0 && srv.status.Status(version).Players.Online == 0 {

@@ -208,21 +208,19 @@ func (c *Client) SyncGround(onGround bool) {
 	c.onGround = onGround
 }
 
-// SyncSwing plays this player's arm swing on everyone else's view of it.
-func (c *Client) SyncSwing(offHand bool) {
+// SyncSwing plays this player's main arm swing on everyone else's view of
+// it: the whack an empty hand makes, for as long as the client's own default
+// swing takes.
+func (c *Client) SyncSwing() {
 	ps := c.playerSync
 	if ps == nil {
 		return
 	}
 
-	animation := clientboundPlay.AnimationSwingMainArm
-	if offHand {
-		animation = clientboundPlay.AnimationSwingOffhand
-	}
-
-	swing := &clientboundPlay.AnimateClientboundPacket{
+	swing := &clientboundPlay.SwingAnimationClientboundPacket{
 		EntityId:  c.EntityId(),
-		Animation: animation,
+		Animation: clientboundPlay.SwingAnimationWhack,
+		Duration:  clientboundPlay.DefaultSwingDuration,
 	}
 
 	for _, other := range ps.others(c) {

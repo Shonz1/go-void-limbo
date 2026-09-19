@@ -60,7 +60,7 @@ func (s *fakeStatus) counts() (int, int) {
 // packet ids come from the real registration, so a keep alive written here is
 // framed exactly as one written to a connection.
 func newTestClient(phase types.Phase) (*Client, *bytes.Buffer) {
-	return newTestClientOn(phase, types.ProtocolVersions.MINECRAFT_26_2)
+	return newTestClientOn(phase, types.ProtocolVersions.MINECRAFT_26_3)
 }
 
 // newTestClientOn is newTestClient for the tests that care which version the
@@ -101,7 +101,7 @@ func newLoginClient(t *testing.T, sessionServer SessionServer) (*Client, net.Con
 	}
 
 	return &Client{
-		protocolVersion:   types.ProtocolVersions.MINECRAFT_26_2,
+		protocolVersion:   types.ProtocolVersions.MINECRAFT_26_3,
 		phase:             types.PhaseLogin,
 		conn:              server,
 		stream:            streams.NewMinecraftStreamFromNetConn(server),
@@ -149,7 +149,7 @@ func TestSendKeepAliveUsesThePacketIdOfThePhaseItIsSentIn(t *testing.T) {
 		packetId byte
 	}{
 		{name: "configuration", phase: types.PhaseConfiguration, packetId: 0x04},
-		{name: "play", phase: types.PhasePlay, packetId: 0x2C},
+		{name: "play", phase: types.PhasePlay, packetId: 0x2D},
 	}
 
 	for _, test := range tests {
@@ -231,7 +231,7 @@ func TestSendKeepAliveSendsNothingBetweenFinishConfigurationAndItsAcknowledgemen
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	keepAliveIdIn(t, buf.Bytes(), 0x2C)
+	keepAliveIdIn(t, buf.Bytes(), 0x2D)
 }
 
 func TestWritePacketRefusesAConfigurationPacketAfterFinishConfiguration(t *testing.T) {
@@ -275,7 +275,7 @@ func TestConfirmKeepAlive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	id := keepAliveIdIn(t, buf.Bytes(), 0x2C)
+	id := keepAliveIdIn(t, buf.Bytes(), 0x2D)
 
 	// An id that answers a keep alive the server never sent, or a different one
 	// from the one it is waiting on, says nothing about the connection being
@@ -307,7 +307,7 @@ func TestConfirmKeepAlive(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	keepAliveIdIn(t, buf.Bytes(), 0x2C)
+	keepAliveIdIn(t, buf.Bytes(), 0x2D)
 }
 
 func TestEnableCompressionAnnouncesTheThresholdInThePlainFraming(t *testing.T) {
@@ -889,7 +889,7 @@ func TestAuthenticateAsksAboutTheLoginTheConnectionIsIn(t *testing.T) {
 // connection that ended in play leaves it.
 func TestSetPhaseCountsTheMoveIntoPlayExactlyOnce(t *testing.T) {
 	status := new(fakeStatus)
-	joining := &Client{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, status: status}
+	joining := &Client{protocolVersion: types.ProtocolVersions.MINECRAFT_26_3, status: status}
 
 	joining.SetPhase(types.PhaseLogin)
 	joining.SetPhase(types.PhaseConfiguration)
@@ -920,7 +920,7 @@ func TestSetPhaseCountsTheMoveIntoPlayExactlyOnce(t *testing.T) {
 	// A connection that ended without ever joining leaves nothing behind.
 	// Counting it out would make every ping after it report fewer players than
 	// are there.
-	pinging := &Client{protocolVersion: types.ProtocolVersions.MINECRAFT_26_2, status: status}
+	pinging := &Client{protocolVersion: types.ProtocolVersions.MINECRAFT_26_3, status: status}
 	pinging.LeavePlay()
 
 	if _, leaves := status.counts(); leaves != 1 {
@@ -928,9 +928,9 @@ func TestSetPhaseCountsTheMoveIntoPlayExactlyOnce(t *testing.T) {
 	}
 }
 
-// A join is the packet the two versions disagree about, so what a 26.1 client is
-// sent has to be what a 26.2 client is sent with the online mode flag taken back
-// out of it.
+// A join is a packet the two versions disagree about, so what a 26.2 client is
+// sent has to be what a 26.3 client is sent with the previous game mode spelled
+// 26.2's way, under 26.2's own id.
 func TestWritePacketCarriesTheBodyDownToTheClientVersion(t *testing.T) {
 	join := func() *clientboundPlay.LoginClientboundPacket {
 		return &clientboundPlay.LoginClientboundPacket{
@@ -953,7 +953,7 @@ func TestWritePacketCarriesTheBodyDownToTheClientVersion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	older, olderBuf := newTestClientOn(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_1)
+	older, olderBuf := newTestClientOn(types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
 	if err := older.WritePacket(join()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -961,20 +961,24 @@ func TestWritePacketCarriesTheBodyDownToTheClientVersion(t *testing.T) {
 	latestId, latestBody := testutil.IdAndBody(t, latestBuf.Bytes())
 	olderId, olderBody := testutil.IdAndBody(t, olderBuf.Bytes())
 
-	// Both versions number the join the same, so the id is not what changes.
-	if latestId != 0x31 || olderId != 0x31 {
-		t.Errorf("join went out as %#02x to 26.2 and %#02x to 26.1, want %#02x to both", latestId, olderId, 0x31)
+	// 26.3 added a play packet in front of the join, so the two number it one
+	// apart.
+	if latestId != 0x32 || olderId != 0x31 {
+		t.Errorf("join went out as %#02x to 26.3 and %#02x to 26.2, want %#02x and %#02x", latestId, olderId, 0x32, 0x31)
 	}
 
-	if len(olderBody) != len(latestBody)-1 {
-		t.Fatalf("26.1 body is %d bytes and 26.2's is %d, want exactly one fewer", len(olderBody), len(latestBody))
+	if len(olderBody) != len(latestBody) {
+		t.Fatalf("26.2 body is %d bytes and 26.3's is %d, want the same", len(olderBody), len(latestBody))
 	}
 
-	// The flag is the second to last byte, and enforces secure chat behind it is
-	// what a 26.1 client reads in its place.
-	want := append(append([]byte{}, latestBody[:len(latestBody)-2]...), latestBody[len(latestBody)-1])
+	// The absent previous game mode is a zero to 26.3 and a -1 to 26.2. It
+	// sits eight bytes from the end: the two flags the debug, the flat, the
+	// death location, the portal cooldown and the sea level, then the online
+	// mode and enforces secure chat.
+	want := append([]byte{}, latestBody...)
+	want[len(want)-8] = 0xFF
 	if !bytes.Equal(olderBody, want) {
-		t.Errorf("26.1 body is\n%v\nwant\n%v", olderBody, want)
+		t.Errorf("26.2 body is\n%v\nwant\n%v", olderBody, want)
 	}
 }
 
@@ -1111,7 +1115,7 @@ func preparedKeepAlive(t *testing.T, phase types.Phase, version types.ProtocolVe
 
 func TestWritePacketWritesAPreparedPacketAsItStandsWhenItWouldHaveDeflatedIt(t *testing.T) {
 	client, buf := newTestClient(types.PhasePlay)
-	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_3)
 
 	// A threshold the nine byte body reaches, so the connection would have
 	// deflated it itself and the deflated bytes go out as they are.
@@ -1137,7 +1141,7 @@ func TestWritePacketWritesAPreparedPacketAsItStandsWhenItWouldHaveDeflatedIt(t *
 }
 
 func TestWritePacketInflatesAPreparedPacketTheConnectionWouldNotHaveDeflated(t *testing.T) {
-	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+	prepared, body := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_3)
 
 	// Told a threshold the body falls short of, the connection frames the body
 	// in full behind a data length of zero, the way it frames any other.
@@ -1171,7 +1175,7 @@ func TestWritePacketRefusesAPacketPreparedForAnotherPhaseOrVersion(t *testing.T)
 		version types.ProtocolVersion
 	}{
 		{name: "another version", phase: types.PhasePlay, version: types.ProtocolVersions.MINECRAFT_26_1},
-		{name: "another phase", phase: types.PhaseConfiguration, version: types.ProtocolVersions.MINECRAFT_26_2},
+		{name: "another phase", phase: types.PhaseConfiguration, version: types.ProtocolVersions.MINECRAFT_26_3},
 	}
 
 	for _, test := range tests {
@@ -1196,7 +1200,7 @@ func TestWritePacketRefusesAPacketPreparedForAnotherPhaseOrVersion(t *testing.T)
 // sends them as they are or the one that inflates them, however many
 // connections take either at once.
 func TestWritePacketLeavesAPreparedPacketUntouchedAcrossConnections(t *testing.T) {
-	prepared, _ := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_2)
+	prepared, _ := preparedKeepAlive(t, types.PhasePlay, types.ProtocolVersions.MINECRAFT_26_3)
 	deflated := append([]byte(nil), prepared.Deflated...)
 
 	var wg sync.WaitGroup

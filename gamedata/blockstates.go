@@ -61,7 +61,11 @@ type blockStateProperty struct {
 // blockStatesFiles is the table each version loads, keyed the way the registry
 // data files are.
 //
-// 1.21.9 names the 1.21.11 file rather than a copy because the two versions
+// 26.2 carries its own table below 26.3's: 777 is where the poplar wood
+// set, the wool and concrete slabs and stairs of every colour, the red
+// shrub, the shelf mushroom and the straw bed landed, ninety blocks in all
+// with no property changed on any older one, so 26.2 numbers 32,366 states
+// to 26.3's 35,723. 1.21.9 names the 1.21.11 file rather than a copy because the two versions
 // number every state identically: 774 added no block and reordered nothing,
 // which the generation checked by producing both tables from the two jars'
 // own reports and comparing them byte for byte. 1.21.7 gets no such sharing:
@@ -133,6 +137,7 @@ var blockStatesFiles = map[types.ProtocolId]string{
 	types.ProtocolVersions.MINECRAFT_1_21_11.ID: "blockstates_minecraft_1_21_11.json",
 	types.ProtocolVersions.MINECRAFT_26_1.ID:    "blockstates_minecraft_26_1.json",
 	types.ProtocolVersions.MINECRAFT_26_2.ID:    "blockstates_minecraft_26_2.json",
+	types.ProtocolVersions.MINECRAFT_26_3.ID:    "blockstates_minecraft_26_3.json",
 }
 
 // blockStateRenames is every block a version knows under an older name than

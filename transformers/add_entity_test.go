@@ -59,12 +59,12 @@ var testAddEntity = &play.AddEntityClientboundPacket{
 }
 
 // The registry steps rewrite the one var int and touch nothing else, so the
-// downgraded body is the original with two bytes swapped: 156 and 155 are both
-// two byte var ints, and 151 is one.
+// downgraded body is the original with two bytes swapped: 159, 156 and 155 are
+// all two byte var ints, and 151 is one.
 func TestDowngradeAddEntityRenumbersThePlayer(t *testing.T) {
 	body := encodeAddEntity(t, testAddEntity)
 
-	to26_1 := runTransformer(t, DowngradeAddEntityTo26_1, body)
+	to26_1 := runTransformer(t, DowngradeAddEntityTo26_1, runTransformer(t, DowngradeAddEntityTo26_2, body))
 
 	want := append(append([]byte{}, body[:17]...), 0x9B, 0x01) // 155 as a var int
 	want = append(want, body[19:]...)
@@ -87,7 +87,8 @@ func TestDowngradeAddEntityRenumbersThePlayer(t *testing.T) {
 
 func TestDowngradeAddEntityTo1_21_7MovesTheVelocityBack(t *testing.T) {
 	body := runTransformer(t, DowngradeAddEntityTo1_21_9,
-		runTransformer(t, DowngradeAddEntityTo26_1, encodeAddEntity(t, testAddEntity)))
+		runTransformer(t, DowngradeAddEntityTo26_1,
+			runTransformer(t, DowngradeAddEntityTo26_2, encodeAddEntity(t, testAddEntity))))
 
 	got := runTransformer(t, DowngradeAddEntityTo1_21_7, body)
 
