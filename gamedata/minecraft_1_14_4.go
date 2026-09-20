@@ -16,7 +16,8 @@ func registriesMinecraft1_14_4() ([]Registry, error) {
 // A 1.14.3 client is sent this set as well, and a 1.14.2 client, their jars
 // holding the same tags, and a 1.14.1 client, whose jar holds tags of the
 // same names: what 1.14.2 changed is which slabs the slabs are, and a tag is
-// sent here by its name alone. The set starts at 480.
+// sent here by its name alone. And a 1.14 client, whose jar holds the same
+// tags as 1.14.1's, contents and all. The set starts at 477.
 func tagsMinecraft1_14_4() ([]TagSet, error) {
 	_, tags, err := loadDataFile("minecraft_1_14_4.json")
 

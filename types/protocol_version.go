@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_14    ProtocolVersion
 	MINECRAFT_1_14_1  ProtocolVersion
 	MINECRAFT_1_14_2  ProtocolVersion
 	MINECRAFT_1_14_3  ProtocolVersion
@@ -47,7 +48,30 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.14.1 has 480 to itself, and is the oldest this server speaks. 1.14.2
+	// 1.14 has 477 to itself, and is the oldest this server speaks. 1.14.1 is
+	// a release of fixes that reach nothing this server says or reads. Its jar
+	// shifted the obfuscated names, so the two were compared class by class
+	// with the names taken out: every phase registers the same packets in the
+	// same order, 151 of them, and the bodies of two differ. The custom payload
+	// gained a channel for debugging raids, which no server sends a player,
+	// and the explosion floors its centre where 1.14's truncated it, writing
+	// and reading the same fields. The byte buffer, the metadata and its
+	// serializers, the poses, the palettes, the chunk section, the heightmap,
+	// the chunk and light packets, the login and the tags packet are the same
+	// code, and so are the client's chunk cache, its level, the local player,
+	// the living entity and the player. Of what differs behind them, the
+	// entity builds a block position out of its doubles rather than flooring
+	// them itself, its metadata defined in the same order; the chunk moved the
+	// unpacking of its tick lists into a method of its own, which a server
+	// runs; the tag collection loads its files another way and writes them as
+	// before; and the packet listener reads the debug payloads 1.14.1 changed.
+	// The two jars' blocks and commands reports are the same bytes, their tags
+	// the same files with the same contents, and their registries differ by
+	// one memory module a villager's brain keeps on the server. So everything
+	// said of 1.14.1 below is as true of 477.
+	MINECRAFT_1_14: ProtocolVersion{ID: 477, Names: []string{"1.14"}},
+
+	// 1.14.1 has 480 to itself. 1.14.2
 	// is a release of fixes that reach nothing this server says or reads, and
 	// its jar kept 1.14.1's obfuscated names, so the two compare entry by
 	// entry: 209 classes differ and one is new, a part of the chunk status.
@@ -303,6 +327,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_14,
 	ProtocolVersions.MINECRAFT_1_14_1,
 	ProtocolVersions.MINECRAFT_1_14_2,
 	ProtocolVersions.MINECRAFT_1_14_3,
@@ -348,6 +373,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_14.ID:    ProtocolVersions.MINECRAFT_1_14,
 	ProtocolVersions.MINECRAFT_1_14_1.ID:  ProtocolVersions.MINECRAFT_1_14_1,
 	ProtocolVersions.MINECRAFT_1_14_2.ID:  ProtocolVersions.MINECRAFT_1_14_2,
 	ProtocolVersions.MINECRAFT_1_14_3.ID:  ProtocolVersions.MINECRAFT_1_14_3,
@@ -438,7 +464,7 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2 and 1.14.1 -- is in play the
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 -- is in play the
 // moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
@@ -454,7 +480,7 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
 // so from it on the challenge is always encrypted, and 1.18.2, 1.18, 1.17.1,
-// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2 and 1.14.1, from before the key, have nothing to sign with and encrypt it as well:
+// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let

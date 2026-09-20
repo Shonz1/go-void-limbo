@@ -329,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[7:21] {
+	for _, version := range types.SupportedProtocolVersions[8:22] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -418,12 +418,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
-	// below it read the same login, and 1.14.4, 1.14.3, 1.14.2 and 1.14.1 that login less its
+	// below it read the same login, and 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
 	// seed and its last flag, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:7] {
+	for _, oldest := range types.SupportedProtocolVersions[:8] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -448,7 +448,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[21:] {
+	for _, version := range types.SupportedProtocolVersions[22:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -517,9 +517,13 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 // behind every one it does. And 485 to 490: 1.14.3 added no packet and
 // moved none, and changed the body of none this server sends or reads. And
 // 480 to 485: no packet class of 1.14.2's jar differs from 1.14.1's by a
-// byte, nor the class that registers them.
+// byte, nor the class that registers them. And 477 to 480: 1.14.1 added no
+// packet and moved none, and the two whose bodies it changed -- the custom
+// payload, which gained a debug channel, and the explosion, which floors
+// where it truncated -- are written and read field for field as before.
 func TestProtocolsOnAnEmptyStepAreNumberedAndLaidOutAsTheOneAbove(t *testing.T) {
 	steps := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1},
 		{types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2},
 		{types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3},
 		{types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4},
