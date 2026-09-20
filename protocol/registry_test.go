@@ -329,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:14] {
+	for _, version := range types.SupportedProtocolVersions[1:15] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -417,9 +417,36 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		t.Error("EncodeClientbound() of a 1.16.1 login with only 1.16.4's registries succeeded, want a refusal")
 	}
 
+	// 1.15.2 reads nothing of a registry out of its login, so its login
+	// carries no version's: not the registries, not a dimension type, not a
+	// name. It comes down the same chain all the same, which refuses it
+	// above without what 1.16.1's login is made of.
+	oldest := types.ProtocolVersions.MINECRAFT_1_15_2
+
+	body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
+	if err != nil {
+		t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
+	}
+
+	for other, codec := range codecs {
+		if bytes.Contains(body, codec) {
+			t.Errorf("protocol %d: the login carries protocol %d's registries", oldest.ID, other)
+		}
+	}
+
+	for other, dimensionType := range dimensionTypes {
+		if bytes.Contains(body, dimensionType) {
+			t.Errorf("protocol %d: the login spells protocol %d's dimension type out", oldest.ID, other)
+		}
+	}
+
+	if _, err := NewDefaultRegistry(nil).EncodeClientbound(types.PhasePlay, oldest, login); err == nil {
+		t.Errorf("protocol %d: EncodeClientbound() of a login with no registries above it succeeded, want a refusal", oldest.ID)
+	}
+
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[14:] {
+	for _, version := range types.SupportedProtocolVersions[15:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -620,5 +647,67 @@ func TestProtocol736IsNumberedAs751ButForTwoStretches(t *testing.T) {
 
 	if downgrades != 2 {
 		t.Errorf("%d downgrades are registered at 1.16.2, want the login and the chunk", downgrades)
+	}
+}
+
+// 1.15.2 numbers the play phase its own way, read off its jar's
+// registrations. Of what this server reads, everything behind the jigsaw
+// generate 1.16 added at 0x0F sits one lower. Of what it sends, everything
+// from the add global entity 1.16 retired, at 0x02, sits one higher, up to
+// the spawn position: 1.16 moved that from 0x4E to 0x42, so what lies between
+// the two is numbered alike, and what lies behind them one higher again.
+// Four packets are laid out differently, all on the way down.
+func TestProtocol578IsNumberedAs735ButForTheStretchesAroundFourPackets(t *testing.T) {
+	older, newer := types.ProtocolVersions.MINECRAFT_1_15_2.ID, types.ProtocolVersions.MINECRAFT_1_16.ID
+
+	for _, packet := range serverboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+		if packet.phase == types.PhasePlay && newerId >= 0x10 {
+			want--
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.15.2 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	for _, packet := range clientboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+
+		switch {
+		case packet.phase != types.PhasePlay:
+		case newerId == 0x42:
+			want = 0x4E
+		case newerId >= 0x02 && newerId < 0x42, newerId >= 0x4E:
+			want++
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.15.2 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	registry := NewDefaultRegistry(nil)
+	for key := range registry.upgrades {
+		if key.ProtocolID == older {
+			t.Errorf("an upgrade of %s is registered from 1.15.2, want none: 1.16 reads it as sent", key.PacketType.Name())
+		}
+	}
+
+	downgrades := 0
+	for key := range registry.downgrades {
+		if key.ProtocolID == newer {
+			downgrades++
+		}
+	}
+
+	if downgrades != 4 {
+		t.Errorf("%d downgrades are registered at 1.16, want the login success, the login, the chunk and the light", downgrades)
 	}
 }
