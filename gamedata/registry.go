@@ -58,6 +58,11 @@ var registryCodecProtocol = types.ProtocolVersions.MINECRAFT_1_20_2.ID
 // itself there, spelled out in full a second time: see encodeDimensionType.
 var inlineDimensionTypeProtocol = types.ProtocolVersions.MINECRAFT_1_19.ID
 
+// namedTagRegistriesProtocol is the first version to read the tags with the
+// registry each run belongs to named in front of it. A version before it
+// reads four runs it knows by their position: see encodeTags1_16_4.
+var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
+
 // combinedCompound is the one compound a client before 1.20.5 reads every
 // registry from: keyed by registry name, holding for each registry its name
 // again under "type" and under "value" a list of its entries, each an entry's

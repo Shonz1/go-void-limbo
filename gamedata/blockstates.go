@@ -114,8 +114,14 @@ type blockStateProperty struct {
 // byte-identical tables -- so 757 numbers every state as 758 does. And so
 // does 1.17.1 below it: 1.18 raised the world and added no block to it, its
 // jar's report byte-identical to the two above, so 756 numbers every state
-// as 758 does as well, and 755 with it: 1.17.1 changed no block.
+// as 758 does as well, and 755 with it: 1.17.1 changed no block. And 1.16.4
+// its own at the bottom: 755 is where the caves and cliffs blocks landed --
+// the copper, the deepslate, the amethyst, the dripstone, the candles, the
+// azalea and the rest, 135 blocks in all -- where the cauldron split by what
+// it holds and the grass path became the dirt path, so 754 numbers 17,112
+// states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_16_4.ID:  "blockstates_minecraft_1_16_4.json",
 	types.ProtocolVersions.MINECRAFT_1_17.ID:    "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID:  "blockstates_minecraft_1_18_2.json",
 	types.ProtocolVersions.MINECRAFT_1_18.ID:    "blockstates_minecraft_1_18_2.json",
@@ -147,9 +153,19 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // same properties under a different name, so a lookup under the newer name
 // reads the older name's entry, and a world saved after the rename translates
 // to the version before it without a hole. 1.20.3 is where grass became
-// short grass, the one rename among the versions this server speaks, so
-// every version before it answers to both names.
+// short grass, so every version before it answers to both names, and 1.17 is
+// where the grass path became the dirt path, which 1.16.4 answers to as
+// well. 1.17 is also where the cauldron split by what it holds, and the
+// water cauldron of three levels is 1.16.4's cauldron at the same levels,
+// which holds nothing else: the one rename that narrows a block rather than
+// matching it, since 1.16.4's cauldron has an empty level the water cauldron
+// cannot name.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_16_4.ID: {
+		"minecraft:short_grass":    "minecraft:grass",
+		"minecraft:dirt_path":      "minecraft:grass_path",
+		"minecraft:water_cauldron": "minecraft:cauldron",
+	},
 	types.ProtocolVersions.MINECRAFT_1_17.ID:   {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID: {"minecraft:short_grass": "minecraft:grass"},
 	types.ProtocolVersions.MINECRAFT_1_18.ID:   {"minecraft:short_grass": "minecraft:grass"},

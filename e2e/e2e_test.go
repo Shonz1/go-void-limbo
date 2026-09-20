@@ -41,6 +41,7 @@ import (
 	"github.com/Shonz1/go-void-limbo/protocol"
 	"github.com/Shonz1/go-void-limbo/server"
 	"github.com/Shonz1/go-void-limbo/types"
+	"github.com/Shonz1/go-void-limbo/world"
 )
 
 // clientImage is the containerized Minecraft client the test drives. The
@@ -87,7 +88,7 @@ const shardEnv = "E2E_SHARD"
 // milliseconds -- has the client drawing a world whose block atlas and
 // shaders do not exist yet, which crashes it on the spot: the versions from
 // 1.19 on happen to sit out the window on a profile key fetch that fails
-// slowly offline, and 1.18.2, 1.18, 1.17.1 and 1.17, with no key to fetch, do not. A player joins
+// slowly offline, and 1.18.2, 1.18, 1.17.1, 1.17 and 1.16.4, with no key to fetch, do not. A player joins
 // from a loaded client anyway, which is what this waits for; the reload takes
 // a few seconds here, and the settle is what a slow machine may need.
 const (
@@ -278,9 +279,19 @@ func startLimbo(t *testing.T) int {
 		t.Fatalf("generating the server key: %v", err)
 	}
 
+	packetRegistry := protocol.NewDefaultRegistry(gameData)
+
+	// The limbo under test has no world, which is the empty one main gives
+	// a server without one.
+	empty, err := world.Void(packetRegistry)
+	if err != nil {
+		t.Fatalf("building the empty world: %v", err)
+	}
+
 	srv := server.New(server.Config{
-		PacketRegistry:    protocol.NewDefaultRegistry(gameData),
+		PacketRegistry:    packetRegistry,
 		GameData:          gameData,
+		World:             empty,
 		KeyPair:           keyPair,
 		SessionServer:     auth.NewSessionServer(),
 		Description:       "go-void-limbo e2e",

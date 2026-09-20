@@ -38,7 +38,9 @@ type PacketEncoder interface {
 // The world's vertical bounds, in sections. These are the bounds the
 // dimension type in package gamedata announces (min_y -64, height 384), and
 // they have to be: the client sizes a chunk by the dimension it was told it is
-// in, and a chunk of any other size is a chunk it refuses.
+// in, and a chunk of any other size is a chunk it refuses. The one version
+// that is told no bounds, 1.16.4, holds sixteen sections from zero up, and
+// the 1.17 step's transformers cut what is built here down to those.
 const (
 	minSectionY  = -4
 	sectionCount = 24
@@ -150,13 +152,7 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 			return nil, err
 		}
 
-		builders = append(builders, &chunkBuilder{
-			blockStates:   blockStates,
-			version:       version,
-			fluidCounts:   version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
-			dataLengths:   version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
-			separateLight: version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID,
-		})
+		builders = append(builders, newChunkBuilder(version, blockStates))
 	}
 
 	// Room for the centre and every chunk within the radius, which is the
@@ -208,6 +204,61 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 	return world, nil
 }
 
+// voidSpawn is where a server with no world puts a joining player, which is
+// where package handlers puts one when it is given no world at all.
+var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
+
+// entitiesTickWithoutChunks is the first version whose client ticks an
+// entity wherever it stands. A client before it -- 1.16.4 -- ticks one only
+// while it holds the chunk the entity is in, and a tick is when another
+// player's relayed position is applied: on a server that sends no chunk,
+// every player such a client is shown stays frozen where it appeared.
+var entitiesTickWithoutChunks = types.ProtocolVersions.MINECRAFT_1_17
+
+// Void is the world of a server that has none: nothing at all for every
+// version whose client needs nothing, and for the ones from before
+// entitiesTickWithoutChunks the chunks around the spawn with no block in
+// them, which look like the nothing the other versions are shown and are
+// chunks all the same, so the players in them move.
+func Void(encoder PacketEncoder) (*World, error) {
+	world := &World{spawn: voidSpawn, packets: map[types.ProtocolId][]types.ClientboundPacket{}}
+
+	centerX, centerZ := voidSpawn.X>>4, voidSpawn.Z>>4
+
+	var blockStatesLoader gamedata.BlockStatesLoader
+
+	for _, version := range types.SupportedProtocolVersions {
+		if version.ID >= entitiesTickWithoutChunks.ID {
+			continue
+		}
+
+		blockStates, err := blockStatesLoader.For(version)
+		if err != nil {
+			return nil, err
+		}
+
+		builder := newChunkBuilder(version, blockStates)
+
+		packets := make([]types.ClientboundPacket, 0, maxChunks*builder.packetsPerChunk()+1)
+		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
+
+		for z := centerZ - chunkRadius; z <= centerZ+chunkRadius; z++ {
+			for x := centerX - chunkRadius; x <= centerX+chunkRadius; x++ {
+				prepared, err := builder.prepare(&anvil.Chunk{X: x, Z: z, MinSectionY: minSectionY, Status: fullChunkStatus}, encoder)
+				if err != nil {
+					return nil, fmt.Errorf("world: empty chunk %d,%d for protocol %d: %w", x, z, version.ID, err)
+				}
+
+				packets = append(packets, prepared...)
+			}
+		}
+
+		world.packets[version.ID] = packets
+	}
+
+	return world, nil
+}
+
 // PacketsFor returns the packets that put this world on the wire of a client
 // speaking version, the chunk cache centre first and then the chunks -- each
 // one packet, or on a version before 1.18 its light and then the chunk
@@ -250,12 +301,27 @@ type chunkBuilder struct {
 	// chunk transformer drops the light the chunk packet carries on the way
 	// down. The sections themselves are built as 1.18 reads them and carried
 	// down by that transformer as well, since 1.17.1 lays them out the same
-	// way but for what it leaves out.
+	// way but for what it leaves out. 1.16.4 reads the two packets in the
+	// same order, and the 1.17 step cuts both down to the sixteen sections
+	// its world holds: the blocks a world stores below zero or above 255
+	// are blocks a client on it is never shown.
 	separateLight bool
 
 	// substituted is every stored state this version had no number for, warned
 	// about once each rather than once per block.
 	substituted map[string]bool
+}
+
+// newChunkBuilder is the builder for one version, with what that version's
+// chunk packet carries and leaves out.
+func newChunkBuilder(version types.ProtocolVersion, blockStates *gamedata.BlockStates) *chunkBuilder {
+	return &chunkBuilder{
+		blockStates:   blockStates,
+		version:       version,
+		fluidCounts:   version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
+		dataLengths:   version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
+		separateLight: version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID,
+	}
 }
 
 // packetsPerChunk is how many packets one chunk goes out as on this

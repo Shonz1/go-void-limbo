@@ -26,6 +26,7 @@ var (
 	// says otherwise, which only the handshake itself is read at.
 	protocolZero = types.ProtocolVersions.ZERO.ID
 
+	protocol1_16_4  = types.ProtocolVersions.MINECRAFT_1_16_4.ID
 	protocol1_17    = types.ProtocolVersions.MINECRAFT_1_17.ID
 	protocol1_17_1  = types.ProtocolVersions.MINECRAFT_1_17_1.ID
 	protocol1_18    = types.ProtocolVersions.MINECRAFT_1_18.ID
@@ -150,7 +151,13 @@ type clientboundPacket struct {
 // does: 1.18.2 added no packet and retired none, in either direction, which
 // the two jars' protocol registrations agree on. 1.17.1 numbers everything
 // it reads as 1.18 does, 1.18 having added no serverbound packet, and 1.17
-// as 1.17.1 does, in both directions. The ids are written out
+// as 1.17.1 does, in both directions. 1.16.4 sits one higher than 1.17
+// through the play phase from the keep alive to the player input, with the
+// same three absences: it still has the container acknowledgement at 0x07,
+// in front of everything this server reads but the teleport
+// acknowledgement, which 1.17 retired for the pong at 0x1D, behind the
+// player input and in front of the swing, so the swing is numbered alike.
+// The login and status phases are numbered alike. The ids are written out
 // per version anyway rather than shared, because a table that says what
 // each version does is one where the version that differs shows up as a
 // different number rather than as an absence.
@@ -175,14 +182,14 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(status.StatusRequestServerboundPacket{}),
 		decoder: status.DecodeStatusRequestServerboundPacket,
 		handler: handlers.HandleStatusRequestServerboundPacket,
-		ids:     packetIds{protocolZero: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
+		ids:     packetIds{protocolZero: 0x00, protocol1_16_4: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
 	},
 	{
 		phase:   types.PhaseStatus,
 		packet:  reflect.TypeOf(status.PingRequestServerboundPacket{}),
 		decoder: status.DecodePingRequestServerboundPacket,
 		handler: handlers.HandlePingRequestServerboundPacket,
-		ids:     packetIds{protocolZero: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
+		ids:     packetIds{protocolZero: 0x01, protocol1_16_4: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
 	},
 
 	{
@@ -190,21 +197,21 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(login.LoginStartServerboundPacket{}),
 		decoder: login.DecodeLoginStartServerboundPacket,
 		handler: handlers.HandleLoginStartServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
+		ids:     packetIds{protocol1_16_4: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
 	},
 	{
 		phase:   types.PhaseLogin,
 		packet:  reflect.TypeOf(login.EncryptionResponseServerboundPacket{}),
 		decoder: login.DecodeEncryptionResponseServerboundPacket,
 		handler: handlers.HandleEncryptionResponseServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
+		ids:     packetIds{protocol1_16_4: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
 	},
 	{
 		phase:   types.PhaseLogin,
 		packet:  reflect.TypeOf(login.LoginPluginResponseServerboundPacket{}),
 		decoder: login.DecodeLoginPluginResponseServerboundPacket,
 		handler: handlers.HandleLoginPluginResponseServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x02, protocol1_17_1: 0x02, protocol1_18: 0x02, protocol1_18_2: 0x02, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x02, protocol1_20: 0x02, protocol1_20_2: 0x02, protocol1_20_3: 0x02, protocol1_20_5: 0x02, protocol1_21: 0x02, protocol1_21_2: 0x02, protocol1_21_4: 0x02, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x02},
+		ids:     packetIds{protocol1_16_4: 0x02, protocol1_17: 0x02, protocol1_17_1: 0x02, protocol1_18: 0x02, protocol1_18_2: 0x02, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x02, protocol1_20: 0x02, protocol1_20_2: 0x02, protocol1_20_3: 0x02, protocol1_20_5: 0x02, protocol1_21: 0x02, protocol1_21_2: 0x02, protocol1_21_4: 0x02, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x02},
 	},
 	{
 		phase:   types.PhaseLogin,
@@ -236,7 +243,7 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(serverboundCommon.KeepAliveServerboundPacket{}),
 		decoder: serverboundCommon.DecodeKeepAliveServerboundPacket,
 		handler: handlers.HandleKeepAliveServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x0F, protocol1_17_1: 0x0F, protocol1_18: 0x0F, protocol1_18_2: 0x0F, protocol1_19: 0x11, protocol1_19_1: 0x12, protocol1_19_3: 0x11, protocol1_19_4: 0x12, protocol1_20: 0x12, protocol1_20_2: 0x14, protocol1_20_3: 0x15, protocol1_20_5: 0x18, protocol1_21: 0x18, protocol1_21_2: 0x1A, protocol1_21_4: 0x1A, protocol1_21_5: 0x1A, protocol1_21_6: 0x1B, protocol1_21_7: 0x1B, protocol1_21_9: 0x1B, protocol1_21_11: 0x1B, protocol26_1: 0x1C, protocol26_2: 0x1C, protocol26_3: 0x1C},
+		ids:     packetIds{protocol1_16_4: 0x10, protocol1_17: 0x0F, protocol1_17_1: 0x0F, protocol1_18: 0x0F, protocol1_18_2: 0x0F, protocol1_19: 0x11, protocol1_19_1: 0x12, protocol1_19_3: 0x11, protocol1_19_4: 0x12, protocol1_20: 0x12, protocol1_20_2: 0x14, protocol1_20_3: 0x15, protocol1_20_5: 0x18, protocol1_21: 0x18, protocol1_21_2: 0x1A, protocol1_21_4: 0x1A, protocol1_21_5: 0x1A, protocol1_21_6: 0x1B, protocol1_21_7: 0x1B, protocol1_21_9: 0x1B, protocol1_21_11: 0x1B, protocol26_1: 0x1C, protocol26_2: 0x1C, protocol26_3: 0x1C},
 	},
 
 	// What a joined client sends on its own, none of which needs a reaction
@@ -245,7 +252,7 @@ var serverboundPackets = []serverboundPacket{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.AcceptTeleportationServerboundPacket{}),
 		decoder: serverboundPlay.DecodeAcceptTeleportationServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
+		ids:     packetIds{protocol1_16_4: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
 	},
 	{
 		phase:   types.PhasePlay,
@@ -260,28 +267,28 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerPositionServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerPositionServerboundPacket,
 		handler: handlers.HandleMovePlayerPositionServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x11, protocol1_17_1: 0x11, protocol1_18: 0x11, protocol1_18_2: 0x11, protocol1_19: 0x13, protocol1_19_1: 0x14, protocol1_19_3: 0x13, protocol1_19_4: 0x14, protocol1_20: 0x14, protocol1_20_2: 0x16, protocol1_20_3: 0x17, protocol1_20_5: 0x1A, protocol1_21: 0x1A, protocol1_21_2: 0x1C, protocol1_21_4: 0x1C, protocol1_21_5: 0x1C, protocol1_21_6: 0x1D, protocol1_21_7: 0x1D, protocol1_21_9: 0x1D, protocol1_21_11: 0x1D, protocol26_1: 0x1E, protocol26_2: 0x1E, protocol26_3: 0x1E},
+		ids:     packetIds{protocol1_16_4: 0x12, protocol1_17: 0x11, protocol1_17_1: 0x11, protocol1_18: 0x11, protocol1_18_2: 0x11, protocol1_19: 0x13, protocol1_19_1: 0x14, protocol1_19_3: 0x13, protocol1_19_4: 0x14, protocol1_20: 0x14, protocol1_20_2: 0x16, protocol1_20_3: 0x17, protocol1_20_5: 0x1A, protocol1_21: 0x1A, protocol1_21_2: 0x1C, protocol1_21_4: 0x1C, protocol1_21_5: 0x1C, protocol1_21_6: 0x1D, protocol1_21_7: 0x1D, protocol1_21_9: 0x1D, protocol1_21_11: 0x1D, protocol26_1: 0x1E, protocol26_2: 0x1E, protocol26_3: 0x1E},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerPositionRotationServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerPositionRotationServerboundPacket,
 		handler: handlers.HandleMovePlayerPositionRotationServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x12, protocol1_17_1: 0x12, protocol1_18: 0x12, protocol1_18_2: 0x12, protocol1_19: 0x14, protocol1_19_1: 0x15, protocol1_19_3: 0x14, protocol1_19_4: 0x15, protocol1_20: 0x15, protocol1_20_2: 0x17, protocol1_20_3: 0x18, protocol1_20_5: 0x1B, protocol1_21: 0x1B, protocol1_21_2: 0x1D, protocol1_21_4: 0x1D, protocol1_21_5: 0x1D, protocol1_21_6: 0x1E, protocol1_21_7: 0x1E, protocol1_21_9: 0x1E, protocol1_21_11: 0x1E, protocol26_1: 0x1F, protocol26_2: 0x1F, protocol26_3: 0x1F},
+		ids:     packetIds{protocol1_16_4: 0x13, protocol1_17: 0x12, protocol1_17_1: 0x12, protocol1_18: 0x12, protocol1_18_2: 0x12, protocol1_19: 0x14, protocol1_19_1: 0x15, protocol1_19_3: 0x14, protocol1_19_4: 0x15, protocol1_20: 0x15, protocol1_20_2: 0x17, protocol1_20_3: 0x18, protocol1_20_5: 0x1B, protocol1_21: 0x1B, protocol1_21_2: 0x1D, protocol1_21_4: 0x1D, protocol1_21_5: 0x1D, protocol1_21_6: 0x1E, protocol1_21_7: 0x1E, protocol1_21_9: 0x1E, protocol1_21_11: 0x1E, protocol26_1: 0x1F, protocol26_2: 0x1F, protocol26_3: 0x1F},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerRotationServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerRotationServerboundPacket,
 		handler: handlers.HandleMovePlayerRotationServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x13, protocol1_17_1: 0x13, protocol1_18: 0x13, protocol1_18_2: 0x13, protocol1_19: 0x15, protocol1_19_1: 0x16, protocol1_19_3: 0x15, protocol1_19_4: 0x16, protocol1_20: 0x16, protocol1_20_2: 0x18, protocol1_20_3: 0x19, protocol1_20_5: 0x1C, protocol1_21: 0x1C, protocol1_21_2: 0x1E, protocol1_21_4: 0x1E, protocol1_21_5: 0x1E, protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x1F, protocol1_21_11: 0x1F, protocol26_1: 0x20, protocol26_2: 0x20, protocol26_3: 0x20},
+		ids:     packetIds{protocol1_16_4: 0x14, protocol1_17: 0x13, protocol1_17_1: 0x13, protocol1_18: 0x13, protocol1_18_2: 0x13, protocol1_19: 0x15, protocol1_19_1: 0x16, protocol1_19_3: 0x15, protocol1_19_4: 0x16, protocol1_20: 0x16, protocol1_20_2: 0x18, protocol1_20_3: 0x19, protocol1_20_5: 0x1C, protocol1_21: 0x1C, protocol1_21_2: 0x1E, protocol1_21_4: 0x1E, protocol1_21_5: 0x1E, protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x1F, protocol1_21_11: 0x1F, protocol26_1: 0x20, protocol26_2: 0x20, protocol26_3: 0x20},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.MovePlayerStatusServerboundPacket{}),
 		decoder: serverboundPlay.DecodeMovePlayerStatusServerboundPacket,
 		handler: handlers.HandleMovePlayerStatusServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x14, protocol1_17_1: 0x14, protocol1_18: 0x14, protocol1_18_2: 0x14, protocol1_19: 0x16, protocol1_19_1: 0x17, protocol1_19_3: 0x16, protocol1_19_4: 0x17, protocol1_20: 0x17, protocol1_20_2: 0x19, protocol1_20_3: 0x1A, protocol1_20_5: 0x1D, protocol1_21: 0x1D, protocol1_21_2: 0x1F, protocol1_21_4: 0x1F, protocol1_21_5: 0x1F, protocol1_21_6: 0x20, protocol1_21_7: 0x20, protocol1_21_9: 0x20, protocol1_21_11: 0x20, protocol26_1: 0x21, protocol26_2: 0x21, protocol26_3: 0x21},
+		ids:     packetIds{protocol1_16_4: 0x15, protocol1_17: 0x14, protocol1_17_1: 0x14, protocol1_18: 0x14, protocol1_18_2: 0x14, protocol1_19: 0x16, protocol1_19_1: 0x17, protocol1_19_3: 0x16, protocol1_19_4: 0x17, protocol1_20: 0x17, protocol1_20_2: 0x19, protocol1_20_3: 0x1A, protocol1_20_5: 0x1D, protocol1_21: 0x1D, protocol1_21_2: 0x1F, protocol1_21_4: 0x1F, protocol1_21_5: 0x1F, protocol1_21_6: 0x20, protocol1_21_7: 0x20, protocol1_21_9: 0x20, protocol1_21_11: 0x20, protocol26_1: 0x21, protocol26_2: 0x21, protocol26_3: 0x21},
 	},
 	// The player command packet sits right in front of the player input at
 	// every version. It is where sprinting is reported, and below 1.21.6
@@ -291,14 +298,14 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}),
 		decoder: serverboundPlay.DecodePlayerCommandServerboundPacket,
 		handler: handlers.HandlePlayerCommandServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x1B, protocol1_17_1: 0x1B, protocol1_18: 0x1B, protocol1_18_2: 0x1B, protocol1_19: 0x1D, protocol1_19_1: 0x1E, protocol1_19_3: 0x1D, protocol1_19_4: 0x1E, protocol1_20: 0x1E, protocol1_20_2: 0x21, protocol1_20_3: 0x22, protocol1_20_5: 0x25, protocol1_21: 0x25, protocol1_21_2: 0x27, protocol1_21_4: 0x28, protocol1_21_5: 0x28, protocol1_21_6: 0x29, protocol1_21_7: 0x29, protocol1_21_9: 0x29, protocol1_21_11: 0x29, protocol26_1: 0x2A, protocol26_2: 0x2A, protocol26_3: 0x2A},
+		ids:     packetIds{protocol1_16_4: 0x1C, protocol1_17: 0x1B, protocol1_17_1: 0x1B, protocol1_18: 0x1B, protocol1_18_2: 0x1B, protocol1_19: 0x1D, protocol1_19_1: 0x1E, protocol1_19_3: 0x1D, protocol1_19_4: 0x1E, protocol1_20: 0x1E, protocol1_20_2: 0x21, protocol1_20_3: 0x22, protocol1_20_5: 0x25, protocol1_21: 0x25, protocol1_21_2: 0x27, protocol1_21_4: 0x28, protocol1_21_5: 0x28, protocol1_21_6: 0x29, protocol1_21_7: 0x29, protocol1_21_9: 0x29, protocol1_21_11: 0x29, protocol26_1: 0x2A, protocol26_2: 0x2A, protocol26_3: 0x2A},
 	},
 	{
 		phase:   types.PhasePlay,
 		packet:  reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}),
 		decoder: serverboundPlay.DecodePlayerInputServerboundPacket,
 		handler: handlers.HandlePlayerInputServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x1C, protocol1_17_1: 0x1C, protocol1_18: 0x1C, protocol1_18_2: 0x1C, protocol1_19: 0x1E, protocol1_19_1: 0x1F, protocol1_19_3: 0x1E, protocol1_19_4: 0x1F, protocol1_20: 0x1F, protocol1_20_2: 0x22, protocol1_20_3: 0x23, protocol1_20_5: 0x26, protocol1_21: 0x26, protocol1_21_2: 0x28, protocol1_21_4: 0x29, protocol1_21_5: 0x29, protocol1_21_6: 0x2A, protocol1_21_7: 0x2A, protocol1_21_9: 0x2A, protocol1_21_11: 0x2A, protocol26_1: 0x2B, protocol26_2: 0x2B, protocol26_3: 0x2B},
+		ids:     packetIds{protocol1_16_4: 0x1D, protocol1_17: 0x1C, protocol1_17_1: 0x1C, protocol1_18: 0x1C, protocol1_18_2: 0x1C, protocol1_19: 0x1E, protocol1_19_1: 0x1F, protocol1_19_3: 0x1E, protocol1_19_4: 0x1F, protocol1_20: 0x1F, protocol1_20_2: 0x22, protocol1_20_3: 0x23, protocol1_20_5: 0x26, protocol1_21: 0x26, protocol1_21_2: 0x28, protocol1_21_4: 0x29, protocol1_21_5: 0x29, protocol1_21_6: 0x2A, protocol1_21_7: 0x2A, protocol1_21_9: 0x2A, protocol1_21_11: 0x2A, protocol26_1: 0x2B, protocol26_2: 0x2B, protocol26_3: 0x2B},
 	},
 	// 26.3 has no swing packet: the punch is what it sends instead, with no
 	// hand, and the ids below 26.3 are the swing's, which the 26.2 step
@@ -308,7 +315,7 @@ var serverboundPackets = []serverboundPacket{
 		packet:  reflect.TypeOf(serverboundPlay.PunchServerboundPacket{}),
 		decoder: serverboundPlay.DecodePunchServerboundPacket,
 		handler: handlers.HandlePunchServerboundPacket,
-		ids:     packetIds{protocol1_17: 0x2C, protocol1_17_1: 0x2C, protocol1_18: 0x2C, protocol1_18_2: 0x2C, protocol1_19: 0x2E, protocol1_19_1: 0x2F, protocol1_19_3: 0x2F, protocol1_19_4: 0x2F, protocol1_20: 0x2F, protocol1_20_2: 0x32, protocol1_20_3: 0x33, protocol1_20_5: 0x36, protocol1_21: 0x36, protocol1_21_2: 0x38, protocol1_21_4: 0x3A, protocol1_21_5: 0x3B, protocol1_21_6: 0x3C, protocol1_21_7: 0x3C, protocol1_21_9: 0x3C, protocol1_21_11: 0x3C, protocol26_1: 0x3F, protocol26_2: 0x3F, protocol26_3: 0x2E},
+		ids:     packetIds{protocol1_16_4: 0x2C, protocol1_17: 0x2C, protocol1_17_1: 0x2C, protocol1_18: 0x2C, protocol1_18_2: 0x2C, protocol1_19: 0x2E, protocol1_19_1: 0x2F, protocol1_19_3: 0x2F, protocol1_19_4: 0x2F, protocol1_20: 0x2F, protocol1_20_2: 0x32, protocol1_20_3: 0x33, protocol1_20_5: 0x36, protocol1_21: 0x36, protocol1_21_2: 0x38, protocol1_21_4: 0x3A, protocol1_21_5: 0x3B, protocol1_21_6: 0x3C, protocol1_21_7: 0x3C, protocol1_21_9: 0x3C, protocol1_21_11: 0x3C, protocol26_1: 0x3F, protocol26_2: 0x3F, protocol26_3: 0x2E},
 	},
 	{
 		phase:   types.PhasePlay,
@@ -403,7 +410,17 @@ var serverboundPackets = []serverboundPacket{
 // 0x66, and the chunk keeps 0x22 under its older name, with the light
 // update beside it at 0x25. 1.17 numbers every phase as 1.17.1 does, the two
 // jars' registrations being the same list in the same order, the light
-// update included.
+// update included. 1.16.4 numbers the play phase its own way below that:
+// 1.17 added the vibration signal at 0x05, retired the container
+// acknowledgement for the ping further along, split the world border, the
+// combat and the title packets into a packet for each thing they said, and
+// added the clear titles and the action bar. So the add player sits alike
+// and the animate one lower, at 0x05; the keep alive, the chunk, the light
+// update and the login two lower; the player list -- at 0x32 -- the player
+// position, the remove entities and the rotate head four lower; the chunk
+// cache centre, the spawn position and the entity metadata nine lower; and
+// the teleport and the tags, at 0x5B, eleven lower. The login phase is
+// numbered alike.
 var clientboundPackets = []clientboundPacket{
 	// Answered on protocol zero as well, for the same reason the requests are
 	// read there: a client on a version this server does not speak still gets an
@@ -411,38 +428,38 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhaseStatus,
 		packet: reflect.TypeOf(clientboundStatus.StatusResponseClientboundPacket{}),
-		ids:    packetIds{protocolZero: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
+		ids:    packetIds{protocolZero: 0x00, protocol1_16_4: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
 	},
 	{
 		phase:  types.PhaseStatus,
 		packet: reflect.TypeOf(clientboundStatus.PongResponseClientboundPacket{}),
-		ids:    packetIds{protocolZero: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
+		ids:    packetIds{protocolZero: 0x01, protocol1_16_4: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
 	},
 
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.DisconnectClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
+		ids:    packetIds{protocol1_16_4: 0x00, protocol1_17: 0x00, protocol1_17_1: 0x00, protocol1_18: 0x00, protocol1_18_2: 0x00, protocol1_19: 0x00, protocol1_19_1: 0x00, protocol1_19_3: 0x00, protocol1_19_4: 0x00, protocol1_20: 0x00, protocol1_20_2: 0x00, protocol1_20_3: 0x00, protocol1_20_5: 0x00, protocol1_21: 0x00, protocol1_21_2: 0x00, protocol1_21_4: 0x00, protocol1_21_5: 0x00, protocol1_21_6: 0x00, protocol1_21_7: 0x00, protocol1_21_9: 0x00, protocol1_21_11: 0x00, protocol26_1: 0x00, protocol26_2: 0x00, protocol26_3: 0x00},
 	},
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.EncryptionRequestClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
+		ids:    packetIds{protocol1_16_4: 0x01, protocol1_17: 0x01, protocol1_17_1: 0x01, protocol1_18: 0x01, protocol1_18_2: 0x01, protocol1_19: 0x01, protocol1_19_1: 0x01, protocol1_19_3: 0x01, protocol1_19_4: 0x01, protocol1_20: 0x01, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
 	},
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.LoginSuccessClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x02, protocol1_17_1: 0x02, protocol1_18: 0x02, protocol1_18_2: 0x02, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x02, protocol1_20: 0x02, protocol1_20_2: 0x02, protocol1_20_3: 0x02, protocol1_20_5: 0x02, protocol1_21: 0x02, protocol1_21_2: 0x02, protocol1_21_4: 0x02, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x02},
+		ids:    packetIds{protocol1_16_4: 0x02, protocol1_17: 0x02, protocol1_17_1: 0x02, protocol1_18: 0x02, protocol1_18_2: 0x02, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x02, protocol1_20: 0x02, protocol1_20_2: 0x02, protocol1_20_3: 0x02, protocol1_20_5: 0x02, protocol1_21: 0x02, protocol1_21_2: 0x02, protocol1_21_4: 0x02, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x02},
 	},
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.SetCompressionClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x03, protocol1_17_1: 0x03, protocol1_18: 0x03, protocol1_18_2: 0x03, protocol1_19: 0x03, protocol1_19_1: 0x03, protocol1_19_3: 0x03, protocol1_19_4: 0x03, protocol1_20: 0x03, protocol1_20_2: 0x03, protocol1_20_3: 0x03, protocol1_20_5: 0x03, protocol1_21: 0x03, protocol1_21_2: 0x03, protocol1_21_4: 0x03, protocol1_21_5: 0x03, protocol1_21_6: 0x03, protocol1_21_7: 0x03, protocol1_21_9: 0x03, protocol1_21_11: 0x03, protocol26_1: 0x03, protocol26_2: 0x03, protocol26_3: 0x03},
+		ids:    packetIds{protocol1_16_4: 0x03, protocol1_17: 0x03, protocol1_17_1: 0x03, protocol1_18: 0x03, protocol1_18_2: 0x03, protocol1_19: 0x03, protocol1_19_1: 0x03, protocol1_19_3: 0x03, protocol1_19_4: 0x03, protocol1_20: 0x03, protocol1_20_2: 0x03, protocol1_20_3: 0x03, protocol1_20_5: 0x03, protocol1_21: 0x03, protocol1_21_2: 0x03, protocol1_21_4: 0x03, protocol1_21_5: 0x03, protocol1_21_6: 0x03, protocol1_21_7: 0x03, protocol1_21_9: 0x03, protocol1_21_11: 0x03, protocol26_1: 0x03, protocol26_2: 0x03, protocol26_3: 0x03},
 	},
 	{
 		phase:  types.PhaseLogin,
 		packet: reflect.TypeOf(clientboundLogin.LoginPluginRequestClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x04, protocol1_17_1: 0x04, protocol1_18: 0x04, protocol1_18_2: 0x04, protocol1_19: 0x04, protocol1_19_1: 0x04, protocol1_19_3: 0x04, protocol1_19_4: 0x04, protocol1_20: 0x04, protocol1_20_2: 0x04, protocol1_20_3: 0x04, protocol1_20_5: 0x04, protocol1_21: 0x04, protocol1_21_2: 0x04, protocol1_21_4: 0x04, protocol1_21_5: 0x04, protocol1_21_6: 0x04, protocol1_21_7: 0x04, protocol1_21_9: 0x04, protocol1_21_11: 0x04, protocol26_1: 0x04, protocol26_2: 0x04, protocol26_3: 0x04},
+		ids:    packetIds{protocol1_16_4: 0x04, protocol1_17: 0x04, protocol1_17_1: 0x04, protocol1_18: 0x04, protocol1_18_2: 0x04, protocol1_19: 0x04, protocol1_19_1: 0x04, protocol1_19_3: 0x04, protocol1_19_4: 0x04, protocol1_20: 0x04, protocol1_20_2: 0x04, protocol1_20_3: 0x04, protocol1_20_5: 0x04, protocol1_21: 0x04, protocol1_21_2: 0x04, protocol1_21_4: 0x04, protocol1_21_5: 0x04, protocol1_21_6: 0x04, protocol1_21_7: 0x04, protocol1_21_9: 0x04, protocol1_21_11: 0x04, protocol26_1: 0x04, protocol26_2: 0x04, protocol26_3: 0x04},
 	},
 
 	{
@@ -460,14 +477,14 @@ var clientboundPackets = []clientboundPacket{
 		packet: reflect.TypeOf(clientboundConfiguration.RegistryDataClientboundPacket{}),
 		ids:    packetIds{protocol1_20_2: 0x05, protocol1_20_3: 0x05, protocol1_20_5: 0x07, protocol1_21: 0x07, protocol1_21_2: 0x07, protocol1_21_4: 0x07, protocol1_21_5: 0x07, protocol1_21_6: 0x07, protocol1_21_7: 0x07, protocol1_21_9: 0x07, protocol1_21_11: 0x07, protocol26_1: 0x07, protocol26_2: 0x07, protocol26_3: 0x07},
 	},
-	// The same tags in the one phase 1.20, 1.19.4, 1.19.3 and 1.19.1 have to read them in: a
+	// The same tags in the one phase 1.20 and every version below it have to read them in: a
 	// client before 1.20.2 has no configuration phase, and is sent them in
 	// play right after the login, the way a vanilla server of that version
 	// does.
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x66, protocol1_17_1: 0x66, protocol1_18: 0x67, protocol1_18_2: 0x67, protocol1_19: 0x68, protocol1_19_1: 0x6B, protocol1_19_3: 0x6A, protocol1_19_4: 0x6E, protocol1_20: 0x6E},
+		ids:    packetIds{protocol1_16_4: 0x5B, protocol1_17: 0x66, protocol1_17_1: 0x66, protocol1_18: 0x67, protocol1_18_2: 0x67, protocol1_19: 0x68, protocol1_19_1: 0x6B, protocol1_19_3: 0x6A, protocol1_19_4: 0x6E, protocol1_20: 0x6E},
 	},
 	{
 		phase:  types.PhaseConfiguration,
@@ -483,7 +500,7 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x04, protocol1_17_1: 0x04, protocol1_18: 0x04, protocol1_18_2: 0x04, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x03, protocol1_20: 0x03, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
+		ids:    packetIds{protocol1_16_4: 0x04, protocol1_17: 0x04, protocol1_17_1: 0x04, protocol1_18: 0x04, protocol1_18_2: 0x04, protocol1_19: 0x02, protocol1_19_1: 0x02, protocol1_19_3: 0x02, protocol1_19_4: 0x03, protocol1_20: 0x03, protocol1_20_2: 0x01, protocol1_20_3: 0x01, protocol1_20_5: 0x01, protocol1_21: 0x01, protocol1_21_2: 0x01, protocol1_21_4: 0x01, protocol1_21_5: 0x01, protocol1_21_6: 0x01, protocol1_21_7: 0x01, protocol1_21_9: 0x01, protocol1_21_11: 0x01, protocol26_1: 0x01, protocol26_2: 0x01, protocol26_3: 0x01},
 	},
 	// 26.2 has no swing animation: 26.3 introduced it, and before it the
 	// animate packet was how an arm swing was played on an entity. The ids
@@ -492,7 +509,7 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.SwingAnimationClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x06, protocol1_17_1: 0x06, protocol1_18: 0x06, protocol1_18_2: 0x06, protocol1_19: 0x03, protocol1_19_1: 0x03, protocol1_19_3: 0x03, protocol1_19_4: 0x04, protocol1_20: 0x04, protocol1_20_2: 0x03, protocol1_20_3: 0x03, protocol1_20_5: 0x03, protocol1_21: 0x03, protocol1_21_2: 0x03, protocol1_21_4: 0x03, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x7B},
+		ids:    packetIds{protocol1_16_4: 0x05, protocol1_17: 0x06, protocol1_17_1: 0x06, protocol1_18: 0x06, protocol1_18_2: 0x06, protocol1_19: 0x03, protocol1_19_1: 0x03, protocol1_19_3: 0x03, protocol1_19_4: 0x04, protocol1_20: 0x04, protocol1_20_2: 0x03, protocol1_20_3: 0x03, protocol1_20_5: 0x03, protocol1_21: 0x03, protocol1_21_2: 0x03, protocol1_21_4: 0x03, protocol1_21_5: 0x02, protocol1_21_6: 0x02, protocol1_21_7: 0x02, protocol1_21_9: 0x02, protocol1_21_11: 0x02, protocol26_1: 0x02, protocol26_2: 0x02, protocol26_3: 0x7B},
 	},
 	// 1.21 has no entity position sync: 1.21.2 introduced it, and before it
 	// the teleport entity packet was how an entity was put where the server
@@ -502,7 +519,7 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.EntityPositionSyncClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x61, protocol1_17_1: 0x61, protocol1_18: 0x62, protocol1_18_2: 0x62, protocol1_19: 0x63, protocol1_19_1: 0x66, protocol1_19_3: 0x64, protocol1_19_4: 0x68, protocol1_20: 0x68, protocol1_20_2: 0x6B, protocol1_20_3: 0x6D, protocol1_20_5: 0x70, protocol1_21: 0x70, protocol1_21_2: 0x20, protocol1_21_4: 0x20, protocol1_21_5: 0x1F, protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x23, protocol1_21_11: 0x23, protocol26_1: 0x23, protocol26_2: 0x23, protocol26_3: 0x23},
+		ids:    packetIds{protocol1_16_4: 0x56, protocol1_17: 0x61, protocol1_17_1: 0x61, protocol1_18: 0x62, protocol1_18_2: 0x62, protocol1_19: 0x63, protocol1_19_1: 0x66, protocol1_19_3: 0x64, protocol1_19_4: 0x68, protocol1_20: 0x68, protocol1_20_2: 0x6B, protocol1_20_3: 0x6D, protocol1_20_5: 0x70, protocol1_21: 0x70, protocol1_21_2: 0x20, protocol1_21_4: 0x20, protocol1_21_5: 0x1F, protocol1_21_6: 0x1F, protocol1_21_7: 0x1F, protocol1_21_9: 0x23, protocol1_21_11: 0x23, protocol26_1: 0x23, protocol26_2: 0x23, protocol26_3: 0x23},
 	},
 	// 1.20.2 has no event for what this server's one game event says: 1.20.3
 	// is where the event that lets a joining client off its loading screen
@@ -513,12 +530,12 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x4B, protocol1_17_1: 0x4B, protocol1_18: 0x4B, protocol1_18_2: 0x4B, protocol1_19: 0x4A, protocol1_19_1: 0x4D, protocol1_19_3: 0x4C, protocol1_19_4: 0x50, protocol1_20: 0x50, protocol1_20_2: 0x52, protocol1_20_3: 0x20, protocol1_20_5: 0x22, protocol1_21: 0x22, protocol1_21_2: 0x23, protocol1_21_4: 0x23, protocol1_21_5: 0x22, protocol1_21_6: 0x22, protocol1_21_7: 0x22, protocol1_21_9: 0x26, protocol1_21_11: 0x26, protocol26_1: 0x26, protocol26_2: 0x26, protocol26_3: 0x27},
+		ids:    packetIds{protocol1_16_4: 0x42, protocol1_17: 0x4B, protocol1_17_1: 0x4B, protocol1_18: 0x4B, protocol1_18_2: 0x4B, protocol1_19: 0x4A, protocol1_19_1: 0x4D, protocol1_19_3: 0x4C, protocol1_19_4: 0x50, protocol1_20: 0x50, protocol1_20_2: 0x52, protocol1_20_3: 0x20, protocol1_20_5: 0x22, protocol1_21: 0x22, protocol1_21_2: 0x23, protocol1_21_4: 0x23, protocol1_21_5: 0x22, protocol1_21_6: 0x22, protocol1_21_7: 0x22, protocol1_21_9: 0x26, protocol1_21_11: 0x26, protocol26_1: 0x26, protocol26_2: 0x26, protocol26_3: 0x27},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x21, protocol1_17_1: 0x21, protocol1_18: 0x21, protocol1_18_2: 0x21, protocol1_19: 0x1E, protocol1_19_1: 0x20, protocol1_19_3: 0x1F, protocol1_19_4: 0x23, protocol1_20: 0x23, protocol1_20_2: 0x24, protocol1_20_3: 0x24, protocol1_20_5: 0x26, protocol1_21: 0x26, protocol1_21_2: 0x27, protocol1_21_4: 0x27, protocol1_21_5: 0x26, protocol1_21_6: 0x26, protocol1_21_7: 0x26, protocol1_21_9: 0x2B, protocol1_21_11: 0x2B, protocol26_1: 0x2C, protocol26_2: 0x2C, protocol26_3: 0x2D},
+		ids:    packetIds{protocol1_16_4: 0x1F, protocol1_17: 0x21, protocol1_17_1: 0x21, protocol1_18: 0x21, protocol1_18_2: 0x21, protocol1_19: 0x1E, protocol1_19_1: 0x20, protocol1_19_3: 0x1F, protocol1_19_4: 0x23, protocol1_20: 0x23, protocol1_20_2: 0x24, protocol1_20_3: 0x24, protocol1_20_5: 0x26, protocol1_21: 0x26, protocol1_21_2: 0x27, protocol1_21_4: 0x27, protocol1_21_5: 0x26, protocol1_21_6: 0x26, protocol1_21_7: 0x26, protocol1_21_9: 0x2B, protocol1_21_11: 0x2B, protocol26_1: 0x2C, protocol26_2: 0x2C, protocol26_3: 0x2D},
 	},
 	// The chunk packet's shape is identical from 1.21.5 to 26.2, so no
 	// transformer carries it between those versions, even though a body for
@@ -533,56 +550,57 @@ var clientboundPackets = []clientboundPacket{
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x22, protocol1_17_1: 0x22, protocol1_18: 0x22, protocol1_18_2: 0x22, protocol1_19: 0x1F, protocol1_19_1: 0x21, protocol1_19_3: 0x20, protocol1_19_4: 0x24, protocol1_20: 0x24, protocol1_20_2: 0x25, protocol1_20_3: 0x25, protocol1_20_5: 0x27, protocol1_21: 0x27, protocol1_21_2: 0x28, protocol1_21_4: 0x28, protocol1_21_5: 0x27, protocol1_21_6: 0x27, protocol1_21_7: 0x27, protocol1_21_9: 0x2C, protocol1_21_11: 0x2C, protocol26_1: 0x2D, protocol26_2: 0x2D, protocol26_3: 0x2E},
+		ids:    packetIds{protocol1_16_4: 0x20, protocol1_17: 0x22, protocol1_17_1: 0x22, protocol1_18: 0x22, protocol1_18_2: 0x22, protocol1_19: 0x1F, protocol1_19_1: 0x21, protocol1_19_3: 0x20, protocol1_19_4: 0x24, protocol1_20: 0x24, protocol1_20_2: 0x25, protocol1_20_3: 0x25, protocol1_20_5: 0x27, protocol1_21: 0x27, protocol1_21_2: 0x28, protocol1_21_4: 0x28, protocol1_21_5: 0x27, protocol1_21_6: 0x27, protocol1_21_7: 0x27, protocol1_21_9: 0x2C, protocol1_21_11: 0x2C, protocol26_1: 0x2D, protocol26_2: 0x2D, protocol26_3: 0x2E},
 	},
 	// 1.17.1 reads a chunk's light in a packet of its own, sent ahead of the
 	// chunk: 1.18 is where the light joined the chunk packet, and every
 	// version from it on has no id for this one. Package world builds one
-	// beside each chunk for a version that reads it.
+	// beside each chunk for a version that reads it, and the 1.17 step
+	// rewrites it for 1.16.4, which reads its masks as plain numbers.
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.LightUpdateClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x25, protocol1_17_1: 0x25},
+		ids:    packetIds{protocol1_16_4: 0x23, protocol1_17: 0x25, protocol1_17_1: 0x25},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x26, protocol1_17_1: 0x26, protocol1_18: 0x26, protocol1_18_2: 0x26, protocol1_19: 0x23, protocol1_19_1: 0x25, protocol1_19_3: 0x24, protocol1_19_4: 0x28, protocol1_20: 0x28, protocol1_20_2: 0x29, protocol1_20_3: 0x29, protocol1_20_5: 0x2B, protocol1_21: 0x2B, protocol1_21_2: 0x2C, protocol1_21_4: 0x2C, protocol1_21_5: 0x2B, protocol1_21_6: 0x2B, protocol1_21_7: 0x2B, protocol1_21_9: 0x30, protocol1_21_11: 0x30, protocol26_1: 0x31, protocol26_2: 0x31, protocol26_3: 0x32},
+		ids:    packetIds{protocol1_16_4: 0x24, protocol1_17: 0x26, protocol1_17_1: 0x26, protocol1_18: 0x26, protocol1_18_2: 0x26, protocol1_19: 0x23, protocol1_19_1: 0x25, protocol1_19_3: 0x24, protocol1_19_4: 0x28, protocol1_20: 0x28, protocol1_20_2: 0x29, protocol1_20_3: 0x29, protocol1_20_5: 0x2B, protocol1_21: 0x2B, protocol1_21_2: 0x2C, protocol1_21_4: 0x2C, protocol1_21_5: 0x2B, protocol1_21_6: 0x2B, protocol1_21_7: 0x2B, protocol1_21_9: 0x30, protocol1_21_11: 0x30, protocol26_1: 0x31, protocol26_2: 0x31, protocol26_3: 0x32},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.PlayerInfoRemoveClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x36, protocol1_17_1: 0x36, protocol1_18: 0x36, protocol1_18_2: 0x36, protocol1_19: 0x34, protocol1_19_1: 0x37, protocol1_19_3: 0x35, protocol1_19_4: 0x39, protocol1_20: 0x39, protocol1_20_2: 0x3B, protocol1_20_3: 0x3B, protocol1_20_5: 0x3D, protocol1_21: 0x3D, protocol1_21_2: 0x3F, protocol1_21_4: 0x3F, protocol1_21_5: 0x3E, protocol1_21_6: 0x3E, protocol1_21_7: 0x3E, protocol1_21_9: 0x43, protocol1_21_11: 0x43, protocol26_1: 0x45, protocol26_2: 0x45, protocol26_3: 0x46},
+		ids:    packetIds{protocol1_16_4: 0x32, protocol1_17: 0x36, protocol1_17_1: 0x36, protocol1_18: 0x36, protocol1_18_2: 0x36, protocol1_19: 0x34, protocol1_19_1: 0x37, protocol1_19_3: 0x35, protocol1_19_4: 0x39, protocol1_20: 0x39, protocol1_20_2: 0x3B, protocol1_20_3: 0x3B, protocol1_20_5: 0x3D, protocol1_21: 0x3D, protocol1_21_2: 0x3F, protocol1_21_4: 0x3F, protocol1_21_5: 0x3E, protocol1_21_6: 0x3E, protocol1_21_7: 0x3E, protocol1_21_9: 0x43, protocol1_21_11: 0x43, protocol26_1: 0x45, protocol26_2: 0x45, protocol26_3: 0x46},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x36, protocol1_17_1: 0x36, protocol1_18: 0x36, protocol1_18_2: 0x36, protocol1_19: 0x34, protocol1_19_1: 0x37, protocol1_19_3: 0x36, protocol1_19_4: 0x3A, protocol1_20: 0x3A, protocol1_20_2: 0x3C, protocol1_20_3: 0x3C, protocol1_20_5: 0x3E, protocol1_21: 0x3E, protocol1_21_2: 0x40, protocol1_21_4: 0x40, protocol1_21_5: 0x3F, protocol1_21_6: 0x3F, protocol1_21_7: 0x3F, protocol1_21_9: 0x44, protocol1_21_11: 0x44, protocol26_1: 0x46, protocol26_2: 0x46, protocol26_3: 0x47},
+		ids:    packetIds{protocol1_16_4: 0x32, protocol1_17: 0x36, protocol1_17_1: 0x36, protocol1_18: 0x36, protocol1_18_2: 0x36, protocol1_19: 0x34, protocol1_19_1: 0x37, protocol1_19_3: 0x36, protocol1_19_4: 0x3A, protocol1_20: 0x3A, protocol1_20_2: 0x3C, protocol1_20_3: 0x3C, protocol1_20_5: 0x3E, protocol1_21: 0x3E, protocol1_21_2: 0x40, protocol1_21_4: 0x40, protocol1_21_5: 0x3F, protocol1_21_6: 0x3F, protocol1_21_7: 0x3F, protocol1_21_9: 0x44, protocol1_21_11: 0x44, protocol26_1: 0x46, protocol26_2: 0x46, protocol26_3: 0x47},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x38, protocol1_17_1: 0x38, protocol1_18: 0x38, protocol1_18_2: 0x38, protocol1_19: 0x36, protocol1_19_1: 0x39, protocol1_19_3: 0x38, protocol1_19_4: 0x3C, protocol1_20: 0x3C, protocol1_20_2: 0x3E, protocol1_20_3: 0x3E, protocol1_20_5: 0x40, protocol1_21: 0x40, protocol1_21_2: 0x42, protocol1_21_4: 0x42, protocol1_21_5: 0x41, protocol1_21_6: 0x41, protocol1_21_7: 0x41, protocol1_21_9: 0x46, protocol1_21_11: 0x46, protocol26_1: 0x48, protocol26_2: 0x48, protocol26_3: 0x49},
+		ids:    packetIds{protocol1_16_4: 0x34, protocol1_17: 0x38, protocol1_17_1: 0x38, protocol1_18: 0x38, protocol1_18_2: 0x38, protocol1_19: 0x36, protocol1_19_1: 0x39, protocol1_19_3: 0x38, protocol1_19_4: 0x3C, protocol1_20: 0x3C, protocol1_20_2: 0x3E, protocol1_20_3: 0x3E, protocol1_20_5: 0x40, protocol1_21: 0x40, protocol1_21_2: 0x42, protocol1_21_4: 0x42, protocol1_21_5: 0x41, protocol1_21_6: 0x41, protocol1_21_7: 0x41, protocol1_21_9: 0x46, protocol1_21_11: 0x46, protocol26_1: 0x48, protocol26_2: 0x48, protocol26_3: 0x49},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x3A, protocol1_17_1: 0x3A, protocol1_18: 0x3A, protocol1_18_2: 0x3A, protocol1_19: 0x38, protocol1_19_1: 0x3B, protocol1_19_3: 0x3A, protocol1_19_4: 0x3E, protocol1_20: 0x3E, protocol1_20_2: 0x40, protocol1_20_3: 0x40, protocol1_20_5: 0x42, protocol1_21: 0x42, protocol1_21_2: 0x47, protocol1_21_4: 0x47, protocol1_21_5: 0x46, protocol1_21_6: 0x46, protocol1_21_7: 0x46, protocol1_21_9: 0x4B, protocol1_21_11: 0x4B, protocol26_1: 0x4D, protocol26_2: 0x4D, protocol26_3: 0x4E},
+		ids:    packetIds{protocol1_16_4: 0x36, protocol1_17: 0x3A, protocol1_17_1: 0x3A, protocol1_18: 0x3A, protocol1_18_2: 0x3A, protocol1_19: 0x38, protocol1_19_1: 0x3B, protocol1_19_3: 0x3A, protocol1_19_4: 0x3E, protocol1_20: 0x3E, protocol1_20_2: 0x40, protocol1_20_3: 0x40, protocol1_20_5: 0x42, protocol1_21: 0x42, protocol1_21_2: 0x47, protocol1_21_4: 0x47, protocol1_21_5: 0x46, protocol1_21_6: 0x46, protocol1_21_7: 0x46, protocol1_21_9: 0x4B, protocol1_21_11: 0x4B, protocol26_1: 0x4D, protocol26_2: 0x4D, protocol26_3: 0x4E},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.RotateHeadClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x3E, protocol1_17_1: 0x3E, protocol1_18: 0x3E, protocol1_18_2: 0x3E, protocol1_19: 0x3C, protocol1_19_1: 0x3F, protocol1_19_3: 0x3E, protocol1_19_4: 0x42, protocol1_20: 0x42, protocol1_20_2: 0x44, protocol1_20_3: 0x46, protocol1_20_5: 0x48, protocol1_21: 0x48, protocol1_21_2: 0x4D, protocol1_21_4: 0x4D, protocol1_21_5: 0x4C, protocol1_21_6: 0x4C, protocol1_21_7: 0x4C, protocol1_21_9: 0x51, protocol1_21_11: 0x51, protocol26_1: 0x53, protocol26_2: 0x53, protocol26_3: 0x55},
+		ids:    packetIds{protocol1_16_4: 0x3A, protocol1_17: 0x3E, protocol1_17_1: 0x3E, protocol1_18: 0x3E, protocol1_18_2: 0x3E, protocol1_19: 0x3C, protocol1_19_1: 0x3F, protocol1_19_3: 0x3E, protocol1_19_4: 0x42, protocol1_20: 0x42, protocol1_20_2: 0x44, protocol1_20_3: 0x46, protocol1_20_5: 0x48, protocol1_21: 0x48, protocol1_21_2: 0x4D, protocol1_21_4: 0x4D, protocol1_21_5: 0x4C, protocol1_21_6: 0x4C, protocol1_21_7: 0x4C, protocol1_21_9: 0x51, protocol1_21_11: 0x51, protocol26_1: 0x53, protocol26_2: 0x53, protocol26_3: 0x55},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.SetChunkCacheCenterClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x49, protocol1_17_1: 0x49, protocol1_18: 0x49, protocol1_18_2: 0x49, protocol1_19: 0x48, protocol1_19_1: 0x4B, protocol1_19_3: 0x4A, protocol1_19_4: 0x4E, protocol1_20: 0x4E, protocol1_20_2: 0x50, protocol1_20_3: 0x52, protocol1_20_5: 0x54, protocol1_21: 0x54, protocol1_21_2: 0x58, protocol1_21_4: 0x58, protocol1_21_5: 0x57, protocol1_21_6: 0x57, protocol1_21_7: 0x57, protocol1_21_9: 0x5C, protocol1_21_11: 0x5C, protocol26_1: 0x5E, protocol26_2: 0x5E, protocol26_3: 0x60},
+		ids:    packetIds{protocol1_16_4: 0x40, protocol1_17: 0x49, protocol1_17_1: 0x49, protocol1_18: 0x49, protocol1_18_2: 0x49, protocol1_19: 0x48, protocol1_19_1: 0x4B, protocol1_19_3: 0x4A, protocol1_19_4: 0x4E, protocol1_20: 0x4E, protocol1_20_2: 0x50, protocol1_20_3: 0x52, protocol1_20_5: 0x54, protocol1_21: 0x54, protocol1_21_2: 0x58, protocol1_21_4: 0x58, protocol1_21_5: 0x57, protocol1_21_6: 0x57, protocol1_21_7: 0x57, protocol1_21_9: 0x5C, protocol1_21_11: 0x5C, protocol26_1: 0x5E, protocol26_2: 0x5E, protocol26_3: 0x60},
 	},
 	{
 		phase:  types.PhasePlay,
 		packet: reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}),
-		ids:    packetIds{protocol1_17: 0x4D, protocol1_17_1: 0x4D, protocol1_18: 0x4D, protocol1_18_2: 0x4D, protocol1_19: 0x4D, protocol1_19_1: 0x50, protocol1_19_3: 0x4E, protocol1_19_4: 0x52, protocol1_20: 0x52, protocol1_20_2: 0x54, protocol1_20_3: 0x56, protocol1_20_5: 0x58, protocol1_21: 0x58, protocol1_21_2: 0x5D, protocol1_21_4: 0x5D, protocol1_21_5: 0x5C, protocol1_21_6: 0x5C, protocol1_21_7: 0x5C, protocol1_21_9: 0x61, protocol1_21_11: 0x61, protocol26_1: 0x63, protocol26_2: 0x63, protocol26_3: 0x65},
+		ids:    packetIds{protocol1_16_4: 0x44, protocol1_17: 0x4D, protocol1_17_1: 0x4D, protocol1_18: 0x4D, protocol1_18_2: 0x4D, protocol1_19: 0x4D, protocol1_19_1: 0x50, protocol1_19_3: 0x4E, protocol1_19_4: 0x52, protocol1_20: 0x52, protocol1_20_2: 0x54, protocol1_20_3: 0x56, protocol1_20_5: 0x58, protocol1_21: 0x58, protocol1_21_2: 0x5D, protocol1_21_4: 0x5D, protocol1_21_5: 0x5C, protocol1_21_6: 0x5C, protocol1_21_7: 0x5C, protocol1_21_9: 0x61, protocol1_21_11: 0x61, protocol26_1: 0x63, protocol26_2: 0x63, protocol26_3: 0x65},
 	},
 }
 
@@ -899,6 +917,22 @@ func registerPackets(packetRegistry *Registry, registryCodecs RegistryCodecSourc
 // container click and the book edit -- are none this server speaks. There
 // is no data to the bump: the registries' codecs, the tags' names and the
 // blocks are untouched, so 755 shares 756's of each.
+//
+// The 1.17 step carries six, all downwards, because 1.17 is where the world
+// grew downwards and 1.16.4 holds sixteen sections from zero up: the play
+// login, laid out alike around 1.16.4's own registries and a dimension type
+// with no bounds to it; the chunk packet and the light packet ahead of it,
+// whose sections 1.16.4 names by plain numbers rather than bit sets, cut
+// down to the ones it holds, with the heightmaps brought down to match; the
+// player position, without the dismount flag 1.17 put on its end; the spawn
+// position this server's game event has been since the 1.20.3 step, without
+// the angle 1.17 put on its end; and the remove entities packet, whose
+// count the 1.17.1 step took off for 1.17 alone and which goes back on. The
+// tags differ as well -- 1.16.4 reads four runs of them with no registry
+// named -- and package gamedata encodes them that way, as it encodes them
+// per version to begin with. Everything this server reads is laid out
+// alike. The data is 1.16.4's own: its tags' names, and a block state table
+// from before the caves and cliffs blocks.
 func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodecSource) {
 	// 26.3 respelled the two game modes in the play login's spawn info: the
 	// previous mode is an optional var int there where 26.2 reads a byte.
@@ -1159,7 +1193,7 @@ func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodec
 	// 1.20.2 put the registries into the configuration phase and out of the
 	// play login, folded the player into the add entity packet, and took the
 	// root name off every NBT on the wire.
-	var registryCodec1_20, registryCodec1_19_4, registryCodec1_19_3, registryCodec1_19_1, registryCodec1_19, registryCodec1_18_2, dimensionType1_18_2, registryCodec1_18, dimensionType1_18, registryCodec1_17_1, dimensionType1_17_1 []byte
+	var registryCodec1_20, registryCodec1_19_4, registryCodec1_19_3, registryCodec1_19_1, registryCodec1_19, registryCodec1_18_2, dimensionType1_18_2, registryCodec1_18, dimensionType1_18, registryCodec1_17_1, dimensionType1_17_1, registryCodec1_16_4, dimensionType1_16_4 []byte
 	if registryCodecs != nil {
 		registryCodec1_20 = registryCodecs.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_20)
 		registryCodec1_19_4 = registryCodecs.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_19_4)
@@ -1172,6 +1206,8 @@ func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodec
 		dimensionType1_18 = registryCodecs.DimensionTypeFor(types.ProtocolVersions.MINECRAFT_1_18)
 		registryCodec1_17_1 = registryCodecs.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_17_1)
 		dimensionType1_17_1 = registryCodecs.DimensionTypeFor(types.ProtocolVersions.MINECRAFT_1_17_1)
+		registryCodec1_16_4 = registryCodecs.RegistryCodecFor(types.ProtocolVersions.MINECRAFT_1_16_4)
+		dimensionType1_16_4 = registryCodecs.DimensionTypeFor(types.ProtocolVersions.MINECRAFT_1_16_4)
 	}
 
 	packetRegistry.RegisterDowngrade(
@@ -1340,6 +1376,55 @@ func registerTransformers(packetRegistry *Registry, registryCodecs RegistryCodec
 		types.ProtocolVersions.MINECRAFT_1_17_1,
 		reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}),
 		transformers.DowngradeRemoveEntitiesTo1_17,
+	)
+
+	// 1.17 is where the world grew downwards: the dimension type took on its
+	// bounds, and the chunk and its light came to name their sections by bit
+	// sets, where 1.16.4 holds sixteen sections from zero up behind masks
+	// that are plain numbers. It is also where the player position took on
+	// its dismount flag and the spawn position its angle, and the one
+	// version whose entity removal 1.16.4 does not read, the count going
+	// back in front.
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}),
+		transformers.DowngradePlayLoginTo1_16_4(registryCodec1_16_4, dimensionType1_16_4),
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{}),
+		transformers.DowngradeLevelChunkTo1_16_4,
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.LightUpdateClientboundPacket{}),
+		transformers.DowngradeLightUpdateTo1_16_4,
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}),
+		transformers.DowngradePlayerPositionTo1_16_4,
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}),
+		transformers.DowngradeSetDefaultSpawnPositionTo1_16_4,
+	)
+
+	packetRegistry.RegisterDowngrade(
+		types.PhasePlay,
+		types.ProtocolVersions.MINECRAFT_1_17,
+		reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}),
+		transformers.DowngradeRemoveEntitiesTo1_16_4,
 	)
 
 	// The eight packets this server reads that an older version lays out

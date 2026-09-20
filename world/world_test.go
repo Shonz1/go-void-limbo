@@ -99,7 +99,10 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("packets[1:] = %v, want chunk 0,0", packets[1:])
 			}
 
-			if len(chunk.Heightmaps) != 1 || chunk.Heightmaps[0].Type != clientboundPlay.HeightmapMotionBlocking || chunk.Heightmaps[0].Data[0] != 65 {
+			// The first column's entry, nine bits wide: the rest of the map
+			// is the bottom of the world, which is not zero on the one
+			// version whose world starts higher up.
+			if len(chunk.Heightmaps) != 1 || chunk.Heightmaps[0].Type != clientboundPlay.HeightmapMotionBlocking || chunk.Heightmaps[0].Data[0]&0x1FF != 65 {
 				t.Errorf("Heightmaps = %v, want the stored motion blocking map", chunk.Heightmaps)
 			}
 
@@ -478,12 +481,35 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		t.Fatal("the light is not trusted at the edges, which a vanilla server of that version always says it is")
 	}
 
-	chunk.SkyLightMask = readBitSet(t, version, light)
-	chunk.BlockLightMask = readBitSet(t, version, light)
-	chunk.EmptySkyLightMask = readBitSet(t, version, light)
-	chunk.EmptyBlockLightMask = readBitSet(t, version, light)
-	chunk.SkyLight = readByteArrays(t, light)
-	chunk.BlockLight = readByteArrays(t, light)
+	// 1.16.4 holds a world from zero up, so everything it is sent is this
+	// server's world with the four sections below zero and the four above
+	// 255 cut off, and what is read back here is put back where 1.18 has it
+	// -- masks four bits up, heightmaps sixty-four blocks up -- so that the
+	// one set of expectations serves every version.
+	flat := version.ID < types.ProtocolVersions.MINECRAFT_1_17.ID
+
+	if flat {
+		masks := []*[]int64{&chunk.SkyLightMask, &chunk.BlockLightMask, &chunk.EmptySkyLightMask, &chunk.EmptyBlockLightMask}
+		for _, mask := range masks {
+			*mask = []int64{readFlatMask(t, light, legacyLightSections)}
+		}
+
+		chunk.SkyLight = readMaskedByteArrays(t, light, chunk.SkyLightMask[0])
+		chunk.BlockLight = readMaskedByteArrays(t, light, chunk.BlockLightMask[0])
+
+		// The empty masks cover the sections 1.16.4 has, and the ones cut
+		// off were empty in every world these tests build.
+		cut := int64(1<<lightSectionCount-1) &^ (int64(1<<legacyLightSections-1) << legacySectionsBelowZero)
+		chunk.EmptySkyLightMask[0] |= cut
+		chunk.EmptyBlockLightMask[0] |= cut
+	} else {
+		chunk.SkyLightMask = readBitSet(t, version, light)
+		chunk.BlockLightMask = readBitSet(t, version, light)
+		chunk.EmptySkyLightMask = readBitSet(t, version, light)
+		chunk.EmptyBlockLightMask = readBitSet(t, version, light)
+		chunk.SkyLight = readByteArrays(t, light)
+		chunk.BlockLight = readByteArrays(t, light)
+	}
 
 	if rest, _ := light.ReadRest(); len(rest) != 0 {
 		t.Fatalf("light holds %d bytes past its arrays", len(rest))
@@ -503,8 +529,16 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		t.Fatalf("light is for chunk %d,%d, want the chunk it precedes, %d,%d", lightX, lightZ, chunk.X, chunk.Z)
 	}
 
-	mask := readLongArray(t, ms)
-	if len(mask) != 1 {
+	var mask []int64
+
+	if flat {
+		fullChunk, err := ms.ReadBoolean()
+		if err != nil || !fullChunk {
+			t.Fatalf("whole chunk flag = %t, %v, want true: a chunk this server sends is never a change to one", fullChunk, err)
+		}
+
+		mask = []int64{readFlatMask(t, ms, legacySections)}
+	} else if mask = readLongArray(t, ms); len(mask) != 1 {
 		t.Fatalf("section mask is %d longs, want one", len(mask))
 	}
 
@@ -533,18 +567,27 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 			t.Fatalf("heightmap %q is %T, want a long array", name, data)
 		}
 
+		if flat {
+			longs = raiseHeightmap(longs)
+		}
+
 		chunk.Heightmaps = append(chunk.Heightmaps, clientboundPlay.Heightmap{Type: kind, Data: longs})
 	}
 
-	// The biomes: one per four blocks of every section, all the one biome
-	// this server registers.
+	// The biomes: one per four blocks of every section the version holds,
+	// all the one biome this server registers.
 	biomeCount, err := ms.ReadVarInt()
 	if err != nil {
 		t.Fatalf("reading biome count: %v", err)
 	}
 
-	if biomeCount != sectionCount*64 {
-		t.Fatalf("chunk carries %d biomes, want %d: sixty-four for each of its sections", biomeCount, sectionCount*64)
+	wantBiomes := int32(sectionCount * 64)
+	if flat {
+		wantBiomes = legacySections * 64
+	}
+
+	if biomeCount != wantBiomes {
+		t.Fatalf("chunk carries %d biomes, want %d: sixty-four for each of its sections", biomeCount, wantBiomes)
 	}
 
 	for i := range biomeCount {
@@ -607,6 +650,63 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	}
 
 	return chunk
+}
+
+// What 1.16.4 holds of this server's world: sixteen sections of the
+// twenty-four, from the fifth up, and the light of one more at either end.
+const (
+	legacySections          = 16
+	legacyLightSections     = legacySections + 2
+	legacySectionsBelowZero = 4
+)
+
+// readFlatMask reads a mask as 1.16.4 lays one out, a plain number with a bit
+// for each of sections sections, and returns it where 1.18 has those
+// sections.
+func readFlatMask(t *testing.T, ms *streams.MinecraftStream, sections int) int64 {
+	t.Helper()
+
+	mask, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading mask: %v", err)
+	}
+
+	if mask < 0 || int64(mask) >= 1<<sections {
+		t.Fatalf("mask %b names sections past the %d the version holds", mask, sections)
+	}
+
+	return int64(mask) << legacySectionsBelowZero
+}
+
+// readMaskedByteArrays reads the light arrays as 1.16.4 lays them out: one
+// for each bit of the mask, with no count in front.
+func readMaskedByteArrays(t *testing.T, ms *streams.MinecraftStream, mask int64) [][]byte {
+	t.Helper()
+
+	var arrays [][]byte
+	for ; mask != 0; mask &= mask - 1 {
+		array, err := ms.ReadByteArray(2048)
+		if err != nil {
+			t.Fatalf("reading byte array: %v", err)
+		}
+
+		arrays = append(arrays, array)
+	}
+
+	return arrays
+}
+
+// raiseHeightmap puts every entry of a heightmap 1.16.4 was sent back where
+// 1.18 counts it from, sixty-four blocks further down.
+func raiseHeightmap(packed []int64) []int64 {
+	raised := make([]int64, len(packed))
+
+	for i := range 256 {
+		shift := i % 7 * 9
+		raised[i/7] |= (packed[i/7]>>shift&0x1FF + 64) << shift
+	}
+
+	return raised
 }
 
 // readBitSet reads a light mask as the version lays a bit set out -- counted
@@ -904,4 +1004,55 @@ func encodeNamedNBT(t *testing.T, tag nbt.Tag) []byte {
 	}
 
 	return buf.Bytes()
+}
+
+// A server with no world sends nothing to a client that needs nothing, and
+// to a client from before 1.17 the chunks around the spawn with no block in
+// them: that client moves another player only while it holds the chunk the
+// player is in.
+func TestVoidIsEmptyChunksForTheVersionsThatTickByChunk(t *testing.T) {
+	world, err := Void(testRegistry)
+	if err != nil {
+		t.Fatalf("Void() error: %v", err)
+	}
+
+	if x, y, z := world.Spawn(); x != 0.5 || y != 64 || z != 0.5 {
+		t.Errorf("Spawn() = %v,%v,%v, want the 0.5,64,0.5 a server with no world spawns at", x, y, z)
+	}
+
+	for _, version := range types.SupportedProtocolVersions {
+		packets := world.PacketsFor(version)
+
+		if version.ID >= types.ProtocolVersions.MINECRAFT_1_17.ID {
+			if len(packets) != 0 {
+				t.Errorf("protocol %d is sent %d packets, want none: its client ticks a player wherever it stands", version.ID, len(packets))
+			}
+
+			continue
+		}
+
+		if want := 1 + maxChunks*packetsPerChunk(version); len(packets) != want {
+			t.Fatalf("protocol %d is sent %d packets, want %d: the centre and every chunk around the spawn", version.ID, len(packets), want)
+		}
+
+		chunk := decodeChunk(t, version, packets[1:1+packetsPerChunk(version)])
+		if chunk.X != -chunkRadius || chunk.Z != -chunkRadius {
+			t.Errorf("protocol %d: the first chunk is %d,%d, want the corner %d,%d", version.ID, chunk.X, chunk.Z, -chunkRadius, -chunkRadius)
+		}
+
+		blockStates, err := gamedata.BlockStatesFor(version)
+		if err != nil {
+			t.Fatalf("BlockStatesFor() error: %v", err)
+		}
+
+		for i, section := range decodeSections(t, version, chunk.SectionData, blockStates.StateCount()) {
+			if section.blockCount != 0 {
+				t.Errorf("protocol %d: section %d holds %d blocks, want none", version.ID, i, section.blockCount)
+			}
+		}
+
+		if len(chunk.SkyLight) != 0 || len(chunk.BlockLight) != 0 {
+			t.Errorf("protocol %d: the chunk carries light, want none", version.ID)
+		}
+	}
 }
