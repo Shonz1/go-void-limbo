@@ -13,6 +13,9 @@ import "github.com/Shonz1/go-void-limbo/nbt"
 // the one the player is put into rather than spelling it out a second time.
 // The 1.16.2 step's login transformer swaps both in for 1.16.2's: see
 // encodeDimensionList and Provider.DimensionTypeFor.
+//
+// A 1.16 client is sent this set as well, its jar holding the same tags and
+// the same codecs: the set starts at 735.
 func registriesMinecraft1_16_1() ([]Registry, error) {
 	return []Registry{
 		{Name: "minecraft:dimension_type", Entries: []Entry{

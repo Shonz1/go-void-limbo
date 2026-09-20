@@ -23,7 +23,10 @@ func NewDefaultProvider() (*Provider, error) {
 		registries  func() ([]Registry, error)
 		tags        func() ([]TagSet, error)
 	}{
-		{types.ProtocolVersions.MINECRAFT_1_16_1.ID, registriesMinecraft1_16_1, tagsMinecraft1_16_1},
+		// 1.16 is sent 1.16.1's set, which starts at it: the two jars' tags
+		// are the same files with the same contents, and their codecs and
+		// their data generators' reports are the same as well.
+		{types.ProtocolVersions.MINECRAFT_1_16.ID, registriesMinecraft1_16_1, tagsMinecraft1_16_1},
 		// 1.16.2 and 1.16.3 are sent 1.16.4's set, which starts at the older
 		// of them: the three jars' tags are the same files with the same
 		// contents, and their codecs and their data generators' reports are

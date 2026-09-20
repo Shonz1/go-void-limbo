@@ -38,9 +38,9 @@ type PacketEncoder interface {
 // The world's vertical bounds, in sections. These are the bounds the
 // dimension type in package gamedata announces (min_y -64, height 384), and
 // they have to be: the client sizes a chunk by the dimension it was told it is
-// in, and a chunk of any other size is a chunk it refuses. The three versions
-// that are told no bounds, 1.16.4, 1.16.3 and 1.16.2, hold sixteen sections
-// from zero up, and the 1.17 step's transformers cut what is built here down
+// in, and a chunk of any other size is a chunk it refuses. The versions from
+// before 1.17, whatever bounds they are told, hold sixteen sections from
+// zero up, and the 1.17 step's transformers cut what is built here down
 // to those.
 const (
 	minSectionY  = -4
@@ -210,8 +210,8 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
 
 // entitiesTickWithoutChunks is the first version whose client ticks an
-// entity wherever it stands. A client before it -- 1.16.4, 1.16.3, 1.16.2 or
-// 1.16.1 -- ticks
+// entity wherever it stands. A client before it -- 1.16.4, 1.16.3, 1.16.2,
+// 1.16.1 or 1.16 -- ticks
 // one only while it holds the chunk the entity is in, and a tick is when
 // another player's relayed position is applied: on a server that sends no
 // chunk, every player such a client is shown stays frozen where it appeared.
@@ -303,7 +303,7 @@ type chunkBuilder struct {
 	// chunk transformer drops the light the chunk packet carries on the way
 	// down. The sections themselves are built as 1.18 reads them and carried
 	// down by that transformer as well, since 1.17.1 lays them out the same
-	// way but for what it leaves out. 1.16.4, 1.16.3 and 1.16.2 read the two packets
+	// way but for what it leaves out. The versions before 1.17 read the two packets
 	// in the same order, and the 1.17 step cuts both down to the sixteen
 	// sections their world holds: the blocks a world stores below zero or
 	// above 255 are blocks a client on any of them is never shown.

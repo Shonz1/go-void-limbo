@@ -329,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:13] {
+	for _, version := range types.SupportedProtocolVersions[:14] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -337,13 +337,16 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 		// 1.17 reads 1.17.1's login as it stands, registries and dimension
 		// type included: nothing rewrites the login on the step between them.
-		// Nor does anything on the steps from 1.16.4 to 1.16.3 and on to 1.16.2.
+		// Nor does anything on the steps from 1.16.4 to 1.16.3 and on to
+		// 1.16.2, or on the one from 1.16.1 to 1.16.
 		source := version.ID
 		switch source {
 		case types.ProtocolVersions.MINECRAFT_1_17.ID:
 			source = types.ProtocolVersions.MINECRAFT_1_17_1.ID
 		case types.ProtocolVersions.MINECRAFT_1_16_2.ID, types.ProtocolVersions.MINECRAFT_1_16_3.ID:
 			source = types.ProtocolVersions.MINECRAFT_1_16_4.ID
+		case types.ProtocolVersions.MINECRAFT_1_16.ID:
+			source = types.ProtocolVersions.MINECRAFT_1_16_1.ID
 		}
 
 		if !bytes.Contains(body, codecs[source]) {
@@ -416,7 +419,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[13:] {
+	for _, version := range types.SupportedProtocolVersions[14:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -449,6 +452,8 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 		{types.ProtocolVersions.MINECRAFT_1_16_4, 0x36, []byte{0x01, 0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_16_3, 0x36, []byte{0x01, 0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_16_2, 0x36, []byte{0x01, 0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_16_1, 0x37, []byte{0x01, 0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_16, 0x37, []byte{0x01, 0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_17, 0x3A, []byte{0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_17_1, 0x3A, []byte{0x01, 0x80, 0x01}},
 	}
@@ -476,8 +481,11 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 // transformer sits on the step between the two. 1.16.3 moved to 753 over
 // less still -- its jar is 1.16.2's but for the version it names and five
 // classes of the mob and its pathfinding -- so 751 stands to 753 as 753 does to 754.
-func TestProtocols751And753AreNumberedAndLaidOutAs754(t *testing.T) {
+// And 1.16.1 moved to 736 over two Realms screens, so 735 stands to 736 the
+// same way.
+func TestProtocolsOnAnEmptyStepAreNumberedAndLaidOutAsTheOneAbove(t *testing.T) {
 	steps := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1},
 		{types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3},
 		{types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4},
 	}
