@@ -182,3 +182,71 @@ func TestDefaultProviderSends1_16_4TheUnnamedTags(t *testing.T) {
 		t.Error("1.16.4 is handed no registries or no dimension type for its play login")
 	}
 }
+
+// 1.16.3 is sent what 1.16.4 is, to the byte: its jar's tags, its codecs
+// and its blocks report are 1.16.4's, so nothing here is its own.
+func TestProvider1_16_3IsSentWhat1_16_4Is(t *testing.T) {
+	provider, err := NewDefaultProvider()
+	if err != nil {
+		t.Fatalf("NewDefaultProvider() error: %v", err)
+	}
+
+	older, newer := types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4
+
+	if codec := provider.RegistryCodecFor(older); len(codec) == 0 || !bytes.Equal(codec, provider.RegistryCodecFor(newer)) {
+		t.Error("1.16.3's registry codec is not 1.16.4's")
+	}
+
+	if dimensionType := provider.DimensionTypeFor(older); len(dimensionType) == 0 || !bytes.Equal(dimensionType, provider.DimensionTypeFor(newer)) {
+		t.Error("1.16.3's dimension type is not 1.16.4's")
+	}
+
+	olderPackets, newerPackets := provider.PacketsFor(older), provider.PacketsFor(newer)
+	if len(olderPackets) != 1 || len(newerPackets) != 1 {
+		t.Fatalf("1.16.3 is sent %d packets and 1.16.4 %d, want the tags alone for both", len(olderPackets), len(newerPackets))
+	}
+
+	encode := func(packet types.ClientboundPacket) []byte {
+		buf := new(bytes.Buffer)
+		out := streams.NewMinecraftStreamFromBuffer(buf)
+
+		if err := packet.Encode(out); err != nil {
+			t.Fatalf("Encode() error: %v", err)
+		}
+
+		if err := out.Flush(); err != nil {
+			t.Fatalf("Flush() error: %v", err)
+		}
+
+		return buf.Bytes()
+	}
+
+	if !bytes.Equal(encode(olderPackets[0]), encode(newerPackets[0])) {
+		t.Error("1.16.3's tags are not 1.16.4's")
+	}
+
+	var loader BlockStatesLoader
+
+	olderStates, err := loader.For(older)
+	if err != nil {
+		t.Fatalf("1.16.3: For() error: %v", err)
+	}
+
+	newerStates, err := loader.For(newer)
+	if err != nil {
+		t.Fatalf("1.16.4: For() error: %v", err)
+	}
+
+	if olderStates.StateCount() != newerStates.StateCount() {
+		t.Errorf("1.16.3 numbers %d states and 1.16.4 %d, want the same table", olderStates.StateCount(), newerStates.StateCount())
+	}
+
+	for _, name := range []string{"minecraft:dirt_path", "minecraft:short_grass", "minecraft:stone"} {
+		olderId, olderOk := olderStates.Id(name, nil)
+		newerId, newerOk := newerStates.Id(name, nil)
+
+		if !olderOk || !newerOk || olderId != newerId {
+			t.Errorf("Id(%s) = %d, %t on 1.16.3 and %d, %t on 1.16.4, want the same", name, olderId, olderOk, newerId, newerOk)
+		}
+	}
+}

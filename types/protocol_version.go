@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_16_3  ProtocolVersion
 	MINECRAFT_1_16_4  ProtocolVersion
 	MINECRAFT_1_17    ProtocolVersion
 	MINECRAFT_1_17_1  ProtocolVersion
@@ -36,12 +37,19 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
+	// 1.16.3 has 753 to itself: 1.16.4 moved to 754 for its social
+	// interactions screen, which is the client's own business, and changed
+	// nothing this server sends or reads -- not an id, not a packet, not a
+	// tag, not a block. It is the oldest this server speaks, and everything
+	// said of 1.16.4 below is as true of it.
+	MINECRAFT_1_16_3: ProtocolVersion{ID: 753, Names: []string{"1.16.3"}},
+
 	// 1.16.5 stayed on 1.16.4's protocol, so a client on either of them is a
-	// client on this version. It is the oldest this server speaks, and the one
-	// version from before the world grew downwards: a client on it holds a
-	// world of sixteen sections from zero up, whatever the dimension type
-	// says, and reads a chunk and its light behind masks that are plain
-	// numbers: see the 1.17 step's transformers.
+	// client on this version. With 1.16.3 below it, it is from before the
+	// world grew downwards: a client on it holds a world of sixteen sections
+	// from zero up, whatever the dimension type says, and reads a chunk and
+	// its light behind masks that are plain numbers: see the 1.17 step's
+	// transformers.
 	MINECRAFT_1_16_4: ProtocolVersion{ID: 754, Names: []string{"1.16.4", "1.16.5"}},
 
 	// 1.17 has 755 to itself: 1.16.4 sits on 754 and 1.17.1 moved to 756 over
@@ -167,6 +175,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_16_3,
 	ProtocolVersions.MINECRAFT_1_16_4,
 	ProtocolVersions.MINECRAFT_1_17,
 	ProtocolVersions.MINECRAFT_1_17_1,
@@ -201,6 +210,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_16_3.ID:  ProtocolVersions.MINECRAFT_1_16_3,
 	ProtocolVersions.MINECRAFT_1_16_4.ID:  ProtocolVersions.MINECRAFT_1_16_4,
 	ProtocolVersions.MINECRAFT_1_17.ID:    ProtocolVersions.MINECRAFT_1_17,
 	ProtocolVersions.MINECRAFT_1_17_1.ID:  ProtocolVersions.MINECRAFT_1_17_1,
@@ -280,7 +290,7 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17 and 1.16.4 -- is in play the
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4 and 1.16.3 -- is in play the
 // moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
@@ -296,7 +306,7 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
 // so from it on the challenge is always encrypted, and 1.18.2, 1.18, 1.17.1,
-// 1.17 and 1.16.4, from before the key, have nothing to sign with and encrypt it as well:
+// 1.17, 1.16.4 and 1.16.3, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let
