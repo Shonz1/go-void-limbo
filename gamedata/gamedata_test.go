@@ -3026,7 +3026,7 @@ func TestProviderGivesEachVersionItsOwnRegistries(t *testing.T) {
 		t.Error("1.17.1 spells out a dimension type other than 1.18's, want the same: the codec is field for field the same in the two")
 	}
 
-	for _, version := range types.SupportedProtocolVersions[13:] {
+	for _, version := range types.SupportedProtocolVersions[14:] {
 		if provider.DimensionTypeFor(version) != nil {
 			t.Errorf("protocol %d has a dimension type to spell out, want none for a version whose play login names it", version.ID)
 		}

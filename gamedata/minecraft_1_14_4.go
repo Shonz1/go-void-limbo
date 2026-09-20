@@ -12,6 +12,9 @@ func registriesMinecraft1_14_4() ([]Registry, error) {
 // 1.15's less what came with the bees and a handful beside -- the crops, the
 // flowers, the portals, the shulker boxes, the lectern books and the arrows
 // among them -- and with the one block tag 1.15 retired, the dirt-like.
+//
+// A 1.14.3 client is sent this set as well, its jar holding the same tags:
+// the set starts at 490.
 func tagsMinecraft1_14_4() ([]TagSet, error) {
 	_, tags, err := loadDataFile("minecraft_1_14_4.json")
 

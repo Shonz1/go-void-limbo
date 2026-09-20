@@ -67,6 +67,30 @@ func TestProviderSends1_14_4TheTagsAlone(t *testing.T) {
 	}
 }
 
+// 1.14.3 is sent what 1.14.4 is, to the byte: its jar's tags are the same
+// files and its blocks report the same bytes, so nothing here is its own, and
+// it is sent no registry either.
+func TestProviderSends1_14_3What1_14_4Is(t *testing.T) {
+	provider, err := NewDefaultProvider()
+	if err != nil {
+		t.Fatalf("NewDefaultProvider() error: %v", err)
+	}
+
+	sendsTheSetOf(t, provider, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4)
+
+	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_14_3)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	// The bell 1.14.4 numbers without its power, where 1.15 has 11209.
+	stored := map[string]string{"attachment": "ceiling", "facing": "south", "powered": "false"}
+
+	if id, ok := states.Id("minecraft:bell", stored); !ok || id != 11203 {
+		t.Errorf("a bell hung from the ceiling = %d, %t, want 1.14.4's 11203", id, ok)
+	}
+}
+
 // 1.14.4's tags are its own jar's: 1.15's less what came with the bees and a
 // handful beside, in the same four runs, and with the one tag 1.15 retired.
 func TestTagsFor1_14_4AreItsOwnJars(t *testing.T) {

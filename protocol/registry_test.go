@@ -329,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[4:18] {
+	for _, version := range types.SupportedProtocolVersions[5:19] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -418,12 +418,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
-	// below it read the same login, and 1.14.4 that login less its seed and
-	// its last flag, so theirs
+	// below it read the same login, and 1.14.4 and 1.14.3 that login less its
+	// seed and its last flag, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:4] {
+	for _, oldest := range types.SupportedProtocolVersions[:5] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -448,7 +448,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[18:] {
+	for _, version := range types.SupportedProtocolVersions[19:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -512,9 +512,12 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 // classes of the mob and its pathfinding -- so 751 stands to 753 as 753 does to 754.
 // And 1.16.1 moved to 736 over two Realms screens, so 735 stands to 736 the
 // same way, as 575 does to 578 and 573 to 575: neither 1.15.2's fixes nor
-// 1.15.1's reach a packet or a class that reads or writes one.
+// 1.15.1's reach a packet or a class that reads or writes one. And 490 to
+// 498: what 1.14.4 added is a packet this server never sends, registered
+// behind every one it does.
 func TestProtocolsOnAnEmptyStepAreNumberedAndLaidOutAsTheOneAbove(t *testing.T) {
 	steps := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4},
 		{types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1},
 		{types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2},
 		{types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1},
