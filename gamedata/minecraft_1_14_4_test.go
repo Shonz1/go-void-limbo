@@ -67,27 +67,31 @@ func TestProviderSends1_14_4TheTagsAlone(t *testing.T) {
 	}
 }
 
-// 1.14.3 is sent what 1.14.4 is, to the byte: its jar's tags are the same
-// files and its blocks report the same bytes, so nothing here is its own, and
-// it is sent no registry either.
-func TestProviderSends1_14_3What1_14_4Is(t *testing.T) {
+// 1.14.3 and 1.14.2 are sent what 1.14.4 is, to the byte: the three jars'
+// tags are the same files and their blocks reports the same bytes, so nothing
+// here is their own, and they are sent no registry either.
+func TestProviderSends1_14_3And1_14_2What1_14_4Is(t *testing.T) {
 	provider, err := NewDefaultProvider()
 	if err != nil {
 		t.Fatalf("NewDefaultProvider() error: %v", err)
 	}
 
-	sendsTheSetOf(t, provider, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4)
+	for _, older := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3} {
+		t.Run(older.Names[0], func(t *testing.T) {
+			sendsTheSetOf(t, provider, older, types.ProtocolVersions.MINECRAFT_1_14_4)
 
-	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_14_3)
-	if err != nil {
-		t.Fatalf("BlockStatesFor() error: %v", err)
-	}
+			states, err := BlockStatesFor(older)
+			if err != nil {
+				t.Fatalf("BlockStatesFor() error: %v", err)
+			}
 
-	// The bell 1.14.4 numbers without its power, where 1.15 has 11209.
-	stored := map[string]string{"attachment": "ceiling", "facing": "south", "powered": "false"}
+			// The bell 1.14.4 numbers without its power, where 1.15 has 11209.
+			stored := map[string]string{"attachment": "ceiling", "facing": "south", "powered": "false"}
 
-	if id, ok := states.Id("minecraft:bell", stored); !ok || id != 11203 {
-		t.Errorf("a bell hung from the ceiling = %d, %t, want 1.14.4's 11203", id, ok)
+			if id, ok := states.Id("minecraft:bell", stored); !ok || id != 11203 {
+				t.Errorf("a bell hung from the ceiling = %d, %t, want 1.14.4's 11203", id, ok)
+			}
+		})
 	}
 }
 
