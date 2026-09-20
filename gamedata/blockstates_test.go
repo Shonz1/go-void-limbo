@@ -15,6 +15,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	// the table to the version: a table missing a block, or holding another
 	// version's, lands somewhere else.
 	stateCounts := map[types.ProtocolId]int32{
+		types.ProtocolVersions.MINECRAFT_1_16_4.ID:  17112,
 		types.ProtocolVersions.MINECRAFT_1_17.ID:    20342,
 		types.ProtocolVersions.MINECRAFT_1_17_1.ID:  20342,
 		types.ProtocolVersions.MINECRAFT_1_18.ID:    20342,
@@ -136,7 +137,7 @@ func TestBlockStatesIdUnknown(t *testing.T) {
 // table answers to both, with the number the older name has, and only where
 // the rename holds: 1.20.3 numbers short grass itself.
 func TestBlockStatesIdFollowsARename(t *testing.T) {
-	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20, types.ProtocolVersions.MINECRAFT_1_20_2} {
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20, types.ProtocolVersions.MINECRAFT_1_20_2} {
 		states, err := BlockStatesFor(version)
 		if err != nil {
 			t.Fatalf("BlockStatesFor() error: %v", err)
@@ -163,6 +164,43 @@ func TestBlockStatesIdFollowsARename(t *testing.T) {
 
 	if _, ok := states.Id("minecraft:short_grass", nil); !ok {
 		t.Error("Id(short_grass) did not resolve on 1.20.3, whose jar names it")
+	}
+}
+
+// 1.17 renamed the grass path and split the cauldron by what it holds, and
+// 1.16.4 answers to the newer names with the blocks it has: the path under
+// its older name, and the water cauldron as its own cauldron at the same
+// level.
+func TestBlockStatesIdFollowsThe1_17RenamesOn1_16_4(t *testing.T) {
+	states, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_16_4)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	older, ok := states.Id("minecraft:grass_path", nil)
+	if newer, renamed := states.Id("minecraft:dirt_path", nil); !ok || !renamed || newer != older {
+		t.Errorf("Id(dirt_path) = %d, %t, want grass_path's %d, %t", newer, renamed, older, ok)
+	}
+
+	empty, ok := states.Id("minecraft:cauldron", nil)
+	if !ok {
+		t.Fatal("Id(cauldron) did not resolve on 1.16.4, whose jar names it")
+	}
+
+	for level, name := range []string{"1", "2", "3"} {
+		filled, ok := states.Id("minecraft:water_cauldron", map[string]string{"level": name})
+		if want := empty + int32(level) + 1; !ok || filled != want {
+			t.Errorf("Id(water_cauldron level %s) = %d, %t, want the cauldron at that level, %d", name, filled, ok, want)
+		}
+	}
+
+	newer, err := BlockStatesFor(types.ProtocolVersions.MINECRAFT_1_17)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	if _, ok := newer.Id("minecraft:grass_path", nil); ok {
+		t.Error("Id(grass_path) resolved on 1.17, which is where the block became the dirt path")
 	}
 }
 

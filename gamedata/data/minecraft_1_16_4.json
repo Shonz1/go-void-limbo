@@ -1,0 +1,466 @@
+{
+	"registries": [],
+	"tags": [
+		{
+			"registry": "minecraft:block",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:bamboo_plantable_on"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:base_stone_nether"
+				},
+				{
+					"name": "minecraft:base_stone_overworld"
+				},
+				{
+					"name": "minecraft:beacon_base_blocks"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:bee_growables"
+				},
+				{
+					"name": "minecraft:beehives"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:campfires"
+				},
+				{
+					"name": "minecraft:carpets"
+				},
+				{
+					"name": "minecraft:climbable"
+				},
+				{
+					"name": "minecraft:coral_blocks"
+				},
+				{
+					"name": "minecraft:coral_plants"
+				},
+				{
+					"name": "minecraft:corals"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:crops"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:dragon_immune"
+				},
+				{
+					"name": "minecraft:enderman_holdable"
+				},
+				{
+					"name": "minecraft:fence_gates"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fire"
+				},
+				{
+					"name": "minecraft:flower_pots"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:guarded_by_piglins"
+				},
+				{
+					"name": "minecraft:hoglin_repellents"
+				},
+				{
+					"name": "minecraft:ice"
+				},
+				{
+					"name": "minecraft:impermeable"
+				},
+				{
+					"name": "minecraft:infiniburn_end"
+				},
+				{
+					"name": "minecraft:infiniburn_nether"
+				},
+				{
+					"name": "minecraft:infiniburn_overworld"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:mushroom_grow_block"
+				},
+				{
+					"name": "minecraft:non_flammable_wood"
+				},
+				{
+					"name": "minecraft:nylium"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:portals"
+				},
+				{
+					"name": "minecraft:pressure_plates"
+				},
+				{
+					"name": "minecraft:prevent_mob_spawning_inside"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:shulker_boxes"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:soul_speed_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:standing_signs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_pressure_plates"
+				},
+				{
+					"name": "minecraft:strider_warm_blocks"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:underwater_bonemeals"
+				},
+				{
+					"name": "minecraft:unstable_bottom_center"
+				},
+				{
+					"name": "minecraft:valid_spawn"
+				},
+				{
+					"name": "minecraft:wall_corals"
+				},
+				{
+					"name": "minecraft:wall_post_override"
+				},
+				{
+					"name": "minecraft:wall_signs"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wart_blocks"
+				},
+				{
+					"name": "minecraft:wither_immune"
+				},
+				{
+					"name": "minecraft:wither_summon_base_blocks"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:item",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:beacon_payment_items"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:boats"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:carpets"
+				},
+				{
+					"name": "minecraft:coals"
+				},
+				{
+					"name": "minecraft:creeper_drop_music_discs"
+				},
+				{
+					"name": "minecraft:crimson_stems"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fishes"
+				},
+				{
+					"name": "minecraft:flowers"
+				},
+				{
+					"name": "minecraft:gold_ores"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:lectern_books"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:logs_that_burn"
+				},
+				{
+					"name": "minecraft:music_discs"
+				},
+				{
+					"name": "minecraft:non_flammable_wood"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:piglin_loved"
+				},
+				{
+					"name": "minecraft:piglin_repellents"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:soul_fire_base_blocks"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:stone_crafting_materials"
+				},
+				{
+					"name": "minecraft:stone_tool_materials"
+				},
+				{
+					"name": "minecraft:tall_flowers"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:warped_stems"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:fluid",
+			"tags": [
+				{
+					"name": "minecraft:lava"
+				},
+				{
+					"name": "minecraft:water"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:entity_type",
+			"tags": [
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:beehive_inhabitors"
+				},
+				{
+					"name": "minecraft:impact_projectiles"
+				},
+				{
+					"name": "minecraft:raiders"
+				},
+				{
+					"name": "minecraft:skeletons"
+				}
+			]
+		}
+	]
+}

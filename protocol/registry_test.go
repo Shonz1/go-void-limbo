@@ -285,6 +285,7 @@ func (r registryCodecs) RegistryCodecFor(version types.ProtocolVersion) []byte {
 // spells out, which comes from the same source as the registries and only
 // for those versions, each's own.
 var dimensionTypes = map[types.ProtocolId][]byte{
+	types.ProtocolVersions.MINECRAFT_1_16_4.ID: {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xF8, 0x00},
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID: {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xF0, 0x00},
 	types.ProtocolVersions.MINECRAFT_1_18.ID:   {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xE0, 0x00},
 	types.ProtocolVersions.MINECRAFT_1_18_2.ID: {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xC0, 0x00},
@@ -305,12 +306,13 @@ func (r registryCodecs) DimensionTypeFor(version types.ProtocolVersion) []byte {
 // 1.19.3 login 1.19.3's and neither of the others', a 1.19.1 login
 // 1.19.1's, a 1.19 login 1.19's, a 1.18.2 login 1.18.2's, with the
 // dimension type it spells out from the same source, a 1.18 login 1.18's,
-// registries and dimension type both, and a 1.17.1 login 1.17.1's, the
-// same two -- and a registry built
+// registries and dimension type both, a 1.17.1 login 1.17.1's, the
+// same two, and a 1.16.4 login 1.16.4's -- and a registry built
 // without one refuses the login rather than send it without them. Every other version's login is untouched by the source, since none
 // of them reads registries there.
 func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T) {
 	codecs := registryCodecs{
+		types.ProtocolVersions.MINECRAFT_1_16_4.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5A, 0x08, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_17_1.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5B, 0x07, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_18.ID:   {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5C, 0x06, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_18_2.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5D, 0x05, 0x00},
@@ -322,7 +324,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:9] {
+	for _, version := range types.SupportedProtocolVersions[:10] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -339,7 +341,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 			t.Errorf("protocol %d: the login % x does not carry its registries % x", version.ID, body, codecs[source])
 		}
 
-		// 1.18.2, 1.18 and 1.17.1 spell the dimension type out behind the
+		// 1.18.2, 1.18, 1.17.1 and 1.16.4 spell the dimension type out behind the
 		// registries, each its own, and no other version does.
 		for other, dimensionType := range dimensionTypes {
 			if spelled, want := bytes.Contains(body, dimensionType), source == other; spelled != want {
@@ -363,8 +365,9 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	// 1.19.3's and not 1.19.1's the 1.19.1 login, one with 1.19.1's and not
 	// 1.19's the 1.19 login, one with 1.19's and not 1.18.2's the 1.18.2
 	// login, one with 1.18.2's and not 1.18's the 1.18 login, and one with
-	// 1.18's and not 1.17.1's the 1.17.1 login: the chain does not hand a
-	// version another's.
+	// 1.18's and not 1.17.1's the 1.17.1 login, and one with 1.17.1's and
+	// not 1.16.4's the 1.16.4 login: the chain does not hand a version
+	// another's.
 	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_20.ID: codecs[types.ProtocolVersions.MINECRAFT_1_20.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_19_4, login); err == nil {
 		t.Error("EncodeClientbound() of a 1.19.4 login with only 1.20's registries succeeded, want a refusal")
 	}
@@ -393,9 +396,13 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		t.Error("EncodeClientbound() of a 1.17.1 login with only 1.18's registries succeeded, want a refusal")
 	}
 
+	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_17_1.ID: codecs[types.ProtocolVersions.MINECRAFT_1_17_1.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_16_4, login); err == nil {
+		t.Error("EncodeClientbound() of a 1.16.4 login with only 1.17.1's registries succeeded, want a refusal")
+	}
+
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[9:] {
+	for _, version := range types.SupportedProtocolVersions[10:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -420,10 +427,14 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 
 	cases := []struct {
 		version types.ProtocolVersion
+		id      byte
 		want    []byte
 	}{
-		{types.ProtocolVersions.MINECRAFT_1_17, []byte{0x80, 0x01}},
-		{types.ProtocolVersions.MINECRAFT_1_17_1, []byte{0x01, 0x80, 0x01}},
+		// 1.16.4 reads the list as well, so the count the 1.17.1 step took
+		// off goes back in front on the step below it.
+		{types.ProtocolVersions.MINECRAFT_1_16_4, 0x36, []byte{0x01, 0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_17, 0x3A, []byte{0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_17_1, 0x3A, []byte{0x01, 0x80, 0x01}},
 	}
 
 	for _, c := range cases {
@@ -432,8 +443,8 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", c.version.ID, err)
 		}
 
-		if !bytes.HasSuffix(body, c.want) || len(body) != len(c.want)+1 || body[0] != 0x3A {
-			t.Errorf("protocol %d: the removal is % x, want the id 0x3a and % x", c.version.ID, body, c.want)
+		if !bytes.HasSuffix(body, c.want) || len(body) != len(c.want)+1 || body[0] != c.id {
+			t.Errorf("protocol %d: the removal is % x, want the id %#x and % x", c.version.ID, body, c.id, c.want)
 		}
 	}
 

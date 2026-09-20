@@ -73,9 +73,11 @@ func encodeSet(set Set) (bucket, error) {
 	// starts below 1.20.2 by clients that take them inside the play login,
 	// with no packet at all, and one that starts below 1.19 by clients that
 	// read the dimension type they are put into out of that login as well,
-	// spelled out rather than named. Those are the three differences in
-	// this package's output between the versions: the content of a set is
-	// what varies, and the shape only at those three steps.
+	// spelled out rather than named. One that starts below 1.17 is read by
+	// clients that take the tags with no registry named in front of them:
+	// see below. Those are the four differences in this package's output
+	// between the versions: the content of a set is what varies, and the
+	// shape only at those four steps.
 	if set.MinProtocol < registryCodecProtocol {
 		codec, err := encodeRegistryCodec(set.Registries)
 		if err != nil {
@@ -113,7 +115,12 @@ func encodeSet(set Set) (bucket, error) {
 	// Tags go out after the registries they point into, since a tag names
 	// its entries by registry id.
 	if len(set.Tags) > 0 {
-		body, err := encodeTags(set.Tags)
+		encode := encodeTags
+		if set.MinProtocol < namedTagRegistriesProtocol {
+			encode = encodeTags1_16_4
+		}
+
+		body, err := encode(set.Tags)
 		if err != nil {
 			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
 		}

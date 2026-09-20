@@ -57,6 +57,16 @@ func main() {
 		}
 
 		lobby = loaded
+	} else {
+		// No world is still a world to the clients that only move a player
+		// they hold the chunk of: see world.Void.
+		empty, err := world.Void(packetRegistry)
+		if err != nil {
+			slog.Error("failed to build the empty world", "err", err)
+			return
+		}
+
+		lobby = empty
 	}
 
 	// One key for the process, generated before the first client can ask for it.
