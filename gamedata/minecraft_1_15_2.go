@@ -12,8 +12,8 @@ func registriesMinecraft1_15_2() ([]Registry, error) {
 // version reads them: see encodeTags1_16_4. They are 1.16's less what the
 // nether update brought -- no tag of 1.15.2's was retired on the way.
 //
-// A 1.15.1 client is sent this set as well, its jar holding the same tags:
-// the set starts at 575.
+// A 1.15.1 or 1.15 client is sent this set as well, their jars holding the
+// same tags: the set starts at 573.
 func tagsMinecraft1_15_2() ([]TagSet, error) {
 	_, tags, err := loadDataFile("minecraft_1_15_2.json")
 
