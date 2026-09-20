@@ -324,7 +324,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:11] {
+	for _, version := range types.SupportedProtocolVersions[:12] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -332,12 +332,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 		// 1.17 reads 1.17.1's login as it stands, registries and dimension
 		// type included: nothing rewrites the login on the step between them.
-		// Nor does anything on the step from 1.16.4 to 1.16.3.
+		// Nor does anything on the steps from 1.16.4 to 1.16.3 and on to 1.16.2.
 		source := version.ID
 		switch source {
 		case types.ProtocolVersions.MINECRAFT_1_17.ID:
 			source = types.ProtocolVersions.MINECRAFT_1_17_1.ID
-		case types.ProtocolVersions.MINECRAFT_1_16_3.ID:
+		case types.ProtocolVersions.MINECRAFT_1_16_2.ID, types.ProtocolVersions.MINECRAFT_1_16_3.ID:
 			source = types.ProtocolVersions.MINECRAFT_1_16_4.ID
 		}
 
@@ -406,7 +406,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[11:] {
+	for _, version := range types.SupportedProtocolVersions[12:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -438,6 +438,7 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 		// off goes back in front on the step below it.
 		{types.ProtocolVersions.MINECRAFT_1_16_4, 0x36, []byte{0x01, 0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_16_3, 0x36, []byte{0x01, 0x80, 0x01}},
+		{types.ProtocolVersions.MINECRAFT_1_16_2, 0x36, []byte{0x01, 0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_17, 0x3A, []byte{0x80, 0x01}},
 		{types.ProtocolVersions.MINECRAFT_1_17_1, 0x3A, []byte{0x01, 0x80, 0x01}},
 	}
@@ -462,54 +463,64 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 // 1.16.4 moved to 754 over nothing this server speaks: 1.16.3's jar numbers
 // every packet as 1.16.4's does and lays every one of them out alike, so the
 // tables give 753 the ids they give 754, packet for packet, and no
-// transformer sits on the step between the two.
-func TestProtocol753IsNumberedAndLaidOutAs754(t *testing.T) {
-	older, newer := types.ProtocolVersions.MINECRAFT_1_16_3.ID, types.ProtocolVersions.MINECRAFT_1_16_4.ID
+// transformer sits on the step between the two. 1.16.3 moved to 753 over
+// less still -- its jar is 1.16.2's but for the version it names and five
+// classes of the mob and its pathfinding -- so 751 stands to 753 as 753 does to 754.
+func TestProtocols751And753AreNumberedAndLaidOutAs754(t *testing.T) {
+	steps := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3},
+		{types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4},
+	}
 
-	same := func(name string, ids packetIds) {
-		olderId, olderOk := ids[older]
-		newerId, newerOk := ids[newer]
+	for _, step := range steps {
+		older, newer := step.older.ID, step.newer.ID
+		olderName, newerName := step.older.Names[0], step.newer.Names[0]
 
-		if olderOk != newerOk || olderId != newerId {
-			t.Errorf("%s: 1.16.3 has id %#x (%t) and 1.16.4 %#x (%t), want the two alike", name, olderId, olderOk, newerId, newerOk)
+		same := func(name string, ids packetIds) {
+			olderId, olderOk := ids[older]
+			newerId, newerOk := ids[newer]
+
+			if olderOk != newerOk || olderId != newerId {
+				t.Errorf("%s: %s has id %#x (%t) and %s %#x (%t), want the two alike", name, olderName, olderId, olderOk, newerName, newerId, newerOk)
+			}
 		}
-	}
 
-	for _, packet := range serverboundPackets {
-		same(packet.packet.Name(), packet.ids)
-	}
-
-	for _, packet := range clientboundPackets {
-		same(packet.packet.Name(), packet.ids)
-	}
-
-	registry := NewDefaultRegistry(nil)
-	for key := range registry.upgrades {
-		if key.ProtocolID == older {
-			t.Errorf("an upgrade of %s is registered from 1.16.3, want none: 1.16.4 reads it as sent", key.PacketType.Name())
+		for _, packet := range serverboundPackets {
+			same(packet.packet.Name(), packet.ids)
 		}
-	}
 
-	for key := range registry.downgrades {
-		if key.ProtocolID == newer {
-			t.Errorf("a downgrade of %s is registered at 1.16.4, want none: 1.16.3 reads it as sent", key.PacketType.Name())
+		for _, packet := range clientboundPackets {
+			same(packet.packet.Name(), packet.ids)
 		}
-	}
 
-	// What the chain makes of a packet is then the same bytes for both.
-	removal := &clientboundPlay.RemoveEntitiesClientboundPacket{EntityIds: []int32{128}}
+		registry := NewDefaultRegistry(nil)
+		for key := range registry.upgrades {
+			if key.ProtocolID == older {
+				t.Errorf("an upgrade of %s is registered from %s, want none: %s reads it as sent", key.PacketType.Name(), olderName, newerName)
+			}
+		}
 
-	olderBody, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_16_3, removal)
-	if err != nil {
-		t.Fatalf("1.16.3: EncodeClientbound() error: %v", err)
-	}
+		for key := range registry.downgrades {
+			if key.ProtocolID == newer {
+				t.Errorf("a downgrade of %s is registered at %s, want none: %s reads it as sent", key.PacketType.Name(), newerName, olderName)
+			}
+		}
 
-	newerBody, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_16_4, removal)
-	if err != nil {
-		t.Fatalf("1.16.4: EncodeClientbound() error: %v", err)
-	}
+		// What the chain makes of a packet is then the same bytes for both.
+		removal := &clientboundPlay.RemoveEntitiesClientboundPacket{EntityIds: []int32{128}}
 
-	if !bytes.Equal(olderBody, newerBody) {
-		t.Errorf("1.16.3 is sent % x and 1.16.4 % x, want the same bytes", olderBody, newerBody)
+		olderBody, err := registry.EncodeClientbound(types.PhasePlay, step.older, removal)
+		if err != nil {
+			t.Fatalf("%s: EncodeClientbound() error: %v", olderName, err)
+		}
+
+		newerBody, err := registry.EncodeClientbound(types.PhasePlay, step.newer, removal)
+		if err != nil {
+			t.Fatalf("%s: EncodeClientbound() error: %v", newerName, err)
+		}
+
+		if !bytes.Equal(olderBody, newerBody) {
+			t.Errorf("%s is sent % x and %s % x, want the same bytes", olderName, olderBody, newerName, newerBody)
+		}
 	}
 }

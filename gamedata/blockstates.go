@@ -120,8 +120,10 @@ type blockStateProperty struct {
 // azalea and the rest, 135 blocks in all -- where the cauldron split by what
 // it holds and the grass path became the dirt path, so 754 numbers 17,112
 // states, and 753 every one of them alike: 1.16.4 changed no block, its
-// jar's report byte-identical to 1.16.3's.
+// jar's report byte-identical to 1.16.3's, and 1.16.3's to 1.16.2's, so 751
+// numbers them the same way.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_16_2.ID:  "blockstates_minecraft_1_16_4.json",
 	types.ProtocolVersions.MINECRAFT_1_16_3.ID:  "blockstates_minecraft_1_16_4.json",
 	types.ProtocolVersions.MINECRAFT_1_16_4.ID:  "blockstates_minecraft_1_16_4.json",
 	types.ProtocolVersions.MINECRAFT_1_17.ID:    "blockstates_minecraft_1_18_2.json",
@@ -156,13 +158,18 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // reads the older name's entry, and a world saved after the rename translates
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
-// where the grass path became the dirt path, which 1.16.4 and 1.16.3 answer
-// to as well. 1.17 is also where the cauldron split by what it holds, and the
+// where the grass path became the dirt path, which 1.16.4, 1.16.3 and 1.16.2
+// answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_16_2.ID: {
+		"minecraft:short_grass":    "minecraft:grass",
+		"minecraft:dirt_path":      "minecraft:grass_path",
+		"minecraft:water_cauldron": "minecraft:cauldron",
+	},
 	types.ProtocolVersions.MINECRAFT_1_16_3.ID: {
 		"minecraft:short_grass":    "minecraft:grass",
 		"minecraft:dirt_path":      "minecraft:grass_path",
