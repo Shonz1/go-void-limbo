@@ -38,9 +38,10 @@ type PacketEncoder interface {
 // The world's vertical bounds, in sections. These are the bounds the
 // dimension type in package gamedata announces (min_y -64, height 384), and
 // they have to be: the client sizes a chunk by the dimension it was told it is
-// in, and a chunk of any other size is a chunk it refuses. The one version
-// that is told no bounds, 1.16.4, holds sixteen sections from zero up, and
-// the 1.17 step's transformers cut what is built here down to those.
+// in, and a chunk of any other size is a chunk it refuses. The two versions
+// that are told no bounds, 1.16.4 and 1.16.3, hold sixteen sections from
+// zero up, and the 1.17 step's transformers cut what is built here down to
+// those.
 const (
 	minSectionY  = -4
 	sectionCount = 24
@@ -209,10 +210,10 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
 
 // entitiesTickWithoutChunks is the first version whose client ticks an
-// entity wherever it stands. A client before it -- 1.16.4 -- ticks one only
-// while it holds the chunk the entity is in, and a tick is when another
-// player's relayed position is applied: on a server that sends no chunk,
-// every player such a client is shown stays frozen where it appeared.
+// entity wherever it stands. A client before it -- 1.16.4 or 1.16.3 -- ticks
+// one only while it holds the chunk the entity is in, and a tick is when
+// another player's relayed position is applied: on a server that sends no
+// chunk, every player such a client is shown stays frozen where it appeared.
 var entitiesTickWithoutChunks = types.ProtocolVersions.MINECRAFT_1_17
 
 // Void is the world of a server that has none: nothing at all for every
@@ -301,10 +302,10 @@ type chunkBuilder struct {
 	// chunk transformer drops the light the chunk packet carries on the way
 	// down. The sections themselves are built as 1.18 reads them and carried
 	// down by that transformer as well, since 1.17.1 lays them out the same
-	// way but for what it leaves out. 1.16.4 reads the two packets in the
-	// same order, and the 1.17 step cuts both down to the sixteen sections
-	// its world holds: the blocks a world stores below zero or above 255
-	// are blocks a client on it is never shown.
+	// way but for what it leaves out. 1.16.4 and 1.16.3 read the two packets
+	// in the same order, and the 1.17 step cuts both down to the sixteen
+	// sections their world holds: the blocks a world stores below zero or
+	// above 255 are blocks a client on either is never shown.
 	separateLight bool
 
 	// substituted is every stored state this version had no number for, warned

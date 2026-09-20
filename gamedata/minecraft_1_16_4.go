@@ -17,7 +17,8 @@ import "github.com/Shonz1/go-void-limbo/nbt"
 // dimension type is 1.16.4's own: see overworldDimensionType1_16_4.
 //
 // A 1.16.5 client is sent this set as well, since it speaks 1.16.4's
-// protocol.
+// protocol, and so is a 1.16.3 client, whose jar holds the same tags and the
+// same codecs: the set starts at 753.
 func registriesMinecraft1_16_4() ([]Registry, error) {
 	registries := []Registry{
 		{Name: "minecraft:dimension_type", Entries: []Entry{
