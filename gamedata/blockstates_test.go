@@ -17,6 +17,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	stateCounts := map[types.ProtocolId]int32{
 		types.ProtocolVersions.MINECRAFT_1_16.ID:    17104,
 		types.ProtocolVersions.MINECRAFT_1_16_1.ID:  17104,
+		types.ProtocolVersions.MINECRAFT_1_15_1.ID:  11337,
 		types.ProtocolVersions.MINECRAFT_1_15_2.ID:  11337,
 		types.ProtocolVersions.MINECRAFT_1_16_2.ID:  17112,
 		types.ProtocolVersions.MINECRAFT_1_16_3.ID:  17112,

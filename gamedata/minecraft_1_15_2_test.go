@@ -146,3 +146,81 @@ func TestBlockStatesFor1_15_2NumberAWallByWhetherItsSidesAreThere(t *testing.T) 
 		t.Error("1.16 numbers a wall whose sides are true or false, want it refused: its sides are none, low or tall")
 	}
 }
+
+// 1.15.1 is sent what 1.15.2 is, to the byte: its jar's tags and its blocks
+// report are 1.15.2's, so nothing here is its own, and it is sent no
+// registry either.
+func TestProviderSends1_15_1What1_15_2Is(t *testing.T) {
+	provider, err := NewDefaultProvider()
+	if err != nil {
+		t.Fatalf("NewDefaultProvider() error: %v", err)
+	}
+
+	older, newer := types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2
+
+	if codec := provider.RegistryCodecFor(older); len(codec) != 0 {
+		t.Errorf("1.15.1 has a registry codec of %d bytes, want none: its login holds a dimension's number", len(codec))
+	}
+
+	if dimensionType := provider.DimensionTypeFor(older); len(dimensionType) != 0 {
+		t.Errorf("1.15.1 has a dimension type of %d bytes, want none", len(dimensionType))
+	}
+
+	olderPackets, newerPackets := provider.PacketsFor(older), provider.PacketsFor(newer)
+	if len(olderPackets) != 1 || len(newerPackets) != 1 {
+		t.Fatalf("1.15.1 is sent %d packets and 1.15.2 %d, want the tags alone for both", len(olderPackets), len(newerPackets))
+	}
+
+	encode := func(packet types.ClientboundPacket) []byte {
+		buf := new(bytes.Buffer)
+		out := streams.NewMinecraftStreamFromBuffer(buf)
+
+		if err := packet.Encode(out); err != nil {
+			t.Fatalf("Encode() error: %v", err)
+		}
+
+		if err := out.Flush(); err != nil {
+			t.Fatalf("Flush() error: %v", err)
+		}
+
+		return buf.Bytes()
+	}
+
+	if !bytes.Equal(encode(olderPackets[0]), encode(newerPackets[0])) {
+		t.Error("1.15.1's tags are not 1.15.2's")
+	}
+
+	var loader BlockStatesLoader
+
+	olderStates, err := loader.For(older)
+	if err != nil {
+		t.Fatalf("1.15.1: For() error: %v", err)
+	}
+
+	newerStates, err := loader.For(newer)
+	if err != nil {
+		t.Fatalf("1.15.2: For() error: %v", err)
+	}
+
+	if olderStates.StateCount() != newerStates.StateCount() {
+		t.Errorf("1.15.1 numbers %d states and 1.15.2 %d, want the same table", olderStates.StateCount(), newerStates.StateCount())
+	}
+
+	wall := map[string]string{"east": "low", "north": "none", "south": "tall", "up": "true", "waterlogged": "false", "west": "none"}
+
+	for _, name := range []string{"minecraft:dirt_path", "minecraft:short_grass", "minecraft:water_cauldron", "minecraft:stone"} {
+		olderId, olderOk := olderStates.Id(name, nil)
+		newerId, newerOk := newerStates.Id(name, nil)
+
+		if !olderOk || !newerOk || olderId != newerId {
+			t.Errorf("Id(%s) = %d, %t on 1.15.1 and %d, %t on 1.15.2, want the same", name, olderId, olderOk, newerId, newerOk)
+		}
+	}
+
+	olderId, olderOk := olderStates.Id("minecraft:cobblestone_wall", wall)
+	newerId, newerOk := newerStates.Id("minecraft:cobblestone_wall", wall)
+
+	if !olderOk || !newerOk || olderId != newerId {
+		t.Errorf("a wall as 1.16 stores it = %d, %t on 1.15.1 and %d, %t on 1.15.2, want the same state", olderId, olderOk, newerId, newerOk)
+	}
+}
