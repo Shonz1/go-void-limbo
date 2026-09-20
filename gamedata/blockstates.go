@@ -138,8 +138,12 @@ type blockStateProperty struct {
 // wall's sides went from being there or not to being low or tall, so 578
 // numbers 11,337 states; see blockStateValueRenames for the walls. 1.15.2
 // changed no block, its jar's report byte-identical to 1.15.1's, and 1.15.1's
-// to 1.15's, so 575 and 573 number them as 578 does.
+// to 1.15's, so 575 and 573 number them as 578 does. And 1.14.4 its own
+// again: 573 is where the bees landed -- their nest and their hive, the honey
+// block and the honeycomb block -- and where the bell took on being powered,
+// so 498 numbers 11,271 states.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_14_4.ID:  "blockstates_minecraft_1_14_4.json",
 	types.ProtocolVersions.MINECRAFT_1_15.ID:    "blockstates_minecraft_1_15_2.json",
 	types.ProtocolVersions.MINECRAFT_1_15_1.ID:  "blockstates_minecraft_1_15_2.json",
 	types.ProtocolVersions.MINECRAFT_1_15_2.ID:  "blockstates_minecraft_1_15_2.json",
@@ -181,12 +185,17 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1 and 1.15 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15 and 1.14.4 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_14_4.ID: {
+		"minecraft:short_grass":    "minecraft:grass",
+		"minecraft:dirt_path":      "minecraft:grass_path",
+		"minecraft:water_cauldron": "minecraft:cauldron",
+	},
 	types.ProtocolVersions.MINECRAFT_1_15.ID: {
 		"minecraft:short_grass":    "minecraft:grass",
 		"minecraft:dirt_path":      "minecraft:grass_path",
@@ -247,8 +256,13 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 //
 // 1.16 is where a wall's sides went from being there or not to being low or
 // tall: a wall stored with a side of either height has that side on 1.15.2,
-// on 1.15.1 and on 1.15, and one stored with none does not.
+// on 1.15.1, on 1.15 and on 1.14.4, and one stored with none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_14_4.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_15.ID: {
 		"none": "false",
 		"low":  "true",

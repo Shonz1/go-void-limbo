@@ -499,6 +499,10 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	// chunk names them by the client's own numbers.
 	builtInBiomes := version.ID < types.ProtocolVersions.MINECRAFT_1_16_2.ID
 
+	// columnBiomes is a version from before 1.15, which holds a biome for
+	// every column of a chunk and reads them off the end of the sections.
+	columnBiomes := version.ID < types.ProtocolVersions.MINECRAFT_1_15.ID
+
 	if flat {
 		masks := []*[]int64{&chunk.SkyLightMask, &chunk.BlockLightMask, &chunk.EmptySkyLightMask, &chunk.EmptyBlockLightMask}
 		for _, mask := range masks {
@@ -605,14 +609,17 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	// all the one biome this server registers.
 	//
 	// 1.16.1 reads them as plain ints with no count in front, out of the
-	// biomes it numbers for itself, where the plains are 1.
-	if builtInBiomes {
+	// biomes it numbers for itself, where the plains are 1. 1.14.4 has none
+	// here: see below the sections.
+	switch {
+	case columnBiomes:
+	case builtInBiomes:
 		for i := range legacySections * 64 {
 			if biome, err := ms.ReadInt(); err != nil || biome != 1 {
 				t.Fatalf("biome %d = %d, %v, want 1, the client's own plains", i, biome, err)
 			}
 		}
-	} else {
+	default:
 		biomeCount, err := ms.ReadVarInt()
 		if err != nil {
 			t.Fatalf("reading biome count: %v", err)
@@ -689,6 +696,22 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		}
 
 		chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00)
+	}
+
+	// 1.14.4 reads its biomes here, behind the last section: a plain int for
+	// every column, out of the biomes it numbers for itself.
+	if columnBiomes {
+		for i := range 16 * 16 {
+			if len(r.data)-r.pos < 4 {
+				t.Fatalf("section buffer ends at biome %d, want one for each of its 256 columns", i)
+			}
+
+			if biome := binary.BigEndian.Uint32(r.data[r.pos:]); biome != 1 {
+				t.Fatalf("biome %d = %d, want 1, the client's own plains", i, biome)
+			}
+
+			r.pos += 4
+		}
 	}
 
 	if r.pos != len(r.data) {
