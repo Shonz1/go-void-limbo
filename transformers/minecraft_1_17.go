@@ -251,6 +251,12 @@ func cutSectionsTo1_16_4(data []byte, mask int64) ([]byte, error) {
 			return nil, fmt.Errorf("section %d: %w", index, err)
 		}
 
+		// A palette of one is a form neither side of this step reads: the
+		// 1.18 step spells it out before a section gets here.
+		if blocks.bits == 0 {
+			return nil, fmt.Errorf("section %d: a palette of one, which 1.16.4 has no form for", index)
+		}
+
 		if index < sectionsBelowZero || index >= sectionsBelowZero+sections1_16_4 {
 			continue
 		}
@@ -260,7 +266,7 @@ func cutSectionsTo1_16_4(data []byte, mask int64) ([]byte, error) {
 	}
 
 	if rest, err := in.ReadRest(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("past the last section: %w", err)
 	} else if len(rest) != 0 {
 		return nil, fmt.Errorf("%d bytes of sections past the ones the mask names", len(rest))
 	}
@@ -382,6 +388,10 @@ func cutLightArraysTo1_16_4(in *streams.MinecraftStream, out *streams.MinecraftS
 		array, err := in.ReadByteArray(lightArrayBytes)
 		if err != nil {
 			return err
+		}
+
+		if len(array) != lightArrayBytes {
+			return fmt.Errorf("a light array of %d bytes, want %d", len(array), lightArrayBytes)
 		}
 
 		if index < sectionsBelowZero || index >= sectionsBelowZero+lightSections1_16_4 {

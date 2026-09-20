@@ -135,7 +135,7 @@ func TestDowngradeLevelChunkTo1_16_4CutsTheWorldToSixteenSections(t *testing.T) 
 	})
 
 	if got := runTransformer(t, DowngradeLevelChunkTo1_16_4, sent); !bytes.Equal(got, want) {
-		t.Errorf("to 1.16.4 = %d bytes, want %d\ngot  % x\nwant % x", len(got), len(want), got[:64], want[:64])
+		t.Errorf("to 1.16.4 = %d bytes, want %d\ngot  % x\nwant % x", len(got), len(want), got[:min(len(got), 64)], want[:min(len(want), 64)])
 	}
 }
 
@@ -159,6 +159,7 @@ func TestDowngradeLevelChunkTo1_16_4Refuses(t *testing.T) {
 		"a short heightmap":      chunk1_17(t, 0, nil, nbt.Compound{"MOTION_BLOCKING": nbt.LongArray{1}}, 0),
 		"a section unnamed":      chunk1_17(t, 0, section1_17(1, 1), nbt.Compound{}, 0),
 		"a named section absent": chunk1_17(t, 1<<4, nil, nbt.Compound{}, 0),
+		"a palette of one":       chunk1_17(t, 1<<4, []byte{0x10, 0x00, 0x00, 0x07, 0x00}, nbt.Compound{}, 0),
 		"empty body":             nil,
 	}
 
@@ -222,7 +223,7 @@ func TestDowngradeLightUpdateTo1_16_4CutsTheLightToEighteenSections(t *testing.T
 	})
 
 	if got := runTransformer(t, DowngradeLightUpdateTo1_16_4, sent); !bytes.Equal(got, want) {
-		t.Errorf("to 1.16.4 = %d bytes, want %d\ngot  % x\nwant % x", len(got), len(want), got[:16], want[:16])
+		t.Errorf("to 1.16.4 = %d bytes, want %d\ngot  % x\nwant % x", len(got), len(want), got[:min(len(got), 16)], want[:min(len(want), 16)])
 	}
 }
 

@@ -703,7 +703,7 @@ func raiseHeightmap(packed []int64) []int64 {
 
 	for i := range 256 {
 		shift := i % 7 * 9
-		raised[i/7] |= (packed[i/7]>>shift&0x1FF + 64) << shift
+		raised[i/7] |= (packed[i/7]>>shift&0x1FF + 64) & 0x1FF << shift
 	}
 
 	return raised
