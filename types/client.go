@@ -219,10 +219,12 @@ type PlayerSync interface {
 	// is an item use there, which a limbo does not read.
 	SyncSwing()
 
-	// SyncInput records the movement keys this player is holding and shows the
-	// two stances other players can see -- sneaking and sprinting -- when they
-	// change.
-	SyncInput(sneaking, sprinting bool)
+	// SyncSneaking and SyncSprinting record the two stances other players can
+	// see and show them the change when there is one. They are apart because
+	// the client reports them apart: sprinting in the player command packet,
+	// sneaking there or in the player input packet, depending on the version.
+	SyncSneaking(sneaking bool)
+	SyncSprinting(sprinting bool)
 }
 
 // Client is the connection state a packet handler is allowed to observe and

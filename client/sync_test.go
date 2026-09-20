@@ -183,7 +183,7 @@ func TestMovesAreDroppedWhereThePlayerWasNeverShown(t *testing.T) {
 
 	a.SyncPosition(1, 65, 2, true)
 	a.SyncSwing()
-	a.SyncInput(true, false)
+	a.SyncSneaking(true)
 
 	if cOut.Len() != 0 {
 		t.Errorf("c was sent % x about a player it was never shown, want nothing", cOut.Bytes())
@@ -231,7 +231,7 @@ func TestLeaveHidesThePlayerEverywhere(t *testing.T) {
 	}
 }
 
-func TestSyncInputRelaysOnlyChanges(t *testing.T) {
+func TestSyncSneakingRelaysOnlyChanges(t *testing.T) {
 	ps := NewPlayerSync()
 
 	a, _ := newSyncClient(ps, 1, "Alice", uuidA)
@@ -241,7 +241,7 @@ func TestSyncInputRelaysOnlyChanges(t *testing.T) {
 	b.JoinPlayerSync()
 	bOut.Reset()
 
-	a.SyncInput(true, false)
+	a.SyncSneaking(true)
 
 	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after a sneak, want % x", got, want)
@@ -251,13 +251,13 @@ func TestSyncInputRelaysOnlyChanges(t *testing.T) {
 
 	// The client resends its input byte for every key change, and most of the
 	// bits are movement keys nobody else can see.
-	a.SyncInput(true, false)
+	a.SyncSneaking(true)
 
 	if bOut.Len() != 0 {
 		t.Errorf("b was sent % x for an input that changed no stance, want nothing", bOut.Bytes())
 	}
 
-	a.SyncInput(false, false)
+	a.SyncSneaking(false)
 
 	if got, want := packetIds(t, bOut), []byte{setEntityDataId26_3}; !bytes.Equal(got, want) {
 		t.Errorf("b was sent packets % x after standing back up, want % x", got, want)
@@ -300,7 +300,7 @@ func TestShowPlayerCarriesTheStance(t *testing.T) {
 	a.JoinPlayerSync()
 
 	// a is already sneaking by the time b arrives, with nobody yet to see it.
-	a.SyncInput(true, false)
+	a.SyncSneaking(true)
 
 	b.JoinPlayerSync()
 
@@ -323,7 +323,7 @@ func TestSyncCarriesThePacketsDownToAnOlderClient(t *testing.T) {
 	b.playerSync = ps
 	b.profile = types.GameProfile{Uuid: uuidB, Username: "Bob"}
 
-	a.SyncInput(true, false)
+	a.SyncSneaking(true)
 	a.JoinPlayerSync()
 	b.JoinPlayerSync()
 

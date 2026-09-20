@@ -26,3 +26,13 @@ func TestDecodePlayerInputServerboundPacketReadsEachFlagOnItsOwn(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodePlayerCommandServerboundPacket(t *testing.T) {
+	packet := decode(t, DecodePlayerCommandServerboundPacket, []byte{0xAC, 0x02, 0x01, 0x05})
+
+	want := PlayerCommandServerboundPacket{EntityId: 300, Action: PlayerCommandStartSprinting, Data: 5}
+
+	if packet.String() != want.String() {
+		t.Errorf("decoded %s, want %s", packet, want.String())
+	}
+}
