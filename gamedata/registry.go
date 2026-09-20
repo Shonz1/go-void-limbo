@@ -72,7 +72,7 @@ var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 var dimensionListProtocol = types.ProtocolVersions.MINECRAFT_1_16_2.ID
 
 // loginRegistriesProtocol is the first version to read anything of a
-// registry out of its play login. A version before it -- 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3 or 1.14.2 -- knows its
+// registry out of its play login. A version before it -- 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2 or 1.14.1 -- knows its
 // dimensions for itself as it knows its biomes, is put into one by number,
 // and is sent the tags alone: a set for it holds no registry.
 var loginRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_16.ID
