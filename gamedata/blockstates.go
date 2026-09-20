@@ -142,8 +142,10 @@ type blockStateProperty struct {
 // again: 573 is where the bees landed -- their nest and their hive, the honey
 // block and the honeycomb block -- and where the bell took on being powered,
 // so 498 numbers 11,271 states. 1.14.4 changed no block, its jar's report
-// byte-identical to 1.14.3's, so 490 numbers them as 498 does.
+// byte-identical to 1.14.3's, so 490 numbers them as 498 does, and 1.14.3
+// none either, so 485 does as well.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_14_2.ID:  "blockstates_minecraft_1_14_4.json",
 	types.ProtocolVersions.MINECRAFT_1_14_3.ID:  "blockstates_minecraft_1_14_4.json",
 	types.ProtocolVersions.MINECRAFT_1_14_4.ID:  "blockstates_minecraft_1_14_4.json",
 	types.ProtocolVersions.MINECRAFT_1_15.ID:    "blockstates_minecraft_1_15_2.json",
@@ -187,12 +189,17 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4 and 1.14.3 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3 and 1.14.2 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_14_2.ID: {
+		"minecraft:short_grass":    "minecraft:grass",
+		"minecraft:dirt_path":      "minecraft:grass_path",
+		"minecraft:water_cauldron": "minecraft:cauldron",
+	},
 	types.ProtocolVersions.MINECRAFT_1_14_3.ID: {
 		"minecraft:short_grass":    "minecraft:grass",
 		"minecraft:dirt_path":      "minecraft:grass_path",
@@ -263,9 +270,14 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 //
 // 1.16 is where a wall's sides went from being there or not to being low or
 // tall: a wall stored with a side of either height has that side on 1.15.2,
-// on 1.15.1, on 1.15, on 1.14.4 and on 1.14.3, and one stored with none does
-// not.
+// on 1.15.1, on 1.15, on 1.14.4, on 1.14.3 and on 1.14.2, and one stored with
+// none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_14_2.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_14_3.ID: {
 		"none": "false",
 		"low":  "true",
