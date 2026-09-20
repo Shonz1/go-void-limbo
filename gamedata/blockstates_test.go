@@ -15,6 +15,7 @@ func TestBlockStatesForEverySupportedVersion(t *testing.T) {
 	// the table to the version: a table missing a block, or holding another
 	// version's, lands somewhere else.
 	stateCounts := map[types.ProtocolId]int32{
+		types.ProtocolVersions.MINECRAFT_1_16_1.ID:  17104,
 		types.ProtocolVersions.MINECRAFT_1_16_2.ID:  17112,
 		types.ProtocolVersions.MINECRAFT_1_16_3.ID:  17112,
 		types.ProtocolVersions.MINECRAFT_1_16_4.ID:  17112,
@@ -139,7 +140,7 @@ func TestBlockStatesIdUnknown(t *testing.T) {
 // table answers to both, with the number the older name has, and only where
 // the rename holds: 1.20.3 numbers short grass itself.
 func TestBlockStatesIdFollowsARename(t *testing.T) {
-	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20, types.ProtocolVersions.MINECRAFT_1_20_2} {
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_16_1, types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20, types.ProtocolVersions.MINECRAFT_1_20_2} {
 		states, err := BlockStatesFor(version)
 		if err != nil {
 			t.Fatalf("BlockStatesFor() error: %v", err)

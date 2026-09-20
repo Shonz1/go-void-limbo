@@ -28,8 +28,10 @@ type bucket struct {
 
 	// dimensionType is the dimension type the play login puts the player
 	// into as a version before 1.19 reads it, spelled out in the login
-	// itself: see encodeDimensionType. Nil for a version that reads a name
-	// there.
+	// itself: see encodeDimensionType. Nil for a version from 1.19 on, which
+	// reads a name there out of the registries it was sent. A version before
+	// 1.16.2 reads a name there as well, which is what this holds for it,
+	// as the string the login carries: see encodeDimensionTypeName.
 	dimensionType []byte
 }
 
@@ -75,10 +77,28 @@ func encodeSet(set Set) (bucket, error) {
 	// read the dimension type they are put into out of that login as well,
 	// spelled out rather than named. One that starts below 1.17 is read by
 	// clients that take the tags with no registry named in front of them:
-	// see below. Those are the four differences in this package's output
+	// see below. And one that starts below 1.16.2 is read by clients that
+	// take the dimension types alone, as a list, and the one they are put
+	// into by name. Those are the five differences in this package's output
 	// between the versions: the content of a set is what varies, and the
-	// shape only at those four steps.
-	if set.MinProtocol < registryCodecProtocol {
+	// shape only at those five steps.
+	if set.MinProtocol < dimensionListProtocol {
+		// Below 1.16.2 the same two fields of the login hold a list of the
+		// dimension types and the name of one of them.
+		codec, err := encodeDimensionList(set.Registries)
+		if err != nil {
+			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+		}
+
+		registryCodec = codec
+
+		name, err := encodeDimensionTypeName(set.Registries)
+		if err != nil {
+			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
+		}
+
+		dimensionType = name
+	} else if set.MinProtocol < registryCodecProtocol {
 		codec, err := encodeRegistryCodec(set.Registries)
 		if err != nil {
 			return bucket{}, fmt.Errorf("gamedata: protocol %d: %w", set.MinProtocol, err)
@@ -180,7 +200,10 @@ func (p *Provider) RegistryCodecFor(version types.ProtocolVersion) []byte {
 // into as it reads it out of its play login: the entry itself, named as a
 // root, which is how every version before 1.19 reads the field. A version
 // from 1.19 on reads a name there, one of the entries the registries it
-// carries hold, and gets nil. The bytes are shared across connections and
+// carries hold, and gets nil. A version before 1.16.2 reads a name there
+// too, but has to be handed it, the login this server encodes holding none
+// it knows: for such a version this is that name, as the string the login
+// carries. The bytes are shared across connections and
 // must not be modified.
 func (p *Provider) DimensionTypeFor(version types.ProtocolVersion) []byte {
 	if b := p.bucketFor(version); b != nil {

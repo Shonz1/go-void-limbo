@@ -5,6 +5,7 @@ import (
 	clientboundCommon "github.com/Shonz1/go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
 	clientboundPlay "github.com/Shonz1/go-void-limbo/packets/clientbound/play"
+	serverboundPlay "github.com/Shonz1/go-void-limbo/packets/serverbound/play"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
 	"reflect"
@@ -285,6 +286,8 @@ func (r registryCodecs) RegistryCodecFor(version types.ProtocolVersion) []byte {
 // spells out, which comes from the same source as the registries and only
 // for those versions, each's own.
 var dimensionTypes = map[types.ProtocolId][]byte{
+	// 1.16.1's is a name rather than an entry, as the string it is written as.
+	types.ProtocolVersions.MINECRAFT_1_16_1.ID: {0x07, 'o', 'l', 'd', ':', 'd', 'i', 'm'},
 	types.ProtocolVersions.MINECRAFT_1_16_4.ID: {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xF8, 0x00},
 	types.ProtocolVersions.MINECRAFT_1_17_1.ID: {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xF0, 0x00},
 	types.ProtocolVersions.MINECRAFT_1_18.ID:   {0x0A, 0x00, 0x00, 0x03, 0x00, 0x05, 'm', 'i', 'n', '_', 'y', 0xFF, 0xFF, 0xFF, 0xE0, 0x00},
@@ -307,11 +310,13 @@ func (r registryCodecs) DimensionTypeFor(version types.ProtocolVersion) []byte {
 // 1.19.1's, a 1.19 login 1.19's, a 1.18.2 login 1.18.2's, with the
 // dimension type it spells out from the same source, a 1.18 login 1.18's,
 // registries and dimension type both, a 1.17.1 login 1.17.1's, the
-// same two, and a 1.16.4 login 1.16.4's -- and a registry built
+// same two, a 1.16.4 login 1.16.4's, and a 1.16.1 login 1.16.1's
+// dimension types and the name of the one it is put into -- and a registry built
 // without one refuses the login rather than send it without them. Every other version's login is untouched by the source, since none
 // of them reads registries there.
 func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T) {
 	codecs := registryCodecs{
+		types.ProtocolVersions.MINECRAFT_1_16_1.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x59, 0x09, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_16_4.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5A, 0x08, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_17_1.ID: {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5B, 0x07, 0x00},
 		types.ProtocolVersions.MINECRAFT_1_18.ID:   {0x0A, 0x00, 0x00, 0x01, 0x00, 0x01, 0x5C, 0x06, 0x00},
@@ -324,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[:12] {
+	for _, version := range types.SupportedProtocolVersions[:13] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -346,7 +351,8 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		}
 
 		// 1.18.2, 1.18, 1.17.1 and 1.16.4 spell the dimension type out behind the
-		// registries, each its own, and no other version does.
+		// registries, each its own, 1.16.1 names its own there, and no other
+		// version does either.
 		for other, dimensionType := range dimensionTypes {
 			if spelled, want := bytes.Contains(body, dimensionType), source == other; spelled != want {
 				t.Errorf("protocol %d: the login spells protocol %d's dimension type out: %t, want %t", version.ID, other, spelled, want)
@@ -369,9 +375,9 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	// 1.19.3's and not 1.19.1's the 1.19.1 login, one with 1.19.1's and not
 	// 1.19's the 1.19 login, one with 1.19's and not 1.18.2's the 1.18.2
 	// login, one with 1.18.2's and not 1.18's the 1.18 login, and one with
-	// 1.18's and not 1.17.1's the 1.17.1 login, and one with 1.17.1's and
-	// not 1.16.4's the 1.16.4 login: the chain does not hand a version
-	// another's.
+	// 1.18's and not 1.17.1's the 1.17.1 login, one with 1.17.1's and
+	// not 1.16.4's the 1.16.4 login, and one with 1.16.4's and not 1.16.1's
+	// the 1.16.1 login: the chain does not hand a version another's.
 	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_20.ID: codecs[types.ProtocolVersions.MINECRAFT_1_20.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_19_4, login); err == nil {
 		t.Error("EncodeClientbound() of a 1.19.4 login with only 1.20's registries succeeded, want a refusal")
 	}
@@ -404,9 +410,13 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		t.Error("EncodeClientbound() of a 1.16.4 login with only 1.17.1's registries succeeded, want a refusal")
 	}
 
+	if _, err := NewDefaultRegistry(registryCodecs{types.ProtocolVersions.MINECRAFT_1_16_4.ID: codecs[types.ProtocolVersions.MINECRAFT_1_16_4.ID]}).EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_16_1, login); err == nil {
+		t.Error("EncodeClientbound() of a 1.16.1 login with only 1.16.4's registries succeeded, want a refusal")
+	}
+
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[12:] {
+	for _, version := range types.SupportedProtocolVersions[13:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -522,5 +532,85 @@ func TestProtocols751And753AreNumberedAndLaidOutAs754(t *testing.T) {
 		if !bytes.Equal(olderBody, newerBody) {
 			t.Errorf("%s is sent % x and %s % x, want the same bytes", olderName, olderBody, newerName, newerBody)
 		}
+	}
+}
+
+// 1.16.1 numbers the play phase its own way, read off its jar's
+// registrations: what this server sends between the chunk blocks update
+// 1.16.2 retired, at 0x0F, and the section blocks update it added, at 0x3B,
+// sits one higher, and the swing, behind the recipe book update 1.16.2 split
+// in two, one lower. Everything else is numbered as on 1.16.2, and two
+// packets are laid out differently, both on the way down.
+func TestProtocol736IsNumberedAs751ButForTwoStretches(t *testing.T) {
+	older, newer := types.ProtocolVersions.MINECRAFT_1_16_1.ID, types.ProtocolVersions.MINECRAFT_1_16_2.ID
+
+	for _, packet := range serverboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+		if packet.phase == types.PhasePlay && newerId >= 0x1F {
+			want--
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.16.1 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	for _, packet := range clientboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+		if packet.phase == types.PhasePlay && newerId >= 0x0F && newerId <= 0x3A {
+			want++
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.16.1 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	// The ids the jar gives the packets that moved.
+	moved := map[reflect.Type]types.PacketId{
+		// The swing, under the name the latest version knows it by.
+		reflect.TypeOf(serverboundPlay.PunchServerboundPacket{}):               0x2B,
+		reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}):         0x20,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{}): 0x21,
+		reflect.TypeOf(clientboundPlay.LightUpdateClientboundPacket{}):         0x24,
+		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}):               0x25,
+		reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}):      0x35,
+		reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}):      0x37,
+	}
+
+	for _, packet := range serverboundPackets {
+		if want, ok := moved[packet.packet]; ok && packet.phase == types.PhasePlay && packet.ids[older] != want {
+			t.Errorf("%s: 1.16.1 has id %#x, want %#x", packet.packet.Name(), packet.ids[older], want)
+		}
+	}
+
+	for _, packet := range clientboundPackets {
+		if want, ok := moved[packet.packet]; ok && packet.phase == types.PhasePlay && packet.ids[older] != want {
+			t.Errorf("%s: 1.16.1 has id %#x, want %#x", packet.packet.Name(), packet.ids[older], want)
+		}
+	}
+
+	registry := NewDefaultRegistry(nil)
+	for key := range registry.upgrades {
+		if key.ProtocolID == older {
+			t.Errorf("an upgrade of %s is registered from 1.16.1, want none: 1.16.2 reads it as sent", key.PacketType.Name())
+		}
+	}
+
+	downgrades := 0
+	for key := range registry.downgrades {
+		if key.ProtocolID == newer {
+			downgrades++
+		}
+	}
+
+	if downgrades != 2 {
+		t.Errorf("%d downgrades are registered at 1.16.2, want the login and the chunk", downgrades)
 	}
 }
