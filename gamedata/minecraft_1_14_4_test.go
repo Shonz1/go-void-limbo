@@ -67,16 +67,16 @@ func TestProviderSends1_14_4TheTagsAlone(t *testing.T) {
 	}
 }
 
-// 1.14.3 and 1.14.2 are sent what 1.14.4 is, to the byte: the three jars'
-// tags are the same files and their blocks reports the same bytes, so nothing
-// here is their own, and they are sent no registry either.
-func TestProviderSends1_14_3And1_14_2What1_14_4Is(t *testing.T) {
+// 1.14.3, 1.14.2 and 1.14.1 are sent what 1.14.4 is, to the byte: the four
+// jars' tags are files of the same names and their blocks reports the same
+// bytes, so nothing here is their own, and they are sent no registry either.
+func TestProviderSendsTheOlder1_14sWhat1_14_4Is(t *testing.T) {
 	provider, err := NewDefaultProvider()
 	if err != nil {
 		t.Fatalf("NewDefaultProvider() error: %v", err)
 	}
 
-	for _, older := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3} {
+	for _, older := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3} {
 		t.Run(older.Names[0], func(t *testing.T) {
 			sendsTheSetOf(t, provider, older, types.ProtocolVersions.MINECRAFT_1_14_4)
 
