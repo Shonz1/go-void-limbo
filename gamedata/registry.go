@@ -66,7 +66,7 @@ var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 // dimensionListProtocol is the first version to read the combined compound
 // out of its play login, the biomes and every registry after them included,
 // and the dimension type it is put into spelled out behind it. A version
-// before it -- 1.16.1 -- knows its biomes for itself, reads a list of the
+// before it -- 1.16.1 or 1.16 -- knows its biomes for itself, reads a list of the
 // dimension types alone and is put into one of them by name: see
 // encodeDimensionList and encodeDimensionTypeName.
 var dimensionListProtocol = types.ProtocolVersions.MINECRAFT_1_16_2.ID

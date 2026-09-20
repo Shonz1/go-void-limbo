@@ -185,15 +185,23 @@ func TestDefaultProviderSends1_16_4TheUnnamedTags(t *testing.T) {
 
 // 1.16.3 is sent what 1.16.4 is, to the byte: its jar's tags, its codecs
 // and its blocks report are 1.16.4's, so nothing here is its own. 1.16.2 is
-// sent the same again, its jar's data and reports being 1.16.3's.
-func TestProvider1_16_2And1_16_3AreSentWhat1_16_4Is(t *testing.T) {
+// sent the same again, its jar's data and reports being 1.16.3's. Below the
+// 1.16.2 step the same holds of 1.16 and 1.16.1, whose jars differ by the
+// version they name and two Realms screens.
+func TestProviderSendsAVersionOnAnEmptyStepWhatTheOneAboveIs(t *testing.T) {
 	provider, err := NewDefaultProvider()
 	if err != nil {
 		t.Fatalf("NewDefaultProvider() error: %v", err)
 	}
 
-	for _, older := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3} {
-		newer := types.ProtocolVersions.MINECRAFT_1_16_4
+	pairs := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1},
+		{types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_4},
+		{types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4},
+	}
+
+	for _, pair := range pairs {
+		older, newer := pair.older, pair.newer
 		olderName, newerName := older.Names[0], newer.Names[0]
 
 		if codec := provider.RegistryCodecFor(older); len(codec) == 0 || !bytes.Equal(codec, provider.RegistryCodecFor(newer)) {
