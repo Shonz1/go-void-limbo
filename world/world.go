@@ -211,7 +211,7 @@ var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
 
 // entitiesTickWithoutChunks is the first version whose client ticks an
 // entity wherever it stands. A client before it -- 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1 or 1.16 -- ticks
+// 1.16.1, 1.16 or 1.15.2 -- ticks
 // one only while it holds the chunk the entity is in, and a tick is when
 // another player's relayed position is applied: on a server that sends no
 // chunk, every player such a client is shown stays frozen where it appeared.

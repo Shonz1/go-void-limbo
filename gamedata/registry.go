@@ -71,6 +71,12 @@ var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 // encodeDimensionList and encodeDimensionTypeName.
 var dimensionListProtocol = types.ProtocolVersions.MINECRAFT_1_16_2.ID
 
+// loginRegistriesProtocol is the first version to read anything of a
+// registry out of its play login. A version before it -- 1.15.2 -- knows its
+// dimensions for itself as it knows its biomes, is put into one by number,
+// and is sent the tags alone: a set for it holds no registry.
+var loginRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_16.ID
+
 // combinedCompound is the one compound a client before 1.20.5 reads every
 // registry from: keyed by registry name, holding for each registry its name
 // again under "type" and under "value" a list of its entries, each an entry's

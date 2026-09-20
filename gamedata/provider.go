@@ -79,10 +79,17 @@ func encodeSet(set Set) (bucket, error) {
 	// clients that take the tags with no registry named in front of them:
 	// see below. And one that starts below 1.16.2 is read by clients that
 	// take the dimension types alone, as a list, and the one they are put
-	// into by name. Those are the five differences in this package's output
-	// between the versions: the content of a set is what varies, and the
-	// shape only at those five steps.
-	if set.MinProtocol < dimensionListProtocol {
+	// into by name. And one that starts below 1.16 is read by clients that
+	// take no registry at all. Those are the six differences in this
+	// package's output between the versions: the content of a set is what
+	// varies, and the shape only at those six steps.
+	if set.MinProtocol < loginRegistriesProtocol {
+		// Below 1.16 the login holds a dimension's number and nothing of a
+		// registry, so there is nothing for a registry to be encoded into.
+		if len(set.Registries) != 0 {
+			return bucket{}, fmt.Errorf("gamedata: protocol %d: a set of %d registries, and a client before 1.16 reads none", set.MinProtocol, len(set.Registries))
+		}
+	} else if set.MinProtocol < dimensionListProtocol {
 		// Below 1.16.2 the same two fields of the login hold a list of the
 		// dimension types and the name of one of them.
 		codec, err := encodeDimensionList(set.Registries)

@@ -34,6 +34,10 @@ type BlockStates struct {
 	// It sits beside the table rather than in it because the table may be
 	// shared with a version that has no such rename.
 	renames map[string]string
+
+	// valueRenames is likewise every property value this version knows by
+	// an older name, as blockStateValueRenames spells it.
+	valueRenames map[string]string
 }
 
 // blockStatesTable is one parsed table: what a block state file holds, which
@@ -128,8 +132,13 @@ type blockStateProperty struct {
 // or a lantern with water in it is numbered by the properties 736 knows,
 // the way any property a table does not hold is passed over. 1.16.1 changed
 // no block, its jar's report byte-identical to 1.16's, so 735 numbers them
-// as 736 does.
+// as 736 does. And 1.15.2 its own below everything: 735 is where the nether
+// update landed -- the crimson and warped sets, the blackstone, the basalt,
+// the soul fire and the rest, eighty-three blocks in all -- and where a
+// wall's sides went from being there or not to being low or tall, so 578
+// numbers 11,337 states; see blockStateValueRenames for the walls.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_15_2.ID:  "blockstates_minecraft_1_15_2.json",
 	types.ProtocolVersions.MINECRAFT_1_16.ID:    "blockstates_minecraft_1_16_1.json",
 	types.ProtocolVersions.MINECRAFT_1_16_1.ID:  "blockstates_minecraft_1_16_1.json",
 	types.ProtocolVersions.MINECRAFT_1_16_2.ID:  "blockstates_minecraft_1_16_4.json",
@@ -168,12 +177,17 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1 and 1.16 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16 and 1.15.2 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_15_2.ID: {
+		"minecraft:short_grass":    "minecraft:grass",
+		"minecraft:dirt_path":      "minecraft:grass_path",
+		"minecraft:water_cauldron": "minecraft:cauldron",
+	},
 	types.ProtocolVersions.MINECRAFT_1_16.ID: {
 		"minecraft:short_grass":    "minecraft:grass",
 		"minecraft:dirt_path":      "minecraft:grass_path",
@@ -212,6 +226,22 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 }
 
 // The JSON shape of one version's table.
+// blockStateValueRenames is, for a version, the property values later
+// versions renamed: the newer value, and what this version calls it. It is
+// looked at only for a value the version's block does not have, so a value
+// that means something to the version is never turned into another.
+//
+// 1.16 is where a wall's sides went from being there or not to being low or
+// tall: a wall stored with a side of either height has that side on 1.15.2,
+// and one stored with none does not.
+var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_15_2.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
+}
+
 type blockStatesFile struct {
 	Blocks []blockStatesFileEntry `json:"blocks"`
 }
@@ -274,7 +304,7 @@ func (l *BlockStatesLoader) For(version types.ProtocolVersion) (*BlockStates, er
 		l.tables[name] = table
 	}
 
-	states := &BlockStates{table: table, renames: blockStateRenames[version.ID]}
+	states := &BlockStates{table: table, renames: blockStateRenames[version.ID], valueRenames: blockStateValueRenames[version.ID]}
 
 	for newer, older := range states.renames {
 		if _, ok := table.blocks[older]; !ok {
@@ -368,12 +398,10 @@ func (s *BlockStates) Id(name string, properties map[string]string) (int32, bool
 
 		index := defaultIndex
 		if value, present := properties[property.name]; present {
-			index = -1
-			for j, candidate := range property.values {
-				if candidate == value {
-					index = int32(j)
-					break
-				}
+			index = property.index(value)
+
+			if older, renamed := s.valueRenames[value]; index < 0 && renamed {
+				index = property.index(older)
 			}
 
 			if index < 0 {
@@ -385,6 +413,17 @@ func (s *BlockStates) Id(name string, properties map[string]string) (int32, bool
 	}
 
 	return id, true
+}
+
+// index is where value sits among the property's values, or -1.
+func (p blockStateProperty) index(value string) int32 {
+	for i, candidate := range p.values {
+		if candidate == value {
+			return int32(i)
+		}
+	}
+
+	return -1
 }
 
 // DefaultId numbers the state a block is in when nothing says otherwise. It

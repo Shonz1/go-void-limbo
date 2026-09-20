@@ -472,13 +472,20 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		t.Fatalf("reading light z: %v", err)
 	}
 
-	trustEdges, err := light.ReadBoolean()
-	if err != nil {
-		t.Fatalf("reading trust edges: %v", err)
-	}
+	// spanned is a version from before 1.16, which packs its entries across
+	// the ends of its longs, and whose light has no trust edges flag and
+	// whose chunk no second flag.
+	spanned := version.ID < types.ProtocolVersions.MINECRAFT_1_16.ID
 
-	if !trustEdges {
-		t.Fatal("the light is not trusted at the edges, which a vanilla server of that version always says it is")
+	if !spanned {
+		trustEdges, err := light.ReadBoolean()
+		if err != nil {
+			t.Fatalf("reading trust edges: %v", err)
+		}
+
+		if !trustEdges {
+			t.Fatal("the light is not trusted at the edges, which a vanilla server of that version always says it is")
+		}
 	}
 
 	// 1.16.4 holds a world from zero up, so everything it is sent is this
@@ -543,7 +550,7 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 
 		// 1.16.1 holds a second flag behind it, which a vanilla server sets
 		// on every whole chunk: the client forgets what it held before.
-		if builtInBiomes {
+		if builtInBiomes && !spanned {
 			if forgetOldData, err := ms.ReadBoolean(); err != nil || !forgetOldData {
 				t.Fatalf("forget old data flag = %t, %v, want true beside the whole chunk flag", forgetOldData, err)
 			}
@@ -577,6 +584,14 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 		longs, ok := data.(nbt.LongArray)
 		if !ok {
 			t.Fatalf("heightmap %q is %T, want a long array", name, data)
+		}
+
+		if spanned {
+			if len(longs) != 36 {
+				t.Fatalf("heightmap %q packs %d longs, want the 36 its entries come to end to end", name, len(longs))
+			}
+
+			longs = unspan(longs, 9, 256)
 		}
 
 		if flat {
@@ -644,7 +659,7 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 
 	// The sections the mask names, put back into 1.18's layout: the ones the
 	// mask leaves out are air, and every one gets its biome container back.
-	r := &sectionReader{t: t, data: sections, dataLengths: true}
+	r := &sectionReader{t: t, data: sections, dataLengths: true, spanned: spanned}
 
 	for i := 0; i < sectionCount; i++ {
 		if mask[0]&(1<<i) == 0 {
@@ -662,7 +677,15 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 			}
 
 			r.container(4096, blockStates.StateCount())
-			chunk.SectionData = append(chunk.SectionData, r.data[start:r.pos]...)
+
+			// A section packed end to end is put back the way 1.16 packs
+			// it, which is the way it is read again below.
+			if spanned {
+				chunk.SectionData = append(chunk.SectionData, r.data[start:start+2]...)
+				chunk.SectionData = append(chunk.SectionData, r.unspanned...)
+			} else {
+				chunk.SectionData = append(chunk.SectionData, r.data[start:r.pos]...)
+			}
 		}
 
 		chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00)
@@ -850,6 +873,35 @@ type sectionReader struct {
 	// in front, as they do on 1.21.4, which the reader checks against the
 	// count the bits imply.
 	dataLengths bool
+
+	// spanned is whether the entries are packed end to end, across the ends
+	// of the longs, as they are before 1.16; unspanned is then the last
+	// container read, laid out over again with no entry crossing a long.
+	spanned   bool
+	unspanned []byte
+}
+
+// unspan packs entries laid end to end across their longs over again with no
+// entry crossing a long.
+func unspan(packed []int64, bitsPerEntry, entries int) []int64 {
+	perLong := 64 / bitsPerEntry
+	mask := uint64(1)<<bitsPerEntry - 1
+
+	out := make([]int64, (entries+perLong-1)/perLong)
+
+	for i := range entries {
+		at := i * bitsPerEntry
+		long, shift := at/64, at%64
+
+		value := uint64(packed[long]) >> shift
+		if shift+bitsPerEntry > 64 {
+			value |= uint64(packed[long+1]) << (64 - shift)
+		}
+
+		out[i/perLong] |= int64(value & mask << (i % perLong * bitsPerEntry))
+	}
+
+	return out
 }
 
 func (r *sectionReader) short() int32 {
@@ -873,6 +925,8 @@ func (r *sectionReader) varInt() int32 {
 // linear palette, five to eight as a map palette, and anything above as ids
 // packed directly at however many bits the registry's size needs.
 func (r *sectionReader) container(entries int, registrySize int32) []int32 {
+	start := r.pos
+
 	declared := int(r.data[r.pos])
 	r.pos++
 
@@ -912,6 +966,29 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 	perLong := 64 / bitsPerEntry
 	longs := (entries + perLong - 1) / perLong
 	mask := int64(1)<<bitsPerEntry - 1
+
+	if r.spanned {
+		header := r.data[start:r.pos]
+
+		spannedLongs := (entries*bitsPerEntry + 63) / 64
+		r.dataLength(spannedLongs)
+
+		packed := make([]int64, spannedLongs)
+		for i := range packed {
+			packed[i] = int64(binary.BigEndian.Uint64(r.data[r.pos+i*8:]))
+		}
+
+		r.pos += spannedLongs * 8
+
+		r.unspanned = streams.AppendVarInt(append([]byte(nil), header...), int32(longs))
+		for _, long := range unspan(packed, bitsPerEntry, entries) {
+			r.unspanned = binary.BigEndian.AppendUint64(r.unspanned, uint64(long))
+		}
+
+		inner := &sectionReader{t: r.t, data: r.unspanned, dataLengths: r.dataLengths}
+
+		return inner.container(entries, registrySize)
+	}
 
 	r.dataLength(longs)
 
