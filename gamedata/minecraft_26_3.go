@@ -25,10 +25,11 @@ func NewDefaultProvider() (*Provider, error) {
 	}{
 		// 1.14.4 is sent no registry either, and the tags of its own jar.
 		// 1.14.3 and 1.14.2 are sent the same set, the three jars' tags being
-		// the same files with the same contents, and 1.14.1 as well, which the
-		// set starts at: its jar's tags are the same files by name, and 1.14.2
-		// changed the contents of the slabs alone, and contents are not sent.
-		{types.ProtocolVersions.MINECRAFT_1_14_1.ID, registriesMinecraft1_14_4, tagsMinecraft1_14_4},
+		// the same files with the same contents, and 1.14.1 as well: its jar's
+		// tags are the same files by name, and 1.14.2 changed the contents of
+		// the slabs alone, and contents are not sent. 1.14 is what the set
+		// starts at, its jar's tags being 1.14.1's to the byte.
+		{types.ProtocolVersions.MINECRAFT_1_14.ID, registriesMinecraft1_14_4, tagsMinecraft1_14_4},
 		// 1.15.2 is sent no registry, and the tags of its own jar. 1.15.1 and
 		// 1.15 are sent the same set, which starts at 1.15: the three jars'
 		// tags are the same files with the same contents.
