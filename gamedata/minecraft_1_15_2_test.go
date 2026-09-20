@@ -158,17 +158,15 @@ func TestProviderSends1_15_1And1_15What1_15_2Is(t *testing.T) {
 
 	for _, older := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1} {
 		t.Run(older.Names[0], func(t *testing.T) {
-			sends1_15_2sSet(t, provider, older)
+			sendsTheSetOf(t, provider, older, types.ProtocolVersions.MINECRAFT_1_15_2)
 		})
 	}
 }
 
-// sends1_15_2sSet fails the test unless the older version is sent no
-// registry, 1.15.2's tags and 1.15.2's numbering of the block states.
-func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersion) {
+// sendsTheSetOf fails the test unless the older version is sent no registry,
+// the newer one's tags and the newer one's numbering of the block states.
+func sendsTheSetOf(t *testing.T, provider *Provider, older types.ProtocolVersion, newer types.ProtocolVersion) {
 	t.Helper()
-
-	newer := types.ProtocolVersions.MINECRAFT_1_15_2
 
 	if codec := provider.RegistryCodecFor(older); len(codec) != 0 {
 		t.Errorf("the version has a registry codec of %d bytes, want none: its login holds a dimension's number", len(codec))
@@ -180,7 +178,7 @@ func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersi
 
 	olderPackets, newerPackets := provider.PacketsFor(older), provider.PacketsFor(newer)
 	if len(olderPackets) != 1 || len(newerPackets) != 1 {
-		t.Fatalf("the version is sent %d packets and 1.15.2 %d, want the tags alone for both", len(olderPackets), len(newerPackets))
+		t.Fatalf("the version is sent %d packets and %s %d, want the tags alone for both", len(olderPackets), newer.Names[0], len(newerPackets))
 	}
 
 	encode := func(packet types.ClientboundPacket) []byte {
@@ -199,7 +197,7 @@ func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersi
 	}
 
 	if !bytes.Equal(encode(olderPackets[0]), encode(newerPackets[0])) {
-		t.Error("the version's tags are not 1.15.2's")
+		t.Errorf("the version's tags are not %s's", newer.Names[0])
 	}
 
 	var loader BlockStatesLoader
@@ -211,11 +209,11 @@ func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersi
 
 	newerStates, err := loader.For(newer)
 	if err != nil {
-		t.Fatalf("1.15.2: For() error: %v", err)
+		t.Fatalf("protocol %d: For() error: %v", newer.ID, err)
 	}
 
 	if olderStates.StateCount() != newerStates.StateCount() {
-		t.Errorf("the version numbers %d states and 1.15.2 %d, want the same table", olderStates.StateCount(), newerStates.StateCount())
+		t.Errorf("the version numbers %d states and %s %d, want the same table", olderStates.StateCount(), newer.Names[0], newerStates.StateCount())
 	}
 
 	wall := map[string]string{"east": "low", "north": "none", "south": "tall", "up": "true", "waterlogged": "false", "west": "none"}
@@ -225,7 +223,7 @@ func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersi
 		newerId, newerOk := newerStates.Id(name, nil)
 
 		if !olderOk || !newerOk || olderId != newerId {
-			t.Errorf("Id(%s) = %d, %t on the version and %d, %t on 1.15.2, want the same", name, olderId, olderOk, newerId, newerOk)
+			t.Errorf("Id(%s) = %d, %t on the version and %d, %t on %s, want the same", name, olderId, olderOk, newerId, newerOk, newer.Names[0])
 		}
 	}
 
@@ -233,6 +231,6 @@ func sends1_15_2sSet(t *testing.T, provider *Provider, older types.ProtocolVersi
 	newerId, newerOk := newerStates.Id("minecraft:cobblestone_wall", wall)
 
 	if !olderOk || !newerOk || olderId != newerId {
-		t.Errorf("a wall as 1.16 stores it = %d, %t on the version and %d, %t on 1.15.2, want the same state", olderId, olderOk, newerId, newerOk)
+		t.Errorf("a wall as 1.16 stores it = %d, %t on the version and %d, %t on %s, want the same state", olderId, olderOk, newerId, newerOk, newer.Names[0])
 	}
 }

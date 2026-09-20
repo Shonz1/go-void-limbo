@@ -88,7 +88,7 @@ const shardEnv = "E2E_SHARD"
 // milliseconds -- has the client drawing a world whose block atlas and
 // shaders do not exist yet, which crashes it on the spot: the versions from
 // 1.19 on happen to sit out the window on a profile key fetch that fails
-// slowly offline, and 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15 and 1.14.4, with no key to fetch, do not. A player joins
+// slowly offline, and 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4 and 1.14.3, with no key to fetch, do not. A player joins
 // from a loaded client anyway, which is what this waits for; the reload takes
 // a few seconds here, and the settle is what a slow machine may need.
 const (

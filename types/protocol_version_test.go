@@ -9,6 +9,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		want ProtocolVersion
 	}{
 		{"zero", ProtocolVersions.ZERO.ID, ProtocolVersions.ZERO},
+		{"minecraft_1_14_3", ProtocolVersions.MINECRAFT_1_14_3.ID, ProtocolVersions.MINECRAFT_1_14_3},
 		{"minecraft_1_14_4", ProtocolVersions.MINECRAFT_1_14_4.ID, ProtocolVersions.MINECRAFT_1_14_4},
 		{"minecraft_1_15", ProtocolVersions.MINECRAFT_1_15.ID, ProtocolVersions.MINECRAFT_1_15},
 		{"minecraft_1_15_1", ProtocolVersions.MINECRAFT_1_15_1.ID, ProtocolVersions.MINECRAFT_1_15_1},
@@ -292,10 +293,10 @@ func TestIsSupportedProtocolVersion(t *testing.T) {
 }
 
 // 1.20.2 is where the configuration phase appeared: every version from it on
-// passes through the phase, and the eighteen versions below it go from their
+// passes through the phase, and the nineteen versions below it go from their
 // login straight into play.
 func TestHasConfigurationPhase(t *testing.T) {
-	for _, version := range SupportedProtocolVersions[:18] {
+	for _, version := range SupportedProtocolVersions[:19] {
 		if version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has a configuration phase, want the login to lead straight into play", version.ID)
 		}
@@ -333,7 +334,7 @@ func TestHasConfigurationPhase(t *testing.T) {
 		t.Error("1.17.1 has a configuration phase, want the login to lead straight into play")
 	}
 
-	for _, version := range SupportedProtocolVersions[18:] {
+	for _, version := range SupportedProtocolVersions[19:] {
 		if !version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has no configuration phase, want one on every version from 1.20.2", version.ID)
 		}
@@ -370,7 +371,7 @@ func TestMaySignEncryptionChallenge(t *testing.T) {
 		t.Error("1.19.1 may not sign the encryption challenge, want a client with a profile key allowed to")
 	}
 
-	for _, version := range SupportedProtocolVersions[15:] {
+	for _, version := range SupportedProtocolVersions[16:] {
 		if version.MaySignEncryptionChallenge() {
 			t.Errorf("protocol %d may sign the encryption challenge, want every version from 1.19.3 to encrypt it", version.ID)
 		}
