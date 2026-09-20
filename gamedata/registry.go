@@ -63,6 +63,14 @@ var inlineDimensionTypeProtocol = types.ProtocolVersions.MINECRAFT_1_19.ID
 // reads four runs it knows by their position: see encodeTags1_16_4.
 var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 
+// dimensionListProtocol is the first version to read the combined compound
+// out of its play login, the biomes and every registry after them included,
+// and the dimension type it is put into spelled out behind it. A version
+// before it -- 1.16.1 -- knows its biomes for itself, reads a list of the
+// dimension types alone and is put into one of them by name: see
+// encodeDimensionList and encodeDimensionTypeName.
+var dimensionListProtocol = types.ProtocolVersions.MINECRAFT_1_16_2.ID
+
 // combinedCompound is the one compound a client before 1.20.5 reads every
 // registry from: keyed by registry name, holding for each registry its name
 // again under "type" and under "value" a list of its entries, each an entry's
@@ -154,6 +162,67 @@ func encodeDimensionType(registries []Registry) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("no %s registry to take the play login's dimension type from", dimensionTypeRegistry)
+}
+
+// encodeDimensionList writes the registries as a 1.16.1 client reads them
+// out of its play login: one compound, named as a root, holding under
+// "dimension" a list of the dimension types, each an entry's name beside the
+// fields of its definition rather than above them -- the client's codec
+// pairs the name with a map codec, which lays the two out flat -- with no id,
+// an entry's place in the list being its id. No other registry crosses the
+// wire on that version, so a set holding one is refused rather than sent
+// short of it.
+func encodeDimensionList(registries []Registry) ([]byte, error) {
+	var entries []nbt.Tag
+
+	for _, registry := range registries {
+		if registry.Name != dimensionTypeRegistry {
+			return nil, fmt.Errorf("registry %s: a play login before 1.16.2 carries the dimension types alone", registry.Name)
+		}
+
+		for _, entry := range registry.Entries {
+			definition, ok := entry.Data.(nbt.Compound)
+			if !ok {
+				return nil, fmt.Errorf("registry %s: entry %s has no definition to lay out beside its name", registry.Name, entry.Name)
+			}
+
+			if _, taken := definition["name"]; taken {
+				return nil, fmt.Errorf("registry %s: entry %s has a field called name, which is where its own name goes", registry.Name, entry.Name)
+			}
+
+			flat := make(nbt.Compound, len(definition)+1)
+			for field, value := range definition {
+				flat[field] = value
+			}
+
+			flat["name"] = nbt.String(entry.Name)
+
+			entries = append(entries, flat)
+		}
+	}
+
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no %s entry to put the player into", dimensionTypeRegistry)
+	}
+
+	compound := nbt.Compound{"dimension": nbt.List{ElementType: nbt.TagCompound, Elements: entries}}
+
+	return encodeNbt(func(ms *streams.MinecraftStream) error { return nbt.WriteNamed(ms, "", compound) })
+}
+
+// encodeDimensionTypeName writes the dimension type a 1.16.1 client reads
+// out of its play login: the name of the first dimension type among
+// registries, as the string the login holds where every version from 1.16.2
+// up to 1.19 holds the definition. Like that definition it is a field of the
+// packet, written by the login transformer of the step it belongs to.
+func encodeDimensionTypeName(registries []Registry) ([]byte, error) {
+	for _, registry := range registries {
+		if registry.Name == dimensionTypeRegistry && len(registry.Entries) > 0 {
+			return encodeNbt(func(ms *streams.MinecraftStream) error { return ms.WriteString(registry.Entries[0].Name) })
+		}
+	}
+
+	return nil, fmt.Errorf("no %s entry to take the play login's dimension type from", dimensionTypeRegistry)
 }
 
 // dimensionTypeRegistry is the registry the play login's dimension type is

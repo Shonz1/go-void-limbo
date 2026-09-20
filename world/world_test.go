@@ -488,6 +488,10 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	// one set of expectations serves every version.
 	flat := version.ID < types.ProtocolVersions.MINECRAFT_1_17.ID
 
+	// builtInBiomes is a version from before the biomes were sent, whose
+	// chunk names them by the client's own numbers.
+	builtInBiomes := version.ID < types.ProtocolVersions.MINECRAFT_1_16_2.ID
+
 	if flat {
 		masks := []*[]int64{&chunk.SkyLightMask, &chunk.BlockLightMask, &chunk.EmptySkyLightMask, &chunk.EmptyBlockLightMask}
 		for _, mask := range masks {
@@ -537,6 +541,14 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 			t.Fatalf("whole chunk flag = %t, %v, want true: a chunk this server sends is never a change to one", fullChunk, err)
 		}
 
+		// 1.16.1 holds a second flag behind it, which a vanilla server sets
+		// on every whole chunk: the client forgets what it held before.
+		if builtInBiomes {
+			if forgetOldData, err := ms.ReadBoolean(); err != nil || !forgetOldData {
+				t.Fatalf("forget old data flag = %t, %v, want true beside the whole chunk flag", forgetOldData, err)
+			}
+		}
+
 		mask = []int64{readFlatMask(t, ms, legacySections)}
 	} else if mask = readLongArray(t, ms); len(mask) != 1 {
 		t.Fatalf("section mask is %d longs, want one", len(mask))
@@ -576,23 +588,34 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 
 	// The biomes: one per four blocks of every section the version holds,
 	// all the one biome this server registers.
-	biomeCount, err := ms.ReadVarInt()
-	if err != nil {
-		t.Fatalf("reading biome count: %v", err)
-	}
+	//
+	// 1.16.1 reads them as plain ints with no count in front, out of the
+	// biomes it numbers for itself, where the plains are 1.
+	if builtInBiomes {
+		for i := range legacySections * 64 {
+			if biome, err := ms.ReadInt(); err != nil || biome != 1 {
+				t.Fatalf("biome %d = %d, %v, want 1, the client's own plains", i, biome, err)
+			}
+		}
+	} else {
+		biomeCount, err := ms.ReadVarInt()
+		if err != nil {
+			t.Fatalf("reading biome count: %v", err)
+		}
 
-	wantBiomes := int32(sectionCount * 64)
-	if flat {
-		wantBiomes = legacySections * 64
-	}
+		wantBiomes := int32(sectionCount * 64)
+		if flat {
+			wantBiomes = legacySections * 64
+		}
 
-	if biomeCount != wantBiomes {
-		t.Fatalf("chunk carries %d biomes, want %d: sixty-four for each of its sections", biomeCount, wantBiomes)
-	}
+		if biomeCount != wantBiomes {
+			t.Fatalf("chunk carries %d biomes, want %d: sixty-four for each of its sections", biomeCount, wantBiomes)
+		}
 
-	for i := range biomeCount {
-		if biome, err := ms.ReadVarInt(); err != nil || biome != 0 {
-			t.Fatalf("biome %d = %d, %v, want 0", i, biome, err)
+		for i := range biomeCount {
+			if biome, err := ms.ReadVarInt(); err != nil || biome != 0 {
+				t.Fatalf("biome %d = %d, %v, want 0", i, biome, err)
+			}
 		}
 	}
 
