@@ -1,0 +1,304 @@
+{
+	"registries": [],
+	"tags": [
+		{
+			"registry": "minecraft:block",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:bamboo_plantable_on"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:carpets"
+				},
+				{
+					"name": "minecraft:coral_blocks"
+				},
+				{
+					"name": "minecraft:coral_plants"
+				},
+				{
+					"name": "minecraft:corals"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:dirt_like"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:dragon_immune"
+				},
+				{
+					"name": "minecraft:enderman_holdable"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:flower_pots"
+				},
+				{
+					"name": "minecraft:ice"
+				},
+				{
+					"name": "minecraft:impermeable"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:standing_signs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:underwater_bonemeals"
+				},
+				{
+					"name": "minecraft:valid_spawn"
+				},
+				{
+					"name": "minecraft:wall_corals"
+				},
+				{
+					"name": "minecraft:wall_signs"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:wither_immune"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:item",
+			"tags": [
+				{
+					"name": "minecraft:acacia_logs"
+				},
+				{
+					"name": "minecraft:anvil"
+				},
+				{
+					"name": "minecraft:arrows"
+				},
+				{
+					"name": "minecraft:banners"
+				},
+				{
+					"name": "minecraft:beds"
+				},
+				{
+					"name": "minecraft:birch_logs"
+				},
+				{
+					"name": "minecraft:boats"
+				},
+				{
+					"name": "minecraft:buttons"
+				},
+				{
+					"name": "minecraft:carpets"
+				},
+				{
+					"name": "minecraft:coals"
+				},
+				{
+					"name": "minecraft:dark_oak_logs"
+				},
+				{
+					"name": "minecraft:doors"
+				},
+				{
+					"name": "minecraft:fences"
+				},
+				{
+					"name": "minecraft:fishes"
+				},
+				{
+					"name": "minecraft:jungle_logs"
+				},
+				{
+					"name": "minecraft:leaves"
+				},
+				{
+					"name": "minecraft:logs"
+				},
+				{
+					"name": "minecraft:music_discs"
+				},
+				{
+					"name": "minecraft:oak_logs"
+				},
+				{
+					"name": "minecraft:planks"
+				},
+				{
+					"name": "minecraft:rails"
+				},
+				{
+					"name": "minecraft:sand"
+				},
+				{
+					"name": "minecraft:saplings"
+				},
+				{
+					"name": "minecraft:signs"
+				},
+				{
+					"name": "minecraft:slabs"
+				},
+				{
+					"name": "minecraft:small_flowers"
+				},
+				{
+					"name": "minecraft:spruce_logs"
+				},
+				{
+					"name": "minecraft:stairs"
+				},
+				{
+					"name": "minecraft:stone_bricks"
+				},
+				{
+					"name": "minecraft:trapdoors"
+				},
+				{
+					"name": "minecraft:walls"
+				},
+				{
+					"name": "minecraft:wooden_buttons"
+				},
+				{
+					"name": "minecraft:wooden_doors"
+				},
+				{
+					"name": "minecraft:wooden_fences"
+				},
+				{
+					"name": "minecraft:wooden_pressure_plates"
+				},
+				{
+					"name": "minecraft:wooden_slabs"
+				},
+				{
+					"name": "minecraft:wooden_stairs"
+				},
+				{
+					"name": "minecraft:wooden_trapdoors"
+				},
+				{
+					"name": "minecraft:wool"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:fluid",
+			"tags": [
+				{
+					"name": "minecraft:lava"
+				},
+				{
+					"name": "minecraft:water"
+				}
+			]
+		},
+		{
+			"registry": "minecraft:entity_type",
+			"tags": [
+				{
+					"name": "minecraft:raiders"
+				},
+				{
+					"name": "minecraft:skeletons"
+				}
+			]
+		}
+	]
+}

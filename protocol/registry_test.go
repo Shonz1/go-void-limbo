@@ -329,7 +329,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[3:17] {
+	for _, version := range types.SupportedProtocolVersions[4:18] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -417,12 +417,13 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 		t.Error("EncodeClientbound() of a 1.16.1 login with only 1.16.4's registries succeeded, want a refusal")
 	}
 
-	// 1.15.2 reads nothing of a registry out of its login, and 1.15.1 and
-	// 1.15 below it read the same login, so theirs
+	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
+	// below it read the same login, and 1.14.4 that login less its seed and
+	// its last flag, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:3] {
+	for _, oldest := range types.SupportedProtocolVersions[:4] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -447,7 +448,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[17:] {
+	for _, version := range types.SupportedProtocolVersions[18:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -713,5 +714,56 @@ func TestProtocol578IsNumberedAs735ButForTheStretchesAroundFourPackets(t *testin
 
 	if downgrades != 4 {
 		t.Errorf("%d downgrades are registered at 1.16, want the login success, the login, the chunk and the light", downgrades)
+	}
+}
+
+// 1.14.4 numbers the play phase its own way as well, read off its jar's
+// registrations. What this server reads is numbered alike: 1.15 added no
+// serverbound packet and retired none. Of what it sends, everything behind
+// 0x08 sits one lower: 1.14.4's block break acknowledgement is the last
+// packet of the phase, which 1.15 moved up to 0x08. Three packets are laid
+// out differently, all on the way down.
+func TestProtocol498IsNumberedAs573ButBehindTheBlockBreakAcknowledgement(t *testing.T) {
+	older, newer := types.ProtocolVersions.MINECRAFT_1_14_4.ID, types.ProtocolVersions.MINECRAFT_1_15.ID
+
+	for _, packet := range serverboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		if olderOk != newerOk || olderId != newerId {
+			t.Errorf("%s: 1.14.4 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, newerId, newerOk)
+		}
+	}
+
+	for _, packet := range clientboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+		if packet.phase == types.PhasePlay && newerId > 0x08 {
+			want--
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.14.4 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	registry := NewDefaultRegistry(nil)
+	for key := range registry.upgrades {
+		if key.ProtocolID == older {
+			t.Errorf("an upgrade of %s is registered from 1.14.4, want none: 1.15 reads it as sent", key.PacketType.Name())
+		}
+	}
+
+	downgrades := 0
+	for key := range registry.downgrades {
+		if key.ProtocolID == newer {
+			downgrades++
+		}
+	}
+
+	if downgrades != 3 {
+		t.Errorf("%d downgrades are registered at 1.15, want the login, the chunk and the add player", downgrades)
 	}
 }
