@@ -58,6 +58,14 @@ func HandleLoginStartServerboundPacket(client types.Client, packet types.Serverb
 	// without anything being configured about this connection. The answer decides
 	// which way the login goes, and a client that has none is one this server
 	// settles as it would with nothing in front of it at all.
+	//
+	// A client from before the login plugin messages cannot be asked at all,
+	// and a proxy in front of one could not have answered: the login goes the
+	// way it goes when the answer is that nobody knows the channel.
+	if client.ModernForwardingEnabled() && !client.ProtocolVersion().HasLoginPluginMessages() {
+		return settleWithoutTheProxy(client, false)
+	}
+
 	if client.ModernForwardingEnabled() {
 		messageId, err := client.BeginModernForwarding()
 		if err != nil {

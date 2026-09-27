@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_12_2  ProtocolVersion
 	MINECRAFT_1_13    ProtocolVersion
 	MINECRAFT_1_13_1  ProtocolVersion
 	MINECRAFT_1_13_2  ProtocolVersion
@@ -51,7 +52,22 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.13 has 393 to itself, and is the oldest this server speaks. 1.13.1
+	// 1.12.2 has 340 to itself, and is the oldest this server speaks. It is
+	// from before the flattening: a client on it knows a block by a number
+	// and a four-bit variant beside it rather than by a state of its own, so
+	// a chunk goes out to it in block ids that 1.13's own data fixers reach
+	// from the other side (see package gamedata), packed thirteen bits to an
+	// entry when a section is too varied for a palette. Its chunk is 1.13's
+	// otherwise, but for a count of nothing in front of the ids a section
+	// names directly, and for the biomes, which are a byte each. It has no
+	// tags packet at all, and no login plugin message either, so a proxy
+	// can forward a login to it only in the handshake: see
+	// HasLoginPluginMessages. Everything else this server says or reads is
+	// laid out as on 1.13 and numbered otherwise: see the 1.13 step's
+	// transformers.
+	MINECRAFT_1_12_2: ProtocolVersion{ID: 340, Names: []string{"1.12.2"}},
+
+	// 1.13 has 393 to itself. 1.13.1
 	// is a release of fixes that reach nothing this server says or reads, and
 	// its jar kept 1.13's names for the classes on the wire, so the two were
 	// compared class by class with the names taken out: every phase registers
@@ -384,6 +400,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_12_2,
 	ProtocolVersions.MINECRAFT_1_13,
 	ProtocolVersions.MINECRAFT_1_13_1,
 	ProtocolVersions.MINECRAFT_1_13_2,
@@ -433,6 +450,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_12_2.ID:  ProtocolVersions.MINECRAFT_1_12_2,
 	ProtocolVersions.MINECRAFT_1_13.ID:    ProtocolVersions.MINECRAFT_1_13,
 	ProtocolVersions.MINECRAFT_1_13_1.ID:  ProtocolVersions.MINECRAFT_1_13_1,
 	ProtocolVersions.MINECRAFT_1_13_2.ID:  ProtocolVersions.MINECRAFT_1_13_2,
@@ -527,13 +545,24 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1 and 1.13 -- is in play the
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13 and 1.12.2 -- is in play the
 // moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
 // packet itself, and the tags as a play packet right after it.
 func (v ProtocolVersion) HasConfigurationPhase() bool {
 	return v.ID >= ProtocolVersions.MINECRAFT_1_20_2.ID
+}
+
+// HasLoginPluginMessages reports whether a client on this version answers a
+// login plugin request, which is how a proxy with a forwarding secret is
+// asked for the login it holds. 1.13 is where the two packets appeared. A
+// client before it -- 1.12.2 -- has neither, and a request sent to one is a
+// packet it cannot read; so a login on it goes the way one does when the
+// client says it has never heard of the channel, and a proxy in front of it
+// can forward only in the handshake.
+func (v ProtocolVersion) HasLoginPluginMessages() bool {
+	return v.ID >= ProtocolVersions.MINECRAFT_1_13.ID
 }
 
 // MaySignEncryptionChallenge reports whether a client on this version may
@@ -543,7 +572,7 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
 // so from it on the challenge is always encrypted, and 1.18.2, 1.18, 1.17.1,
-// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1 and 1.13, from before the key, have nothing to sign with and encrypt it as well:
+// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13 and 1.12.2, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let

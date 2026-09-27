@@ -719,7 +719,7 @@ var forwardingSecret = []byte("a shared secret")
 // by it: the question goes to whoever is on the connection, and the login waits
 // for the answer.
 func TestHandleLoginStartServerboundPacketAsksTheProxyForTheForwardedLogin(t *testing.T) {
-	client := &fakeClient{phase: types.PhaseLogin, forwardingSecret: forwardingSecret}
+	client := &fakeClient{protocolVersion: types.LatestProtocolVersion, phase: types.PhaseLogin, forwardingSecret: forwardingSecret}
 
 	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -819,6 +819,75 @@ func TestHandleLoginPluginResponseServerboundPacketFinishesTheLoginTheProxySigne
 
 	if client.authenticateCalls != 0 {
 		t.Errorf("asked the session server %d times, want a login the proxy already asked about left alone", client.authenticateCalls)
+	}
+}
+
+// A login start from 1.12.2 on a server that holds a forwarding secret. The
+// version has no login plugin messages, so there is nobody who could be
+// asked: nothing is asked, and the login is settled as a client that has
+// never heard of the channel would leave it -- through Mojang on an
+// encrypted server.
+func TestHandleLoginStartServerboundPacketAsksNothingOfAVersionWithNoLoginPluginMessages(t *testing.T) {
+	client := &fakeClient{
+		protocolVersion:   types.ProtocolVersions.MINECRAFT_1_12_2,
+		phase:             types.PhaseLogin,
+		forwardingSecret:  forwardingSecret,
+		encryptionEnabled: true,
+		publicKey:         []byte("a public key"),
+		verifyToken:       []byte("a verify token"),
+	}
+
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.forwardingMessageIds) != 0 {
+		t.Errorf("sent message ids %v, want no request a 1.12.2 client could not read", client.forwardingMessageIds)
+	}
+
+	if len(client.written) != 1 {
+		t.Fatalf("expected 1 written packet, got %d", len(client.written))
+	}
+
+	if _, ok := client.written[0].(*clientboundLogin.EncryptionRequestClientboundPacket); !ok {
+		t.Fatalf("expected *login.EncryptionRequestClientboundPacket, got %T", client.written[0])
+	}
+}
+
+// The same on a server that encrypts nothing: the login is finished on the
+// name the client logged in under, as a server no proxy was pointed at would
+// finish it, and a 1.12.2 client, with no configuration phase ahead of it, is
+// in play straight after.
+func TestHandleLoginStartServerboundPacketTakesTheWordOfAVersionWithNoLoginPluginMessages(t *testing.T) {
+	client := &fakeClient{
+		protocolVersion:  types.ProtocolVersions.MINECRAFT_1_12_2,
+		phase:            types.PhaseLogin,
+		forwardingSecret: forwardingSecret,
+	}
+
+	if err := HandleLoginStartServerboundPacket(client, &login.LoginStartServerboundPacket{Name: "Notch"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.forwardingMessageIds) != 0 {
+		t.Errorf("sent message ids %v, want no request a 1.12.2 client could not read", client.forwardingMessageIds)
+	}
+
+	if len(client.written) == 0 {
+		t.Fatal("expected the login to be finished, got nothing written")
+	}
+
+	loginSuccess, ok := client.written[0].(*clientboundLogin.LoginSuccessClientboundPacket)
+	if !ok {
+		t.Fatalf("expected *login.LoginSuccessClientboundPacket, got %T", client.written[0])
+	}
+
+	if loginSuccess.Profile.Uuid != types.OfflineUuid("Notch") {
+		t.Errorf("uuid = %q, want the offline %q", loginSuccess.Profile.Uuid, types.OfflineUuid("Notch"))
+	}
+
+	if client.phase != types.PhasePlay {
+		t.Errorf("phase = %v, want play straight after the login", client.phase)
 	}
 }
 
@@ -1561,7 +1630,7 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 // reads in play, then the rest of the join as any other version gets it.
 // Nothing is written in the login phase but the success packet itself.
 func TestHandleLoginStartServerboundPacketEntersPlayOnAVersionWithNoConfigurationPhase(t *testing.T) {
-	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_13, types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2, types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4, types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2, types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1, types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20} {
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_12_2, types.ProtocolVersions.MINECRAFT_1_13, types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2, types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4, types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2, types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1, types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20} {
 		t.Run(version.Names[0], func(t *testing.T) {
 			entersPlayFromTheLogin(t, version)
 		})
