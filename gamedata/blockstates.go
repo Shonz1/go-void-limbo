@@ -152,8 +152,13 @@ type blockStateProperty struct {
 // instruments past the xylophone, so 404 numbers 8,599 states; see
 // blockStateRenames for the three blocks 1.14 renamed. 1.13.2 changed no
 // block, its jar's report byte-identical to 1.13.1's, so 401 numbers them as
-// 404 does.
+// 404 does. And 1.13 its own below that: 401 is where the dead coral plants
+// landed, five blocks, and where the corals and the conduit took on being
+// waterlogged and the TNT being unstable, so 393 numbers 8,582 states. A
+// stored state's property 1.13's block lacks is passed over, as for any
+// version, so a world's TNT and corals resolve on 393 as well.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_13.ID:    "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_13_1.ID:  "blockstates_minecraft_1_13_2.json",
 	types.ProtocolVersions.MINECRAFT_1_13_2.ID:  "blockstates_minecraft_1_13_2.json",
 	types.ProtocolVersions.MINECRAFT_1_14.ID:    "blockstates_minecraft_1_14_4.json",
@@ -202,18 +207,26 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2 and 1.13.1 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1 and 1.13 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name. 1.14 is where the sign became the oak sign, beside the signs
 // of the other woods it added, the wall sign the oak wall sign with them,
 // and the stone slab the smooth stone slab, which it looks like, for a
-// stone slab of plain stone to take its name: 1.13.2 and 1.13.1 answer to
-// the three newer names, and a world's slab of plain stone is 1.13.2's stone
+// stone slab of plain stone to take its name: 1.13.2, 1.13.1 and 1.13 answer
+// to the three newer names, and a world's slab of plain stone is 1.13.2's stone
 // slab by its own name, which draws it smooth, the one block 1.13.2 has for
 // either.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_13.ID: {
+		"minecraft:short_grass":       "minecraft:grass",
+		"minecraft:dirt_path":         "minecraft:grass_path",
+		"minecraft:water_cauldron":    "minecraft:cauldron",
+		"minecraft:oak_sign":          "minecraft:sign",
+		"minecraft:oak_wall_sign":     "minecraft:wall_sign",
+		"minecraft:smooth_stone_slab": "minecraft:stone_slab",
+	},
 	types.ProtocolVersions.MINECRAFT_1_13_1.ID: {
 		"minecraft:short_grass":       "minecraft:grass",
 		"minecraft:dirt_path":         "minecraft:grass_path",
@@ -316,8 +329,13 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 // 1.16 is where a wall's sides went from being there or not to being low or
 // tall: a wall stored with a side of either height has that side on 1.15.2,
 // on 1.15.1, on 1.15, on 1.14.4, on 1.14.3, on 1.14.2, on 1.14.1, on 1.14, on
-// 1.13.2 and on 1.13.1, and one stored with none does not.
+// 1.13.2, on 1.13.1 and on 1.13, and one stored with none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_13.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_13_1.ID: {
 		"none": "false",
 		"low":  "true",
