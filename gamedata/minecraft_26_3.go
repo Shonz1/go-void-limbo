@@ -23,6 +23,9 @@ func NewDefaultProvider() (*Provider, error) {
 		registries  func() ([]Registry, error)
 		tags        func() ([]TagSet, error)
 	}{
+		// 1.13 is sent no registry, and the tags of its own jar, which hold
+		// no entity type's and two fewer block tags than 1.13.1's.
+		{types.ProtocolVersions.MINECRAFT_1_13.ID, registriesMinecraft1_13_2, tagsMinecraft1_13},
 		// 1.13.2 is sent no registry, and the tags of its own jar, which
 		// hold no entity type's. 1.13.1 is what the set starts at, its jar's
 		// tags being 1.13.2's to the byte.
