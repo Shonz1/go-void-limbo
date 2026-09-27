@@ -800,7 +800,11 @@ func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet
 
 	skyMask, blockMask := int64(0), int64(0)
 
-	r := &sectionReader{t: t, data: sections, dataLengths: true, spanned: true}
+	// 1.12.2 reads a palette of none in front of the ids a container packs
+	// directly, and a byte for each biome where 1.13 reads an int.
+	flattened := version.ID >= types.ProtocolVersions.MINECRAFT_1_13.ID
+
+	r := &sectionReader{t: t, data: sections, dataLengths: true, spanned: true, globalPalette: !flattened}
 
 	for i := 0; i < sectionCount; i++ {
 		if mask&(1<<i) == 0 {
@@ -850,16 +854,26 @@ func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet
 		chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00)
 	}
 
+	biomeSize := 4
+	if !flattened {
+		biomeSize = 1
+	}
+
 	for i := range 16 * 16 {
-		if len(r.data)-r.pos < 4 {
+		if len(r.data)-r.pos < biomeSize {
 			t.Fatalf("section buffer ends at biome %d, want one for each of its 256 columns", i)
 		}
 
-		if biome := binary.BigEndian.Uint32(r.data[r.pos:]); biome != 1 {
+		biome := uint32(r.data[r.pos])
+		if flattened {
+			biome = binary.BigEndian.Uint32(r.data[r.pos:])
+		}
+
+		if biome != 1 {
 			t.Fatalf("biome %d = %d, want 1, the client's own plains", i, biome)
 		}
 
-		r.pos += 4
+		r.pos += biomeSize
 	}
 
 	if r.pos != len(r.data) {
@@ -1054,6 +1068,11 @@ type sectionReader struct {
 	// container read, laid out over again with no entry crossing a long.
 	spanned   bool
 	unspanned []byte
+
+	// globalPalette is whether a container that packs ids directly still
+	// reads a palette in front of them, as 1.12.2's does, which must be one
+	// of no entries.
+	globalPalette bool
 }
 
 // unspan packs entries laid end to end across their longs over again with no
@@ -1136,6 +1155,12 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 		}
 	} else {
 		bitsPerEntry = bits.Len(uint(registrySize - 1))
+
+		if r.globalPalette {
+			if entries := r.varInt(); entries != 0 {
+				r.t.Fatalf("a container packing ids directly has a palette of %d entries, want none", entries)
+			}
+		}
 	}
 
 	perLong := 64 / bitsPerEntry
@@ -1143,7 +1168,13 @@ func (r *sectionReader) container(entries int, registrySize int32) []int32 {
 	mask := int64(1)<<bitsPerEntry - 1
 
 	if r.spanned {
+		// The header as the versions from 1.13 on write it, which is how the
+		// container is laid out over again: without 1.12.2's empty palette
+		// in front of ids packed directly.
 		header := r.data[start:r.pos]
+		if palette == nil && r.globalPalette {
+			header = r.data[start : start+1]
+		}
 
 		spannedLongs := (entries*bitsPerEntry + 63) / 64
 		r.dataLength(spannedLongs)

@@ -81,6 +81,15 @@ func loginWithoutTheProxy(client types.Client, messageId int32) error {
 		return refuseForwarding(client, fmt.Errorf("failed to give up on the forwarded login: %w", err))
 	}
 
+	return settleWithoutTheProxy(client, true)
+}
+
+// settleWithoutTheProxy settles a login a server holding a forwarding secret
+// has no forwarded login for, from here on alike whether the proxy was asked
+// and had nothing to say or the client's version could not be asked at all:
+// see loginWithoutTheProxy. asked says which: the log tells an operator
+// whether a proxy was asked at all.
+func settleWithoutTheProxy(client types.Client, asked bool) error {
 	// Read once: it is the name the whole of the rest of this is settled under,
 	// and the log and the profile saying different names is the one way this
 	// could be wrong about who was let in.
@@ -88,7 +97,7 @@ func loginWithoutTheProxy(client types.Client, messageId int32) error {
 
 	// Said once per connection that came to the port itself, which on a server
 	// behind a proxy is the thing an operator wants to know about.
-	slog.Info("no proxy forwarded this login", "channel", auth.ModernForwardingChannel, "username", username)
+	slog.Info("no proxy forwarded this login", "channel", auth.ModernForwardingChannel, "asked", asked, "username", username)
 
 	if client.EncryptionEnabled() {
 		return askForEncryption(client)

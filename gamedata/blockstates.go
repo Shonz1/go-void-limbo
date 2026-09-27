@@ -38,6 +38,26 @@ type BlockStates struct {
 	// valueRenames is likewise every property value this version knows by
 	// an older name, as blockStateValueRenames spells it.
 	valueRenames map[string]string
+
+	// ids is, for a version from before the flattening, the number the
+	// client knows each of the table's states by, as blockIdsFiles names
+	// it; nil for every other version, whose table numbers the states the
+	// way the client does itself.
+	ids *blockIdsTable
+}
+
+// maxLegacyBlockId is the largest number a version from before the
+// flattening knows a block by: block 255, variant 15.
+const maxLegacyBlockId = 255<<4 | 15
+
+// blockIdsTable is one parsed block id file: for every state of the table it
+// sits beside, the number a version from before the flattening knows it by.
+type blockIdsTable struct {
+	ids []int32
+
+	// stateCount is how many states the version's client holds in all,
+	// which sizes an id as a table's own count does.
+	stateCount int32
 }
 
 // blockStatesTable is one parsed table: what a block state file holds, which
@@ -156,8 +176,11 @@ type blockStateProperty struct {
 // landed, five blocks, and where the corals and the conduit took on being
 // waterlogged and the TNT being unstable, so 393 numbers 8,582 states. A
 // stored state's property 1.13's block lacks is passed over, as for any
-// version, so a world's TNT and corals resolve on 393 as well.
+// version, so a world's TNT and corals resolve on 393 as well. 1.12.2 names
+// 1.13's table too, and goes through it to a number of its own: see
+// blockIdsFiles.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_12_2.ID:  "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_13.ID:    "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_13_1.ID:  "blockstates_minecraft_1_13_2.json",
 	types.ProtocolVersions.MINECRAFT_1_13_2.ID:  "blockstates_minecraft_1_13_2.json",
@@ -199,6 +222,44 @@ var blockStatesFiles = map[types.ProtocolId]string{
 	types.ProtocolVersions.MINECRAFT_26_3.ID:    "blockstates_minecraft_26_3.json",
 }
 
+// blockIdsFiles is the block id file each version from before the
+// flattening loads beside its table: 1.12.2 alone, which knows a block by
+// its number, shifted up four bits, and a variant in the four below, and
+// numbers none of 1.13's states. The file maps each of 1.13's states to the
+// number 1.12.2 knows it by, and is how 1.12.2 reads a world: a stored state
+// is found in 1.13's table, under 1.13's renames, and its number there looked
+// up in the file.
+//
+// The numbers come from 1.13's own data fixers, which read a world saved by
+// 1.12.2 and so know every block number and variant 1.12.2 held and the state
+// 1.13 made of each. Each number the flattening lists for a state is the
+// state's number here, and a state it does not list -- one 1.12.2 worked out
+// from the blocks around it rather than keep, a fence's sides or a stair's
+// shape among them -- takes the number whose kept properties it shares. The
+// numbers are checked against the ones 1.12.2 itself registers, and every
+// number maps back from the state it became. Where two of 1.12.2's numbers
+// became one state -- the leaves that were waiting to decay and the ones that
+// were not, a comparator lit and unlit -- the lower is the state's, but for
+// the water and the lava, whose still blocks are what a 1.12.2 world holds
+// rather than the flowing ones below them. A few of 1.13's blocks are drawn
+// from 1.12.2's block entities rather than its numbers -- a bed's colour, a
+// banner's, a skull's kind, a pot's plant -- and take the number the block
+// has without one; the woods' own buttons, plates and trapdoors and their
+// stripped logs, which 1.13 added, take the oak's and the unstripped log's;
+// the blue ice takes the packed ice; and the plants that grow only
+// underwater take the water they stand in. The rest of what 1.13 added --
+// the corals, the dried kelp block, the conduit, the prismarine slabs and
+// stairs, the sea pickle and the turtle egg -- is -1, which is no number at
+// all, and a world's block of one of those is substituted as any version's
+// unknown block is.
+//
+// The count beside the numbers is how many states 1.12.2 registers, which is
+// what sizes one of its ids: a section too varied for a palette packs them at
+// thirteen bits.
+var blockIdsFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_12_2.ID: "blockids_minecraft_1_12_2.json",
+}
+
 // blockStateRenames is every block a version knows under an older name than
 // the one a newer world stores it by: the name the world uses, and the name
 // this version's table numbers it as. A rename is the same block with the
@@ -207,18 +268,27 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1 and 1.13 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13 and 1.12.2 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
 // cannot name. 1.14 is where the sign became the oak sign, beside the signs
 // of the other woods it added, the wall sign the oak wall sign with them,
 // and the stone slab the smooth stone slab, which it looks like, for a
-// stone slab of plain stone to take its name: 1.13.2, 1.13.1 and 1.13 answer
+// stone slab of plain stone to take its name: 1.13.2, 1.13.1, 1.13 and
+// 1.12.2 answer
 // to the three newer names, and a world's slab of plain stone is 1.13.2's stone
 // slab by its own name, which draws it smooth, the one block 1.13.2 has for
 // either.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_12_2.ID: {
+		"minecraft:short_grass":       "minecraft:grass",
+		"minecraft:dirt_path":         "minecraft:grass_path",
+		"minecraft:water_cauldron":    "minecraft:cauldron",
+		"minecraft:oak_sign":          "minecraft:sign",
+		"minecraft:oak_wall_sign":     "minecraft:wall_sign",
+		"minecraft:smooth_stone_slab": "minecraft:stone_slab",
+	},
 	types.ProtocolVersions.MINECRAFT_1_13.ID: {
 		"minecraft:short_grass":       "minecraft:grass",
 		"minecraft:dirt_path":         "minecraft:grass_path",
@@ -329,8 +399,14 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 // 1.16 is where a wall's sides went from being there or not to being low or
 // tall: a wall stored with a side of either height has that side on 1.15.2,
 // on 1.15.1, on 1.15, on 1.14.4, on 1.14.3, on 1.14.2, on 1.14.1, on 1.14, on
-// 1.13.2, on 1.13.1 and on 1.13, and one stored with none does not.
+// 1.13.2, on 1.13.1, on 1.13 and on 1.12.2, and one stored with none does
+// not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_12_2.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_13.ID: {
 		"none": "false",
 		"low":  "true",
@@ -426,6 +502,7 @@ func BlockStatesFor(version types.ProtocolVersion) (*BlockStates, error) {
 // copies of tables already in memory. The zero value is ready to use.
 type BlockStatesLoader struct {
 	tables map[string]*blockStatesTable
+	ids    map[string]*blockIdsTable
 }
 
 // For loads the numbering of one version, sharing its table with any version
@@ -451,6 +528,24 @@ func (l *BlockStatesLoader) For(version types.ProtocolVersion) (*BlockStates, er
 	}
 
 	states := &BlockStates{table: table, renames: blockStateRenames[version.ID], valueRenames: blockStateValueRenames[version.ID]}
+
+	if idsName, ok := blockIdsFiles[version.ID]; ok {
+		ids, ok := l.ids[idsName]
+		if !ok {
+			var err error
+			if ids, err = loadBlockIdsTable(idsName, table); err != nil {
+				return nil, err
+			}
+
+			if l.ids == nil {
+				l.ids = make(map[string]*blockIdsTable)
+			}
+
+			l.ids[idsName] = ids
+		}
+
+		states.ids = ids
+	}
 
 	for newer, older := range states.renames {
 		if _, ok := table.blocks[older]; !ok {
@@ -498,6 +593,51 @@ func loadBlockStatesTable(name string) (*blockStatesTable, error) {
 	return table, nil
 }
 
+// loadBlockIdsTable parses one block id file out of the embedded data
+// directory, for the table whose states it numbers.
+func loadBlockIdsTable(name string, table *blockStatesTable) (*blockIdsTable, error) {
+	raw, err := dataFiles.ReadFile("data/" + name)
+	if err != nil {
+		return nil, fmt.Errorf("gamedata: %w", err)
+	}
+
+	var file struct {
+		StateCount int32   `json:"stateCount"`
+		Ids        []int32 `json:"ids"`
+	}
+
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return nil, fmt.Errorf("gamedata: parsing %s: %w", name, err)
+	}
+
+	if int32(len(file.Ids)) != table.stateCount {
+		return nil, fmt.Errorf("gamedata: %s numbers %d states, and its table holds %d", name, len(file.Ids), table.stateCount)
+	}
+
+	// A number is a block id of eight bits and a variant of four.
+	for state, id := range file.Ids {
+		if id < -1 || id > maxLegacyBlockId {
+			return nil, fmt.Errorf("gamedata: %s numbers state %d as %d, past the %d a block id and a variant reach", name, state, id, maxLegacyBlockId)
+		}
+	}
+
+	return &blockIdsTable{ids: file.Ids, stateCount: file.StateCount}, nil
+}
+
+// number is the number the client knows a state of the table by: the state's
+// own on a version whose table numbers them as its client does, and the one
+// the block id file gives it on a version from before the flattening, which
+// reports false for a state that version has no number for.
+func (s *BlockStates) number(state int32) (int32, bool) {
+	if s.ids == nil {
+		return state, true
+	}
+
+	id := s.ids.ids[state]
+
+	return id, id >= 0
+}
+
 // entry finds the block a name numbers, under the name itself or under the
 // older name this version knows it by.
 func (s *BlockStates) entry(name string) (*blockStatesEntry, bool) {
@@ -512,6 +652,10 @@ func (s *BlockStates) entry(name string) (*blockStatesEntry, bool) {
 
 // StateCount is how many block states the version numbers in all.
 func (s *BlockStates) StateCount() int32 {
+	if s.ids != nil {
+		return s.ids.stateCount
+	}
+
 	return s.table.stateCount
 }
 
@@ -558,7 +702,7 @@ func (s *BlockStates) Id(name string, properties map[string]string) (int32, bool
 		id += index * s.stride(entry, i)
 	}
 
-	return id, true
+	return s.number(id)
 }
 
 // index is where value sits among the property's values, or -1.
@@ -580,7 +724,7 @@ func (s *BlockStates) DefaultId(name string) (int32, bool) {
 		return 0, false
 	}
 
-	return entry.base + entry.defaultOff, true
+	return s.number(entry.base + entry.defaultOff)
 }
 
 // stride is how far apart states sit when property i moves one value: the
