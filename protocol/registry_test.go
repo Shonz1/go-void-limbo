@@ -5,6 +5,7 @@ import (
 	clientboundCommon "github.com/Shonz1/go-void-limbo/packets/clientbound/common"
 	clientboundConfiguration "github.com/Shonz1/go-void-limbo/packets/clientbound/configuration"
 	clientboundPlay "github.com/Shonz1/go-void-limbo/packets/clientbound/play"
+	serverboundCommon "github.com/Shonz1/go-void-limbo/packets/serverbound/common"
 	serverboundPlay "github.com/Shonz1/go-void-limbo/packets/serverbound/play"
 	"github.com/Shonz1/go-void-limbo/streams"
 	"github.com/Shonz1/go-void-limbo/types"
@@ -329,7 +330,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[8:22] {
+	for _, version := range types.SupportedProtocolVersions[9:23] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -418,12 +419,13 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
-	// below it read the same login, and 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
-	// seed and its last flag, so theirs
+	// below it read the same login, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
+	// seed and its last flag, and 1.13.2 theirs with the difficulty and
+	// without the view distance, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:8] {
+	for _, oldest := range types.SupportedProtocolVersions[:9] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -448,7 +450,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[22:] {
+	for _, version := range types.SupportedProtocolVersions[23:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -662,8 +664,8 @@ func TestProtocol736IsNumberedAs751ButForTwoStretches(t *testing.T) {
 		}
 	}
 
-	if downgrades != 2 {
-		t.Errorf("%d downgrades are registered at 1.16.2, want the login and the chunk", downgrades)
+	if downgrades != 3 {
+		t.Errorf("%d downgrades are registered at 1.16.2, want the login, the chunk and the chunk with section light, for its chunk", downgrades)
 	}
 }
 
@@ -724,8 +726,8 @@ func TestProtocol578IsNumberedAs735ButForTheStretchesAroundFourPackets(t *testin
 		}
 	}
 
-	if downgrades != 4 {
-		t.Errorf("%d downgrades are registered at 1.16, want the login success, the login, the chunk and the light", downgrades)
+	if downgrades != 5 {
+		t.Errorf("%d downgrades are registered at 1.16, want the login success, the login, the chunk, the light and the chunk with section light, for both", downgrades)
 	}
 }
 
@@ -775,7 +777,175 @@ func TestProtocol498IsNumberedAs573ButBehindTheBlockBreakAcknowledgement(t *test
 		}
 	}
 
-	if downgrades != 3 {
-		t.Errorf("%d downgrades are registered at 1.15, want the login, the chunk and the add player", downgrades)
+	if downgrades != 4 {
+		t.Errorf("%d downgrades are registered at 1.15, want the login, the chunk, the add player and the chunk with section light, for its chunk", downgrades)
+	}
+}
+
+// 1.13.2 numbers the play phase its own way, read off its jar's
+// registrations, and every id below was read there. The chunk packet, the
+// light update and the chunk cache centre have no id on it, and the chunk
+// with section light has one on it alone. Four packets are laid out
+// differently, all on the way down: the login, the spawn position the game
+// event goes out as, the entity metadata and the chunk with its light.
+func TestProtocol404IsNumberedByItsOwnJar(t *testing.T) {
+	older, newer := types.ProtocolVersions.MINECRAFT_1_13_2.ID, types.ProtocolVersions.MINECRAFT_1_14.ID
+
+	serverbound := map[reflect.Type]types.PacketId{
+		reflect.TypeOf(serverboundCommon.KeepAliveServerboundPacket{}):                0x0E,
+		reflect.TypeOf(serverboundPlay.AcceptTeleportationServerboundPacket{}):        0x00,
+		reflect.TypeOf(serverboundPlay.MovePlayerPositionServerboundPacket{}):         0x10,
+		reflect.TypeOf(serverboundPlay.MovePlayerPositionRotationServerboundPacket{}): 0x11,
+		reflect.TypeOf(serverboundPlay.MovePlayerRotationServerboundPacket{}):         0x12,
+		reflect.TypeOf(serverboundPlay.MovePlayerStatusServerboundPacket{}):           0x0F,
+		reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}):              0x19,
+		reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}):                0x1A,
+		reflect.TypeOf(serverboundPlay.PunchServerboundPacket{}):                      0x27,
+	}
+
+	for _, packet := range serverboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want := newerId
+		if packet.phase == types.PhasePlay && newerOk {
+			id, ok := serverbound[packet.packet]
+			if !ok {
+				t.Errorf("%s: no 1.13.2 id is expected of it, and 1.14 has one", packet.packet.Name())
+			}
+
+			want = id
+		}
+
+		if olderOk != newerOk || olderId != want {
+			t.Errorf("%s: 1.13.2 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, newerOk)
+		}
+	}
+
+	clientbound := map[reflect.Type]types.PacketId{
+		reflect.TypeOf(clientboundConfiguration.UpdateTagsClientboundPacket{}):        0x55,
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}):                  0x05,
+		reflect.TypeOf(clientboundPlay.SwingAnimationClientboundPacket{}):             0x06,
+		reflect.TypeOf(clientboundPlay.EntityPositionSyncClientboundPacket{}):         0x50,
+		reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}):                  0x49,
+		reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}):                0x21,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}): 0x22,
+		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}):                      0x25,
+		reflect.TypeOf(clientboundPlay.PlayerInfoRemoveClientboundPacket{}):           0x30,
+		reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}):           0x30,
+		reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}):             0x32,
+		reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}):             0x35,
+		reflect.TypeOf(clientboundPlay.RotateHeadClientboundPacket{}):                 0x39,
+		reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}):              0x3F,
+	}
+
+	absent := map[reflect.Type]bool{
+		reflect.TypeOf(clientboundPlay.LevelChunkWithLightClientboundPacket{}): true,
+		reflect.TypeOf(clientboundPlay.LightUpdateClientboundPacket{}):         true,
+		reflect.TypeOf(clientboundPlay.SetChunkCacheCenterClientboundPacket{}): true,
+	}
+
+	for _, packet := range clientboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want, wantOk := newerId, newerOk
+
+		if packet.phase == types.PhasePlay {
+			if id, ok := clientbound[packet.packet]; ok {
+				want, wantOk = id, true
+			} else if absent[packet.packet] {
+				want, wantOk = 0, false
+			} else if newerOk {
+				t.Errorf("%s: no 1.13.2 id is expected of it, and 1.14 has one", packet.packet.Name())
+			}
+		}
+
+		if olderOk != wantOk || olderId != want {
+			t.Errorf("%s: 1.13.2 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, wantOk)
+		}
+	}
+
+	registry := NewDefaultRegistry(nil)
+	for key := range registry.upgrades {
+		if key.ProtocolID == older {
+			t.Errorf("an upgrade of %s is registered from 1.13.2, want none: 1.14 reads it as sent", key.PacketType.Name())
+		}
+	}
+
+	downgraded := map[reflect.Type]bool{}
+	for key := range registry.downgrades {
+		if key.ProtocolID == newer {
+			downgraded[key.PacketType] = true
+		}
+	}
+
+	want := map[reflect.Type]bool{
+		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}):                      true,
+		reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}):                  true,
+		reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}):              true,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}): true,
+	}
+
+	if !reflect.DeepEqual(downgraded, want) {
+		t.Errorf("the downgrades registered at 1.14 are %v, want the login, the game event, the entity metadata and the chunk with section light", downgraded)
+	}
+}
+
+// The chunk with section light is carried down the chain as its two halves,
+// each the way its own packet is carried, so that what the 1.14 step is
+// given is the chunk and the light 1.14 is sent: the same bytes, one behind
+// the other.
+func TestTheChunkWithSectionLightArrivesAtTheStepAsTheTwoPackets1_14IsSent(t *testing.T) {
+	registry := NewDefaultRegistry(nil)
+
+	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{
+		X:           3,
+		Z:           -4,
+		SectionData: bytes.Repeat([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 24),
+		LightData: clientboundPlay.LightData{
+			SkyLightMask:        []int64{1 << 5},
+			BlockLightMask:      []int64{0},
+			EmptySkyLightMask:   []int64{(1<<26 - 1) &^ (1 << 5)},
+			EmptyBlockLightMask: []int64{1<<26 - 1},
+			SkyLight:            [][]byte{bytes.Repeat([]byte{0xFF}, 2048)},
+		},
+	}
+
+	light := &clientboundPlay.LightUpdateClientboundPacket{X: chunk.X, Z: chunk.Z, LightData: chunk.LightData}
+
+	for _, version := range types.SupportedProtocolVersions[1:] {
+		body := func(packet types.ClientboundPacket) []byte {
+			t.Helper()
+
+			packetType := reflect.TypeOf(packet).Elem()
+
+			buf := new(bytes.Buffer)
+			ms := streams.NewMinecraftStreamFromBuffer(buf)
+
+			if err := packet.Encode(ms); err != nil {
+				t.Fatalf("Encode() error: %v", err)
+			}
+
+			if err := ms.Flush(); err != nil {
+				t.Fatalf("Flush() error: %v", err)
+			}
+
+			downgraded, err := registry.DowngradeBody(types.PhasePlay, packetType, version, buf.Bytes())
+			if err != nil {
+				t.Fatalf("protocol %d: DowngradeBody(%s) error: %v", version.ID, packetType.Name(), err)
+			}
+
+			return downgraded
+		}
+
+		chunkBody, lightBody := body(chunk), body(light)
+
+		want := streams.AppendVarInt(nil, int32(len(chunkBody)))
+		want = append(append(want, chunkBody...), lightBody...)
+
+		if got := body(&clientboundPlay.LevelChunkWithSectionLightClientboundPacket{Chunk: chunk}); !bytes.Equal(got, want) {
+			t.Errorf("protocol %d: the chunk with section light is not the chunk and the light that version is sent", version.ID)
+		}
 	}
 }

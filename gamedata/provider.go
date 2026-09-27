@@ -80,9 +80,10 @@ func encodeSet(set Set) (bucket, error) {
 	// see below. And one that starts below 1.16.2 is read by clients that
 	// take the dimension types alone, as a list, and the one they are put
 	// into by name. And one that starts below 1.16 is read by clients that
-	// take no registry at all. Those are the six differences in this
-	// package's output between the versions: the content of a set is what
-	// varies, and the shape only at those six steps.
+	// take no registry at all, and one that starts below 1.14 by clients
+	// that take no tag of an entity type's. Those are the seven differences
+	// in this package's output between the versions: the content of a set
+	// is what varies, and the shape only at those seven steps.
 	if set.MinProtocol < loginRegistriesProtocol {
 		// Below 1.16 the login holds a dimension's number and nothing of a
 		// registry, so there is nothing for a registry to be encoded into.
@@ -143,7 +144,9 @@ func encodeSet(set Set) (bucket, error) {
 	// its entries by registry id.
 	if len(set.Tags) > 0 {
 		encode := encodeTags
-		if set.MinProtocol < namedTagRegistriesProtocol {
+		if set.MinProtocol < entityTypeTagsProtocol {
+			encode = encodeTags1_13_2
+		} else if set.MinProtocol < namedTagRegistriesProtocol {
 			encode = encodeTags1_16_4
 		}
 

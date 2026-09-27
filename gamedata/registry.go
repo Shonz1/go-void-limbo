@@ -63,6 +63,11 @@ var inlineDimensionTypeProtocol = types.ProtocolVersions.MINECRAFT_1_19.ID
 // reads four runs it knows by their position: see encodeTags1_16_4.
 var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 
+// entityTypeTagsProtocol is the first version to read tags for the entity
+// types. A version before it -- 1.13.2 -- reads the first three of the four
+// runs alone: see encodeTags1_13_2.
+var entityTypeTagsProtocol = types.ProtocolVersions.MINECRAFT_1_14.ID
+
 // dimensionListProtocol is the first version to read the combined compound
 // out of its play login, the biomes and every registry after them included,
 // and the dimension type it is put into spelled out behind it. A version
@@ -72,7 +77,7 @@ var namedTagRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_17.ID
 var dimensionListProtocol = types.ProtocolVersions.MINECRAFT_1_16_2.ID
 
 // loginRegistriesProtocol is the first version to read anything of a
-// registry out of its play login. A version before it -- 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 or 1.14 -- knows its
+// registry out of its play login. A version before it -- 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14 or 1.13.2 -- knows its
 // dimensions for itself as it knows its biomes, is put into one by number,
 // and is sent the tags alone: a set for it holds no registry.
 var loginRegistriesProtocol = types.ProtocolVersions.MINECRAFT_1_16.ID
