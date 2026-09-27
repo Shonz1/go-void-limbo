@@ -160,10 +160,7 @@ func Load(dir string, encoder PacketEncoder) (*World, error) {
 	// most a world sends and what a plausible one comes close to.
 	world := &World{spawn: spawn, packets: make(map[types.ProtocolId][]types.ClientboundPacket, len(builders))}
 	for _, builder := range builders {
-		packets := make([]types.ClientboundPacket, 0, maxChunks*builder.packetsPerChunk()+1)
-		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
-
-		world.packets[builder.version.ID] = packets
+		world.packets[builder.version.ID] = builder.startPackets(centerX, centerZ)
 	}
 
 	// Each chunk is read, translated for every version and let go before
@@ -211,7 +208,7 @@ var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
 
 // entitiesTickWithoutChunks is the first version whose client ticks an
 // entity wherever it stands. A client before it -- 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 or 1.14 -- ticks
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14 or 1.13.2 -- ticks
 // one only while it holds the chunk the entity is in, and a tick is when
 // another player's relayed position is applied: on a server that sends no
 // chunk, every player such a client is shown stays frozen where it appeared.
@@ -241,8 +238,7 @@ func Void(encoder PacketEncoder) (*World, error) {
 
 		builder := newChunkBuilder(version, blockStates)
 
-		packets := make([]types.ClientboundPacket, 0, maxChunks*builder.packetsPerChunk()+1)
-		packets = append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
+		packets := builder.startPackets(centerX, centerZ)
 
 		for z := centerZ - chunkRadius; z <= centerZ+chunkRadius; z++ {
 			for x := centerX - chunkRadius; x <= centerX+chunkRadius; x++ {
@@ -264,7 +260,9 @@ func Void(encoder PacketEncoder) (*World, error) {
 // PacketsFor returns the packets that put this world on the wire of a client
 // speaking version, the chunk cache centre first and then the chunks -- each
 // one packet, or on a version before 1.18 its light and then the chunk
-// itself, in the order a vanilla server of that version sends the two. The
+// itself, in the order a vanilla server of that version sends the two. A
+// version before 1.14 has no chunk cache centre, and reads each chunk as one
+// packet again, its light inside it: see sectionLight. The
 // slice is shared across connections and must not be modified. It is empty
 // for a version the world was not built for, which is no version a
 // connection can reach the play phase on.
@@ -306,8 +304,22 @@ type chunkBuilder struct {
 	// way but for what it leaves out. The versions before 1.17 read the two packets
 	// in the same order, and the 1.17 step cuts both down to the sixteen
 	// sections their world holds: the blocks a world stores below zero or
-	// above 255 are blocks a client on any of them is never shown.
+	// above 255 are blocks a client on any of them is never shown. A version
+	// before 1.14 reads the two as one packet again: see sectionLight, which
+	// takes precedence.
 	separateLight bool
+
+	// sectionLight is whether the version reads a chunk's light inside the
+	// chunk packet, behind each section's blocks, which 1.14 moved out into
+	// the light update packet: 1.13.2 reads one packet for a chunk, and has
+	// no packet for its light alone. The chunk goes out to it as the chunk
+	// with section light packet, which carries the chunk packet and the
+	// light update the versions between would send, one behind the other,
+	// for the 1.14 step to make one. 1.13.2 has no chunk cache centre either
+	// -- 1.14 is where the server came to say where a client's view is
+	// centred, and before it the client centres it on where it stands -- so
+	// none is sent.
+	sectionLight bool
 
 	// substituted is every stored state this version had no number for, warned
 	// about once each rather than once per block.
@@ -323,14 +335,28 @@ func newChunkBuilder(version types.ProtocolVersion, blockStates *gamedata.BlockS
 		fluidCounts:   version.ID >= types.ProtocolVersions.MINECRAFT_26_1.ID,
 		dataLengths:   version.ID < types.ProtocolVersions.MINECRAFT_1_21_5.ID,
 		separateLight: version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID,
+		sectionLight:  version.ID < types.ProtocolVersions.MINECRAFT_1_14.ID,
 	}
+}
+
+// startPackets is what this version's packets start with, with room for the
+// chunks that follow: the chunk cache centre, on a version that has one.
+func (b *chunkBuilder) startPackets(centerX, centerZ int32) []types.ClientboundPacket {
+	packets := make([]types.ClientboundPacket, 0, maxChunks*b.packetsPerChunk()+1)
+
+	if b.sectionLight {
+		return packets
+	}
+
+	return append(packets, &clientboundPlay.SetChunkCacheCenterClientboundPacket{X: centerX, Z: centerZ})
 }
 
 // packetsPerChunk is how many packets one chunk goes out as on this
 // version: the chunk packet, and on a version that reads the light on its
-// own the light packet ahead of it.
+// own the light packet ahead of it -- which a version that reads the light
+// inside the chunk does not.
 func (b *chunkBuilder) packetsPerChunk() int {
-	if b.separateLight {
+	if b.separateLight && !b.sectionLight {
 		return 2
 	}
 
@@ -343,11 +369,21 @@ func (b *chunkBuilder) packetsPerChunk() int {
 // and all of what a world costs to hold, and what it deflates to is a
 // fraction of the sections and light it is built from. The centre stays a
 // packet of a few bytes. On a version that reads the light in a packet of
-// its own, that packet comes first, built from the same light.
+// its own, that packet comes first, built from the same light; on one that
+// reads it inside the chunk's sections, the two go out as one.
 func (b *chunkBuilder) prepare(chunk *anvil.Chunk, encoder PacketEncoder) ([]types.ClientboundPacket, error) {
 	packet, err := b.build(chunk)
 	if err != nil {
 		return nil, err
+	}
+
+	if b.sectionLight {
+		prepared, err := b.prepareOne(chunk, encoder, &clientboundPlay.LevelChunkWithSectionLightClientboundPacket{Chunk: packet})
+		if err != nil {
+			return nil, err
+		}
+
+		return []types.ClientboundPacket{prepared}, nil
 	}
 
 	packets := make([]types.ClientboundPacket, 0, b.packetsPerChunk())

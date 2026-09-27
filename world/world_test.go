@@ -85,24 +85,31 @@ func TestLoad(t *testing.T) {
 	for _, version := range types.SupportedProtocolVersions {
 		t.Run(fmt.Sprintf("protocol %d", version.ID), func(t *testing.T) {
 			packets := world.PacketsFor(version)
-			if want := 1 + packetsPerChunk(version); len(packets) != want {
-				t.Fatalf("PacketsFor() returned %d packets, want %d: the centre and one chunk", len(packets), want)
+			if want := centrePackets(version) + packetsPerChunk(version); len(packets) != want {
+				t.Fatalf("PacketsFor() returned %d packets, want %d: the centre, where the version has one, and one chunk", len(packets), want)
 			}
 
-			center, ok := packets[0].(*clientboundPlay.SetChunkCacheCenterClientboundPacket)
-			if !ok || center.X != 0 || center.Z != 0 {
-				t.Fatalf("packets[0] = %v, want the cache centred on 0,0", packets[0])
+			if centrePackets(version) != 0 {
+				center, ok := packets[0].(*clientboundPlay.SetChunkCacheCenterClientboundPacket)
+				if !ok || center.X != 0 || center.Z != 0 {
+					t.Fatalf("packets[0] = %v, want the cache centred on 0,0", packets[0])
+				}
 			}
 
-			chunk := decodeChunk(t, version, packets[1:])
+			chunk := decodeChunk(t, version, packets[centrePackets(version):])
 			if chunk.X != 0 || chunk.Z != 0 {
-				t.Fatalf("packets[1:] = %v, want chunk 0,0", packets[1:])
+				t.Fatalf("packets = %v, want chunk 0,0", packets)
 			}
 
 			// The first column's entry, nine bits wide: the rest of the map
-			// is the bottom of the world, which is not zero on the one
-			// version whose world starts higher up.
-			if len(chunk.Heightmaps) != 1 || chunk.Heightmaps[0].Type != clientboundPlay.HeightmapMotionBlocking || chunk.Heightmaps[0].Data[0]&0x1FF != 65 {
+			// is the bottom of the world, which is not zero on the versions
+			// whose world starts higher up. A version before 1.14 is sent
+			// no heightmap at all.
+			if version.ID < types.ProtocolVersions.MINECRAFT_1_14.ID {
+				if len(chunk.Heightmaps) != 0 {
+					t.Errorf("Heightmaps = %v, want none on a version that works them out for itself", chunk.Heightmaps)
+				}
+			} else if len(chunk.Heightmaps) != 1 || chunk.Heightmaps[0].Type != clientboundPlay.HeightmapMotionBlocking || chunk.Heightmaps[0].Data[0]&0x1FF != 65 {
 				t.Errorf("Heightmaps = %v, want the stored motion blocking map", chunk.Heightmaps)
 			}
 
@@ -253,7 +260,7 @@ func TestLoadRepacksLargePalettes(t *testing.T) {
 				want[i] = id
 			}
 
-			chunk := decodeChunk(t, version, world.PacketsFor(version)[1:])
+			chunk := decodeChunk(t, version, world.PacketsFor(version)[centrePackets(version):])
 			sections := decodeSections(t, version, chunk.SectionData, blockStates.StateCount())
 
 			section := sections[4]
@@ -282,10 +289,21 @@ var heightmapKinds = map[string]int32{
 }
 
 // packetsPerChunk is how many packets one chunk goes out as on version: one
-// from 1.18 on, and before it two, the light ahead of the chunk.
+// from 1.18 on, and before it two, the light ahead of the chunk -- but for a
+// version before 1.14, which reads the light inside the chunk again.
 func packetsPerChunk(version types.ProtocolVersion) int {
-	if version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID {
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID && version.ID >= types.ProtocolVersions.MINECRAFT_1_14.ID {
 		return 2
+	}
+
+	return 1
+}
+
+// centrePackets is how many packets go out ahead of the chunks on version:
+// the chunk cache centre, which a version before 1.14 has no packet for.
+func centrePackets(version types.ProtocolVersion) int {
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_14.ID {
+		return 0
 	}
 
 	return 1
@@ -303,6 +321,10 @@ func packetsPerChunk(version types.ProtocolVersion) int {
 // array, which is read back into the section buffer 1.18 lays out.
 func decodeChunk(t *testing.T, version types.ProtocolVersion, packets []types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
+
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_14.ID {
+		return decodeSectionLightChunk(t, version, packets[0])
+	}
 
 	if version.ID < types.ProtocolVersions.MINECRAFT_1_18.ID {
 		return decodeLegacyChunk(t, version, packets[0], packets[1])
@@ -717,6 +739,136 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 	if r.pos != len(r.data) {
 		t.Fatalf("section buffer holds %d bytes past the sections the mask names", len(r.data)-r.pos)
 	}
+
+	return chunk
+}
+
+// decodeSectionLightChunk reads a chunk as 1.13.2 is sent it: one packet,
+// each section the mask names laid out as its blocks, with no count in
+// front, and its block light and its sky light behind them, and the biomes
+// of every column behind the last section. It is read back into the packet
+// 1.18 would be sent, as decodeLegacyChunk does: the sections into 1.18's
+// layout, with the count worked out from the blocks, and the light into
+// 1.18's masks, where an array that holds no light at all is a section the
+// light is empty in. 1.13.2 is sent no heightmap, so none is read back.
+func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
+	t.Helper()
+
+	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
+
+	ms := openPrepared(t, version, packet, reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}))
+
+	var err error
+
+	if chunk.X, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading x: %v", err)
+	}
+
+	if chunk.Z, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading z: %v", err)
+	}
+
+	fullChunk, err := ms.ReadBoolean()
+	if err != nil || !fullChunk {
+		t.Fatalf("whole chunk flag = %t, %v, want true: a chunk this server sends is never a change to one", fullChunk, err)
+	}
+
+	mask := readFlatMask(t, ms, legacySections)
+
+	sections, err := ms.ReadByteArray(streams.MaxPacketSize)
+	if err != nil {
+		t.Fatalf("reading sections: %v", err)
+	}
+
+	blockEntities, err := ms.ReadVarInt()
+	if err != nil {
+		t.Fatalf("reading block entity count: %v", err)
+	}
+
+	if blockEntities != 0 {
+		t.Fatalf("chunk carries %d block entities, want none", blockEntities)
+	}
+
+	if rest, _ := ms.ReadRest(); len(rest) != 0 {
+		t.Fatalf("chunk holds %d bytes past its block entities", len(rest))
+	}
+
+	blockStates, err := gamedata.BlockStatesFor(version)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	skyMask, blockMask := int64(0), int64(0)
+
+	r := &sectionReader{t: t, data: sections, dataLengths: true, spanned: true}
+
+	for i := 0; i < sectionCount; i++ {
+		if mask&(1<<i) == 0 {
+			chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00, 0x00, 0x00)
+		} else {
+			if declared := r.data[r.pos]; declared < 4 {
+				t.Fatalf("section %d declares %d bits, want at least the four 1.13.2 reads a palette at", i, declared)
+			}
+
+			blocks := r.container(4096, blockStates.StateCount())
+
+			blockCount := int32(0)
+			for _, id := range blocks {
+				if id != 0 {
+					blockCount++
+				}
+			}
+
+			if blockCount == 0 {
+				t.Fatalf("section %d is sent holding no block, which the mask leaves out", i)
+			}
+
+			chunk.SectionData = append(chunk.SectionData, byte(blockCount>>8), byte(blockCount))
+			chunk.SectionData = append(chunk.SectionData, r.unspanned...)
+
+			// The light is named from one section below the lowest.
+			bit := int64(1) << (i + 1)
+
+			for _, light := range []struct {
+				mask   *int64
+				arrays *[][]byte
+			}{{&blockMask, &chunk.BlockLight}, {&skyMask, &chunk.SkyLight}} {
+				if len(r.data)-r.pos < 2048 {
+					t.Fatalf("section %d ends before its light", i)
+				}
+
+				array := r.data[r.pos : r.pos+2048]
+				r.pos += 2048
+
+				if !bytes.Equal(array, make([]byte, 2048)) {
+					*light.mask |= bit
+					*light.arrays = append(*light.arrays, array)
+				}
+			}
+		}
+
+		chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00)
+	}
+
+	for i := range 16 * 16 {
+		if len(r.data)-r.pos < 4 {
+			t.Fatalf("section buffer ends at biome %d, want one for each of its 256 columns", i)
+		}
+
+		if biome := binary.BigEndian.Uint32(r.data[r.pos:]); biome != 1 {
+			t.Fatalf("biome %d = %d, want 1, the client's own plains", i, biome)
+		}
+
+		r.pos += 4
+	}
+
+	if r.pos != len(r.data) {
+		t.Fatalf("section buffer holds %d bytes past the sections the mask names", len(r.data)-r.pos)
+	}
+
+	all := int64(1)<<lightSectionCount - 1
+	chunk.SkyLightMask, chunk.EmptySkyLightMask = []int64{skyMask}, []int64{all &^ skyMask}
+	chunk.BlockLightMask, chunk.EmptyBlockLightMask = []int64{blockMask}, []int64{all &^ blockMask}
 
 	return chunk
 }
@@ -1154,11 +1306,13 @@ func TestVoidIsEmptyChunksForTheVersionsThatTickByChunk(t *testing.T) {
 			continue
 		}
 
-		if want := 1 + maxChunks*packetsPerChunk(version); len(packets) != want {
-			t.Fatalf("protocol %d is sent %d packets, want %d: the centre and every chunk around the spawn", version.ID, len(packets), want)
+		centre := centrePackets(version)
+
+		if want := centre + maxChunks*packetsPerChunk(version); len(packets) != want {
+			t.Fatalf("protocol %d is sent %d packets, want %d: the centre, where the version has one, and every chunk around the spawn", version.ID, len(packets), want)
 		}
 
-		chunk := decodeChunk(t, version, packets[1:1+packetsPerChunk(version)])
+		chunk := decodeChunk(t, version, packets[centre:centre+packetsPerChunk(version)])
 		if chunk.X != -chunkRadius || chunk.Z != -chunkRadius {
 			t.Errorf("protocol %d: the first chunk is %d,%d, want the corner %d,%d", version.ID, chunk.X, chunk.Z, -chunkRadius, -chunkRadius)
 		}

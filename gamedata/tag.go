@@ -55,6 +55,10 @@ func encodeTags(sets []TagSet) ([]byte, error) {
 // order it reads them in: see encodeTags1_16_4.
 var unnamedTagRegistries = []string{"minecraft:block", "minecraft:item", "minecraft:fluid", "minecraft:entity_type"}
 
+// unnamedTagRegistries1_13_2 is the registries a 1.13.2 client reads tags
+// for, in the order it reads them in: see encodeTags1_13_2.
+var unnamedTagRegistries1_13_2 = unnamedTagRegistries[:3]
+
 // encodeTags1_16_4 writes the Update Tags body as 1.16.4 reads it. 1.17 is
 // where the packet came to name the registry in front of each run of tags,
 // behind a count of the registries; before it the client reads four runs it
@@ -64,13 +68,29 @@ var unnamedTagRegistries = []string{"minecraft:block", "minecraft:item", "minecr
 // set that is not those four in that order is refused rather than read as
 // something else.
 func encodeTags1_16_4(sets []TagSet) ([]byte, error) {
-	if len(sets) != len(unnamedTagRegistries) {
-		return nil, fmt.Errorf("a 1.16.4 client reads tags for %d registries, and the set holds %d", len(unnamedTagRegistries), len(sets))
+	return encodeUnnamedTags(sets, unnamedTagRegistries, "1.16.4")
+}
+
+// encodeTags1_13_2 writes the Update Tags body as 1.13.2 reads it: the runs
+// 1.16.4 reads but the last, since 1.14 is where the entity types took on
+// tags. A set that is not the blocks, the items and the fluids in that order
+// is refused for the same reason as there.
+func encodeTags1_13_2(sets []TagSet) ([]byte, error) {
+	return encodeUnnamedTags(sets, unnamedTagRegistries1_13_2, "1.13.2")
+}
+
+// encodeUnnamedTags writes one run of tags for each of registries, in their
+// order and with nothing in front, refusing a set that holds anything else:
+// the body a client from before 1.17 reads, which knows a run by its
+// position alone. version names that client in what is refused.
+func encodeUnnamedTags(sets []TagSet, registries []string, version string) ([]byte, error) {
+	if len(sets) != len(registries) {
+		return nil, fmt.Errorf("a %s client reads tags for %d registries, and the set holds %d", version, len(registries), len(sets))
 	}
 
 	for i, set := range sets {
-		if set.Registry != unnamedTagRegistries[i] {
-			return nil, fmt.Errorf("a 1.16.4 client reads the tags for %s at position %d, and the set holds %s there", unnamedTagRegistries[i], i, set.Registry)
+		if set.Registry != registries[i] {
+			return nil, fmt.Errorf("a %s client reads the tags for %s at position %d, and the set holds %s there", version, registries[i], i, set.Registry)
 		}
 	}
 

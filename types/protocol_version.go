@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_13_2  ProtocolVersion
 	MINECRAFT_1_14    ProtocolVersion
 	MINECRAFT_1_14_1  ProtocolVersion
 	MINECRAFT_1_14_2  ProtocolVersion
@@ -48,7 +49,18 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.14 has 477 to itself, and is the oldest this server speaks. 1.14.1 is
+	// 1.13.2 has 404 to itself, and is the oldest this server speaks. It is
+	// from before the light left the chunk packet: a client on it reads a
+	// section's light behind its blocks, in the chunk itself, and has no
+	// packet of its own for either the light or the chunk its view is
+	// centred on. It is also from before the heightmaps went on the wire,
+	// before an entity had a pose, before the play login lost the
+	// difficulty and took on the view distance, before the entity types had
+	// tags, and before a block position kept its height in its lowest bits:
+	// see the 1.14 step's transformers, and package world.
+	MINECRAFT_1_13_2: ProtocolVersion{ID: 404, Names: []string{"1.13.2"}},
+
+	// 1.14 has 477 to itself: 1.13.2 sits on 404 below it. 1.14.1 is
 	// a release of fixes that reach nothing this server says or reads. Its jar
 	// shifted the obfuscated names, so the two were compared class by class
 	// with the names taken out: every phase registers the same packets in the
@@ -327,6 +339,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_13_2,
 	ProtocolVersions.MINECRAFT_1_14,
 	ProtocolVersions.MINECRAFT_1_14_1,
 	ProtocolVersions.MINECRAFT_1_14_2,
@@ -373,6 +386,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_13_2.ID:  ProtocolVersions.MINECRAFT_1_13_2,
 	ProtocolVersions.MINECRAFT_1_14.ID:    ProtocolVersions.MINECRAFT_1_14,
 	ProtocolVersions.MINECRAFT_1_14_1.ID:  ProtocolVersions.MINECRAFT_1_14_1,
 	ProtocolVersions.MINECRAFT_1_14_2.ID:  ProtocolVersions.MINECRAFT_1_14_2,
@@ -464,7 +478,7 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 -- is in play the
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14 and 1.13.2 -- is in play the
 // moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
@@ -480,7 +494,7 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
 // so from it on the challenge is always encrypted, and 1.18.2, 1.18, 1.17.1,
-// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14, from before the key, have nothing to sign with and encrypt it as well:
+// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14 and 1.13.2, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let
