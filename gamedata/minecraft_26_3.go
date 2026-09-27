@@ -24,8 +24,9 @@ func NewDefaultProvider() (*Provider, error) {
 		tags        func() ([]TagSet, error)
 	}{
 		// 1.13.2 is sent no registry, and the tags of its own jar, which
-		// hold no entity type's.
-		{types.ProtocolVersions.MINECRAFT_1_13_2.ID, registriesMinecraft1_13_2, tagsMinecraft1_13_2},
+		// hold no entity type's. 1.13.1 is what the set starts at, its jar's
+		// tags being 1.13.2's to the byte.
+		{types.ProtocolVersions.MINECRAFT_1_13_1.ID, registriesMinecraft1_13_2, tagsMinecraft1_13_2},
 		// 1.14.4 is sent no registry either, and the tags of its own jar.
 		// 1.14.3 and 1.14.2 are sent the same set, the three jars' tags being
 		// the same files with the same contents, and 1.14.1 as well: its jar's

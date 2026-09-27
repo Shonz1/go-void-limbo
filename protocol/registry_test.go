@@ -330,7 +330,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[9:23] {
+	for _, version := range types.SupportedProtocolVersions[10:24] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -420,12 +420,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
 	// below it read the same login, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
-	// seed and its last flag, and 1.13.2 theirs with the difficulty and
+	// seed and its last flag, and 1.13.2 and 1.13.1 theirs with the difficulty and
 	// without the view distance, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:9] {
+	for _, oldest := range types.SupportedProtocolVersions[:10] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -450,7 +450,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[23:] {
+	for _, version := range types.SupportedProtocolVersions[24:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -523,8 +523,12 @@ func TestEncodeClientboundRemovesOneEntityToAPacketOn1_17(t *testing.T) {
 // packet and moved none, and the two whose bodies it changed -- the custom
 // payload, which gained a debug channel, and the explosion, which floors
 // where it truncated -- are written and read field for field as before.
+// And 401 to 404: 1.13.2 added no packet and moved none, and what it changed
+// on the wire is the item stack, which nothing this server sends or reads
+// carries.
 func TestProtocolsOnAnEmptyStepAreNumberedAndLaidOutAsTheOneAbove(t *testing.T) {
 	steps := []struct{ older, newer types.ProtocolVersion }{
+		{types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2},
 		{types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1},
 		{types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2},
 		{types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3},
@@ -914,7 +918,7 @@ func TestTheChunkWithSectionLightArrivesAtTheStepAsTheTwoPackets1_14IsSent(t *te
 
 	light := &clientboundPlay.LightUpdateClientboundPacket{X: chunk.X, Z: chunk.Z, LightData: chunk.LightData}
 
-	for _, version := range types.SupportedProtocolVersions[1:] {
+	for _, version := range types.SupportedProtocolVersions[2:] {
 		body := func(packet types.ClientboundPacket) []byte {
 			t.Helper()
 

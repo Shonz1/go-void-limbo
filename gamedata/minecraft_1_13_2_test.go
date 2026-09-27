@@ -83,3 +83,37 @@ func TestEncodeTags1_13_2RefusesAnythingButTheThreeRuns(t *testing.T) {
 		t.Error("expected the items ahead of the blocks to be refused")
 	}
 }
+
+// 1.13.1 is sent what 1.13.2 is, to the byte: the two jars' tags are the same
+// files with the same contents and their blocks reports the same bytes, so
+// nothing here is its own, and it is sent no registry either.
+func TestProviderSends1_13_1What1_13_2Is(t *testing.T) {
+	provider, err := NewDefaultProvider()
+	if err != nil {
+		t.Fatalf("NewDefaultProvider() error: %v", err)
+	}
+
+	older, newer := types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2
+
+	sendsTheSetOf(t, provider, older, newer)
+
+	olderStates, err := BlockStatesFor(older)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	newerStates, err := BlockStatesFor(newer)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	// The oak sign 1.13.2 answers to as its sign, which 1.13.1 does as well.
+	stored := map[string]string{"rotation": "4", "waterlogged": "false"}
+
+	olderId, olderOk := olderStates.Id("minecraft:oak_sign", stored)
+	newerId, newerOk := newerStates.Id("minecraft:oak_sign", stored)
+
+	if !olderOk || !newerOk || olderId != newerId {
+		t.Errorf("an oak sign = %d, %t on 1.13.1 and %d, %t on 1.13.2, want the two alike", olderId, olderOk, newerId, newerOk)
+	}
+}

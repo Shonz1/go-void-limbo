@@ -13,7 +13,8 @@ func registriesMinecraft1_13_2() ([]Registry, error) {
 // are 1.14's less what came with the village and pillage update and a
 // handful beside -- the beds, the fences, the signs, the walls, the small
 // flowers, the arrows and the music discs among them. No tag of 1.13.2's
-// was retired on the way.
+// was retired on the way. A 1.13.1 client is sent this set as well, whose
+// jar holds the same tags, contents and all. The set starts at 401.
 func tagsMinecraft1_13_2() ([]TagSet, error) {
 	_, tags, err := loadDataFile("minecraft_1_13_2.json")
 
