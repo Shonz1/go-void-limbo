@@ -208,7 +208,7 @@ var voidSpawn = anvil.Spawn{X: 0, Y: 64, Z: 0}
 
 // entitiesTickWithoutChunks is the first version whose client ticks an
 // entity wherever it stands. A client before it -- 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14 or 1.13.2 -- ticks
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2 or 1.13.1 -- ticks
 // one only while it holds the chunk the entity is in, and a tick is when
 // another player's relayed position is applied: on a server that sends no
 // chunk, every player such a client is shown stays frozen where it appeared.
@@ -311,11 +311,11 @@ type chunkBuilder struct {
 
 	// sectionLight is whether the version reads a chunk's light inside the
 	// chunk packet, behind each section's blocks, which 1.14 moved out into
-	// the light update packet: 1.13.2 reads one packet for a chunk, and has
-	// no packet for its light alone. The chunk goes out to it as the chunk
-	// with section light packet, which carries the chunk packet and the
-	// light update the versions between would send, one behind the other,
-	// for the 1.14 step to make one. 1.13.2 has no chunk cache centre either
+	// the light update packet: 1.13.2 and 1.13.1 read one packet for a chunk,
+	// and have no packet for its light alone. The chunk goes out to them as
+	// the chunk with section light packet, which carries the chunk packet and
+	// the light update the versions between would send, one behind the
+	// other, for the 1.14 step to make one. Neither has a chunk cache centre either
 	// -- 1.14 is where the server came to say where a client's view is
 	// centred, and before it the client centres it on where it stands -- so
 	// none is sent.
