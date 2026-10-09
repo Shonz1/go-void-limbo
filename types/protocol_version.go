@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_11    ProtocolVersion
 	MINECRAFT_1_11_1  ProtocolVersion
 	MINECRAFT_1_12    ProtocolVersion
 	MINECRAFT_1_12_1  ProtocolVersion
@@ -55,8 +56,22 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.11.1 has 316, shared with 1.11.2, and is the oldest this server
-	// speaks. 1.12 moved to 335 over the recipe book and the advancements:
+	// 1.11 has 315 to itself, and is the oldest this server speaks. 1.11.1
+	// moved to 316 over nothing on the wire: the two jars register the same
+	// packets in the same order in every phase and direction -- one
+	// handshake, thirty serverbound and seventy-six clientbound play packets,
+	// two and two status, two and four login -- and each is the same class
+	// with the names taken out, as are the connection state that lists them,
+	// the packet buffer and the bootstrap. 1.11.1 was a release of fixes --
+	// the iron nugget, the sweeping edge, a shield's cooldown -- and the
+	// classes that differ are theirs; it added no block, and its registry
+	// numbers every state as 1.11's does, slot for slot, read side by side
+	// off the two jars. So 315 is 316 under the same ids: see package
+	// gamedata for the numbers it shares.
+	MINECRAFT_1_11: ProtocolVersion{ID: 315, Names: []string{"1.11"}},
+
+	// 1.11.1 has 316, shared with 1.11.2.
+	// 1.12 moved to 335 over the recipe book and the advancements:
 	// it added the prepare crafting grid, the crafting book data and the
 	// advancement tab to the serverbound play phase, the unlock recipes, the
 	// advancement tab selection and the advancements to the clientbound one,
@@ -456,6 +471,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1,
@@ -509,6 +525,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_11.ID:    ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1.ID:  ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12.ID:    ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1.ID:  ProtocolVersions.MINECRAFT_1_12_1,

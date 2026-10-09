@@ -19,8 +19,8 @@ What a joined player gets:
 - **A connection that stays up.** Keep alives go out every fifteen seconds and
   packets above 256 bytes are compressed, as a full server would.
 
-The server speaks every protocol version from **1.11.1 through 26.3**
-(protocols 316 to 777). Every packet is implemented once, at the latest
+The server speaks every protocol version from **1.11 through 26.3**
+(protocols 315 to 777). Every packet is implemented once, at the latest
 version, and carried to older clients through per-version transformers.
 
 ## Running
@@ -85,10 +85,10 @@ and forwards who they are. Both forwarding schemes are supported:
   Set `FORWARDING_SECRET` to the secret from the proxy's configuration. The
   server then asks every login for a payload signed with it, and a signed login
   is taken from the proxy without being checked with Mojang here. Encryption
-  can stay on: it only governs logins nobody signed. A 1.12.2, 1.12.1, 1.12
-  or 1.11.1 client cannot be asked (the login plugin messages this uses came
-  with 1.13), so its login is settled as an unsigned one; Velocity forwards
-  those versions only the BungeeCord way.
+  can stay on: it only governs logins nobody signed. A 1.12.2, 1.12.1, 1.12,
+  1.11.1 or 1.11 client cannot be asked (the login plugin messages this uses
+  came with 1.13), so its login is settled as an unsigned one; Velocity
+  forwards those versions only the BungeeCord way.
 - **BungeeCord forwarding** (`ip_forward: true`). The proxy writes the account
   into the handshake in plain text, so there is nothing to sign and nothing to
   check. It is read only when `ENCRYPTION=false` and no forwarding secret is
