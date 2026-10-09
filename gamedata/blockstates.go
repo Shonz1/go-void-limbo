@@ -177,9 +177,10 @@ type blockStateProperty struct {
 // waterlogged and the TNT being unstable, so 393 numbers 8,582 states. A
 // stored state's property 1.13's block lacks is passed over, as for any
 // version, so a world's TNT and corals resolve on 393 as well. 1.12.2 names
-// 1.13's table too, and goes through it to a number of its own, and 1.12.1
-// and 1.12 with it: see blockIdsFiles.
+// 1.13's table too, and goes through it to a number of its own, and 1.12.1,
+// 1.12 and 1.11.1 with it: see blockIdsFiles.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_11_1.ID:  "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_12.ID:    "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_12_1.ID:  "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_12_2.ID:  "blockstates_minecraft_1_13.json",
@@ -225,9 +226,10 @@ var blockStatesFiles = map[types.ProtocolId]string{
 }
 
 // blockIdsFiles is the block id file each version from before the
-// flattening loads beside its table: 1.12.2 alone, which knows a block by
+// flattening loads beside its table: 1.12.2's, which knows a block by
 // its number, shifted up four bits, and a variant in the four below, and
-// numbers none of 1.13's states. The file maps each of 1.13's states to the
+// numbers none of 1.13's states, and 1.11.1's below it, which is 1.12.2's
+// less what 1.12 added. The file maps each of 1.13's states to the
 // number 1.12.2 knows it by, and is how 1.12.2 reads a world: a stored state
 // is found in 1.13's table, under 1.13's renames, and its number there looked
 // up in the file.
@@ -261,7 +263,16 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // block list being the same classes to the byte, so 338 draws the same
 // numbers, and 1.12 the same again, its block class and block list being
 // 1.12.1's with the names taken out, so 335 draws them too.
+//
+// 1.11.1 registers every block 1.12 does but the eighteen 1.12 added -- the
+// sixteen glazed terracottas, the concrete and the concrete powder -- and
+// numbers every other state as 1.12 does, state for state, which the two
+// jars' own registries say when read side by side. So 1.11.1's file is
+// 1.12.2's with those eighteen blocks' ninety-six states at -1, substituted
+// as the corals are, and a count of 5,269, which still packs a
+// directly-numbered section at thirteen bits.
 var blockIdsFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_11_1.ID: "blockids_minecraft_1_11_1.json",
 	types.ProtocolVersions.MINECRAFT_1_12.ID:   "blockids_minecraft_1_12_2.json",
 	types.ProtocolVersions.MINECRAFT_1_12_1.ID: "blockids_minecraft_1_12_2.json",
 	types.ProtocolVersions.MINECRAFT_1_12_2.ID: "blockids_minecraft_1_12_2.json",
@@ -275,7 +286,7 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1 and 1.12 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12 and 1.11.1 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
@@ -283,11 +294,19 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // of the other woods it added, the wall sign the oak wall sign with them,
 // and the stone slab the smooth stone slab, which it looks like, for a
 // stone slab of plain stone to take its name: 1.13.2, 1.13.1, 1.13, 1.12.2,
-// 1.12.1 and 1.12 answer
+// 1.12.1, 1.12 and 1.11.1 answer
 // to the three newer names, and a world's slab of plain stone is 1.13.2's stone
 // slab by its own name, which draws it smooth, the one block 1.13.2 has for
 // either.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_11_1.ID: {
+		"minecraft:short_grass":       "minecraft:grass",
+		"minecraft:dirt_path":         "minecraft:grass_path",
+		"minecraft:water_cauldron":    "minecraft:cauldron",
+		"minecraft:oak_sign":          "minecraft:sign",
+		"minecraft:oak_wall_sign":     "minecraft:wall_sign",
+		"minecraft:smooth_stone_slab": "minecraft:stone_slab",
+	},
 	types.ProtocolVersions.MINECRAFT_1_12.ID: {
 		"minecraft:short_grass":       "minecraft:grass",
 		"minecraft:dirt_path":         "minecraft:grass_path",
@@ -422,9 +441,14 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 // 1.16 is where a wall's sides went from being there or not to being low or
 // tall: a wall stored with a side of either height has that side on 1.15.2,
 // on 1.15.1, on 1.15, on 1.14.4, on 1.14.3, on 1.14.2, on 1.14.1, on 1.14, on
-// 1.13.2, on 1.13.1, on 1.13, on 1.12.2, on 1.12.1 and on 1.12, and one
-// stored with none does not.
+// 1.13.2, on 1.13.1, on 1.13, on 1.12.2, on 1.12.1, on 1.12 and on 1.11.1,
+// and one stored with none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_11_1.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_12.ID: {
 		"none": "false",
 		"low":  "true",

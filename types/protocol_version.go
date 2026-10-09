@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_11_1  ProtocolVersion
 	MINECRAFT_1_12    ProtocolVersion
 	MINECRAFT_1_12_1  ProtocolVersion
 	MINECRAFT_1_12_2  ProtocolVersion
@@ -54,7 +55,29 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.12 has 335 to itself, and is the oldest this server speaks. 1.12.1
+	// 1.11.1 has 316, shared with 1.11.2, and is the oldest this server
+	// speaks. 1.12 moved to 335 over the recipe book and the advancements:
+	// it added the prepare crafting grid, the crafting book data and the
+	// advancement tab to the serverbound play phase, the unlock recipes, the
+	// advancement tab selection and the advancements to the clientbound one,
+	// and put the base of the player moves and of the entity moves in front
+	// of the three moves of each, where 1.11.1 has it behind them, so the
+	// play ids sit apart on the two versions from each of those on, and
+	// nothing else: the handshake, the status and the login phases are
+	// numbered alike. 1.12 was a release of content,
+	// and the jars differ in most of their classes; every packet this server
+	// sends or reads was compared class by class with the names taken out,
+	// and each is the same but for a log call's shape or a Guava helper's
+	// name, as are the packet buffer, the chunk, its sections and their
+	// palettes, the entity metadata and its serializers, in which the byte
+	// is the first registered in both. So 316 is 335 under other play ids:
+	// 1.12.2's chunk, its keep alive carried across the 1.12.2 step, no
+	// tags, a login that cannot be asked, and 1.12.2's block numbers and
+	// variants but for the eighteen blocks 1.12 added, which 1.11.1 has no
+	// number for: see package gamedata.
+	MINECRAFT_1_11_1: ProtocolVersion{ID: 316, Names: []string{"1.11.1", "1.11.2"}},
+
+	// 1.12 has 335 to itself. 1.12.1
 	// moved to 338 over the recipe book: it took out the prepare crafting
 	// grid, the second packet of the serverbound play phase, and added the
 	// craft recipe request further down it and the craft recipe response to
@@ -433,6 +456,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1,
 	ProtocolVersions.MINECRAFT_1_12_2,
@@ -485,6 +509,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_11_1.ID:  ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12.ID:    ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1.ID:  ProtocolVersions.MINECRAFT_1_12_1,
 	ProtocolVersions.MINECRAFT_1_12_2.ID:  ProtocolVersions.MINECRAFT_1_12_2,
