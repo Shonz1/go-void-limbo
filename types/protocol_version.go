@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_12    ProtocolVersion
 	MINECRAFT_1_12_1  ProtocolVersion
 	MINECRAFT_1_12_2  ProtocolVersion
 	MINECRAFT_1_13    ProtocolVersion
@@ -53,7 +54,26 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.12.1 has 338 to itself, and is the oldest this server speaks. 1.12.2
+	// 1.12 has 335 to itself, and is the oldest this server speaks. 1.12.1
+	// moved to 338 over the recipe book: it took out the prepare crafting
+	// grid, the second packet of the serverbound play phase, and added the
+	// craft recipe request further down it and the craft recipe response to
+	// the clientbound one, so the serverbound play ids between those two, and
+	// the clientbound ones from the response on, sit one apart on the two
+	// versions. The jars were compared class by class
+	// with the names taken out, 1.12.1's having shifted: of the 3,279 classes
+	// 1.12 has, 38 differ, and two of them are packets -- the prepare
+	// crafting grid, which 1.12.1 has not, and the handshake, for the number
+	// it carries -- beside the play phase's registration, which lists them.
+	// Every packet this server sends or reads is the same class to the byte,
+	// as are the packet buffer and the block class, so 335 is 338 under other
+	// play ids: 1.12.2's block numbers and variants, its chunk, its keep
+	// alive carried across the 1.12.2 step, no tags, and a login that cannot
+	// be asked. The rest of the 38 are the recipe book and its screens, the
+	// version strings and the data version, 1139 against 1241.
+	MINECRAFT_1_12: ProtocolVersion{ID: 335, Names: []string{"1.12"}},
+
+	// 1.12.1 has 338 to itself. 1.12.2
 	// is a release of fixes, and its jar differs from 1.12.1's in fifty
 	// classes, of which three are packets: the two keep alives, whose id is
 	// a var int on 1.12.1 and a long on 1.12.2, in both directions, and the
@@ -413,6 +433,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1,
 	ProtocolVersions.MINECRAFT_1_12_2,
 	ProtocolVersions.MINECRAFT_1_13,
@@ -464,6 +485,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_12.ID:    ProtocolVersions.MINECRAFT_1_12,
 	ProtocolVersions.MINECRAFT_1_12_1.ID:  ProtocolVersions.MINECRAFT_1_12_1,
 	ProtocolVersions.MINECRAFT_1_12_2.ID:  ProtocolVersions.MINECRAFT_1_12_2,
 	ProtocolVersions.MINECRAFT_1_13.ID:    ProtocolVersions.MINECRAFT_1_13,
