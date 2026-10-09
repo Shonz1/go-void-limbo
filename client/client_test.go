@@ -171,6 +171,13 @@ func TestSendKeepAliveUsesThePacketIdOfThePhaseItIsSentIn(t *testing.T) {
 			if id == 0 {
 				t.Error("sent id 0, which is the value that means nothing is being waited on")
 			}
+
+			// A 1.12.1 client reads the id as a var int, and the 1.12.2 step
+			// refuses an id wider than one rather than cut it down: so the
+			// id has to fit for every version, this one included.
+			if id != int64(int32(id)) {
+				t.Errorf("sent id %d, want one that fits the var int 1.12.1 reads", id)
+			}
 		})
 	}
 }
