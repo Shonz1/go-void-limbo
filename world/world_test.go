@@ -751,7 +751,7 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 // layout, with the count worked out from the blocks, and the light into
 // 1.18's masks, where an array that holds no light at all is a section the
 // light is empty in. 1.13.2 is sent no heightmap, so none is read back, and
-// 1.9.2 and 1.9.1 no count of block entities.
+// 1.9.2, 1.9.1 and 1.9 no count of block entities.
 func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
@@ -781,7 +781,7 @@ func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet
 		t.Fatalf("reading sections: %v", err)
 	}
 
-	// 1.9.3 is where the chunk grew its list of block entities; 1.9.2 and 1.9.1 read a
+	// 1.9.3 is where the chunk grew its list of block entities; 1.9.2, 1.9.1 and 1.9 read a
 	// chunk that ends at its sections.
 	if version.ID >= types.ProtocolVersions.MINECRAFT_1_9_3.ID {
 		blockEntities, err := ms.ReadVarInt()

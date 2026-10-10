@@ -9,8 +9,8 @@ import (
 
 // The 1.9.3 step is where the chunk packet grew its list of block entities.
 // 1.9.2 below it reads a chunk that ends at its sections, and was told of a
-// chest or a sign by a packet of its own, and 1.9.1 below that reads the
-// same chunk: see the 1.9.2 step in package types. The two jars were compared class by
+// chest or a sign by a packet of its own, and 1.9.1 and 1.9 below that read
+// the same chunk: see the 1.9.2 step in package types. The two jars were compared class by
 // class with the names taken out: every phase registers the same packets in
 // the same order in both, but that 1.9.2's play phase registers one
 // clientbound packet more, the update sign at 0x46, which 1.9.3 dropped, so
