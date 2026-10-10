@@ -24,9 +24,9 @@ func NewDefaultProvider() (*Provider, error) {
 		tags        func() ([]TagSet, error)
 	}{
 		// 1.12.2 is sent neither registries nor tags, having no packet for
-		// either, and 1.10, with the same packets as 1.11, 1.11.1, 1.12,
-		// 1.12.1 and 1.12.2, is what the set starts at.
-		{types.ProtocolVersions.MINECRAFT_1_10.ID, registriesMinecraft1_12_2, tagsMinecraft1_12_2},
+		// either, and 1.9.3, with the same packets as 1.10, 1.11, 1.11.1,
+		// 1.12, 1.12.1 and 1.12.2, is what the set starts at.
+		{types.ProtocolVersions.MINECRAFT_1_9_3.ID, registriesMinecraft1_12_2, tagsMinecraft1_12_2},
 		// 1.13 is sent no registry, and the tags of its own jar, which hold
 		// no entity type's and two fewer block tags than 1.13.1's.
 		{types.ProtocolVersions.MINECRAFT_1_13.ID, registriesMinecraft1_13_2, tagsMinecraft1_13},
