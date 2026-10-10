@@ -330,7 +330,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[18:32] {
+	for _, version := range types.SupportedProtocolVersions[19:33] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -420,12 +420,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
 	// below it read the same login, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
-	// seed and its last flag, and 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10 and 1.9.3 theirs with the difficulty and
+	// seed and its last flag, and 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3 and 1.9.2 theirs with the difficulty and
 	// without the view distance, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:18] {
+	for _, oldest := range types.SupportedProtocolVersions[:19] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -450,7 +450,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[32:] {
+	for _, version := range types.SupportedProtocolVersions[33:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -920,7 +920,7 @@ func TestTheChunkWithSectionLightArrivesAtTheStepAsTheTwoPackets1_14IsSent(t *te
 
 	light := &clientboundPlay.LightUpdateClientboundPacket{X: chunk.X, Z: chunk.Z, LightData: chunk.LightData}
 
-	for _, version := range types.SupportedProtocolVersions[10:] {
+	for _, version := range types.SupportedProtocolVersions[11:] {
 		body := func(packet types.ClientboundPacket) []byte {
 			t.Helper()
 
