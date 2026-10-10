@@ -753,7 +753,7 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 // light is empty in. 1.13.2 is sent no heightmap, so none is read back, and
 // 1.9.2, 1.9.1 and 1.9 no count of block entities. 1.8 is sent the chunk as
 // a map chunk bulk of one, laid out another way again: see decodeBulkChunk1_8,
-// and 1.7.6 that bulk deflated and with a byte to a block: see
+// and 1.7.6 and 1.7.2 that bulk deflated and with a byte to a block: see
 // decodeBulkChunk1_7_6.
 func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
@@ -948,7 +948,7 @@ func decodeBulkChunk1_8(t *testing.T, version types.ProtocolVersion, ms *streams
 	return decodeBulkData1_8(t, version, chunk, uint16(rawMask), data)
 }
 
-// decodeBulkChunk1_7_6 reads a chunk as 1.7.6 is sent it: a map chunk bulk
+// decodeBulkChunk1_7_6 reads a chunk as 1.7.6 and 1.7.2 are sent it: a map chunk bulk
 // holding that one chunk, which counts one chunk in a short, says how long
 // the chunks' deflated bytes are, says the sky light is there, carries the
 // deflated bytes, and then names the chunk's coordinates and its two masks
