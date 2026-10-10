@@ -178,8 +178,9 @@ type blockStateProperty struct {
 // stored state's property 1.13's block lacks is passed over, as for any
 // version, so a world's TNT and corals resolve on 393 as well. 1.12.2 names
 // 1.13's table too, and goes through it to a number of its own, and 1.12.1,
-// 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 with it: see blockIdsFiles.
+// 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9, 1.8 and 1.7.6 with it: see blockIdsFiles.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_7_6.ID:   "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_8.ID:     "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_9.ID:     "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_9_1.ID:   "blockstates_minecraft_1_13.json",
@@ -323,7 +324,20 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // properties make -- which still packs a directly-numbered section at
 // thirteen bits, not that a 1.8 section is ever packed: see the 1.9 step's
 // chunk transformer.
+//
+// 1.7.6 registers every block 1.8 does but the twenty-seven 1.8 added -- the
+// slime block, the barrier, the iron trapdoor, the prismarine, the sea
+// lantern, the two banners, the inverted daylight detector, the red
+// sandstone, its stairs and its two slabs, and the fence gates, the fences
+// and the doors of the five newer woods -- and numbers every other block as
+// 1.8 does, read off the two jars' registrations side by side. Of the
+// variants 1.8 added to blocks the two share, the stone's six and the wet
+// sponge are 1.8's alone; the dirt's three are 1.7.6's as well. 1.7.6 keeps
+// no registry of states: a block is its number and a four-bit variant, so
+// its file is 1.8's with those blocks and variants at -1, and a count of
+// 2,816, sixteen variants of every number up to the last block's, 175.
 var blockIdsFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_7_6.ID:  "blockids_minecraft_1_7_6.json",
 	types.ProtocolVersions.MINECRAFT_1_8.ID:    "blockids_minecraft_1_8.json",
 	types.ProtocolVersions.MINECRAFT_1_9.ID:    "blockids_minecraft_1_9_3.json",
 	types.ProtocolVersions.MINECRAFT_1_9_1.ID:  "blockids_minecraft_1_9_3.json",
@@ -345,7 +359,7 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9, 1.8 and 1.7.6 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
@@ -353,11 +367,19 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // of the other woods it added, the wall sign the oak wall sign with them,
 // and the stone slab the smooth stone slab, which it looks like, for a
 // stone slab of plain stone to take its name: 1.13.2, 1.13.1, 1.13, 1.12.2,
-// 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 answer
+// 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9, 1.8 and 1.7.6 answer
 // to the three newer names, and a world's slab of plain stone is 1.13.2's stone
 // slab by its own name, which draws it smooth, the one block 1.13.2 has for
 // either.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_7_6.ID: {
+		"minecraft:short_grass":       "minecraft:grass",
+		"minecraft:dirt_path":         "minecraft:grass_path",
+		"minecraft:water_cauldron":    "minecraft:cauldron",
+		"minecraft:oak_sign":          "minecraft:sign",
+		"minecraft:oak_wall_sign":     "minecraft:wall_sign",
+		"minecraft:smooth_stone_slab": "minecraft:stone_slab",
+	},
 	types.ProtocolVersions.MINECRAFT_1_8.ID: {
 		"minecraft:short_grass":       "minecraft:grass",
 		"minecraft:dirt_path":         "minecraft:grass_path",
@@ -560,6 +582,11 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 // 1.11, on 1.10, on 1.9.3, on 1.9.2, on 1.9.1 and on 1.9, and one stored with
 // none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_7_6.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_8.ID: {
 		"none": "false",
 		"low":  "true",

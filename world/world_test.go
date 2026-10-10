@@ -752,13 +752,19 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 // 1.18's masks, where an array that holds no light at all is a section the
 // light is empty in. 1.13.2 is sent no heightmap, so none is read back, and
 // 1.9.2, 1.9.1 and 1.9 no count of block entities. 1.8 is sent the chunk as
-// a map chunk bulk of one, laid out another way again: see decodeBulkChunk1_8.
+// a map chunk bulk of one, laid out another way again: see decodeBulkChunk1_8,
+// and 1.7.6 that bulk deflated and with a byte to a block: see
+// decodeBulkChunk1_7_6.
 func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
 	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
 
 	ms := openPrepared(t, version, packet, reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}))
+
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_8.ID {
+		return decodeBulkChunk1_7_6(t, version, ms)
+	}
 
 	if version.ID < types.ProtocolVersions.MINECRAFT_1_9.ID {
 		return decodeBulkChunk1_8(t, version, ms)
@@ -934,12 +940,107 @@ func decodeBulkChunk1_8(t *testing.T, version types.ProtocolVersion, ms *streams
 		t.Fatalf("reading mask: %v", err)
 	}
 
-	mask := int64(uint16(rawMask)) << legacySectionsBelowZero
-
 	data, err := ms.ReadRest()
 	if err != nil {
 		t.Fatalf("reading the chunk's bytes: %v", err)
 	}
+
+	return decodeBulkData1_8(t, version, chunk, uint16(rawMask), data)
+}
+
+// decodeBulkChunk1_7_6 reads a chunk as 1.7.6 is sent it: a map chunk bulk
+// holding that one chunk, which counts one chunk in a short, says how long
+// the chunks' deflated bytes are, says the sky light is there, carries the
+// deflated bytes, and then names the chunk's coordinates and its two masks
+// as shorts, the second -- for the sections with blocks past a byte --
+// empty. The bytes inflate to every section's block ids, a byte each, then
+// every section's variants, a nibble each, then the light arrays and the
+// biomes as 1.8 lays them out. They are put back together into 1.8's
+// shorts and read as decodeBulkChunk1_8 reads them.
+func decodeBulkChunk1_7_6(t *testing.T, version types.ProtocolVersion, ms *streams.MinecraftStream) *clientboundPlay.LevelChunkWithLightClientboundPacket {
+	t.Helper()
+
+	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
+
+	if count, err := ms.ReadShort(); err != nil || count != 1 {
+		t.Fatalf("the bulk holds %d chunks, %v, want one", count, err)
+	}
+
+	deflatedLength, err := ms.ReadInt()
+	if err != nil {
+		t.Fatalf("reading the deflated length: %v", err)
+	}
+
+	skyLightSent, err := ms.ReadBoolean()
+	if err != nil || !skyLightSent {
+		t.Fatalf("sky light flag = %t, %v, want true: this server's chunks are the overworld's", skyLightSent, err)
+	}
+
+	deflated, err := ms.ReadBytes(deflatedLength)
+	if err != nil {
+		t.Fatalf("reading the deflated bytes: %v", err)
+	}
+
+	inflater, err := zlib.NewReader(bytes.NewReader(deflated))
+	if err != nil {
+		t.Fatalf("opening the deflated bytes: %v", err)
+	}
+
+	var inflated bytes.Buffer
+	if _, err := inflated.ReadFrom(inflater); err != nil {
+		t.Fatalf("inflating the chunk: %v", err)
+	}
+
+	if chunk.X, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading x: %v", err)
+	}
+
+	if chunk.Z, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading z: %v", err)
+	}
+
+	rawMask, err := ms.ReadShort()
+	if err != nil {
+		t.Fatalf("reading mask: %v", err)
+	}
+
+	if addMask, err := ms.ReadShort(); err != nil || addMask != 0 {
+		t.Fatalf("the mask of sections with blocks past a byte is %b, %v, want none", addMask, err)
+	}
+
+	if rest, err := ms.ReadRest(); err != nil || len(rest) != 0 {
+		t.Fatalf("%d bytes past the masks, %v", len(rest), err)
+	}
+
+	sent := bits.OnesCount16(uint16(rawMask))
+	narrow := inflated.Bytes()
+
+	if want := sent*(4096+3*2048) + 16*16; len(narrow) != want {
+		t.Fatalf("the chunk inflates to %d bytes for %d sections, want %d", len(narrow), sent, want)
+	}
+
+	// The ids and the variants back into 1.8's shorts, with the light and
+	// the biomes as they are.
+	data := make([]byte, 0, sent*(2*4096+2*2048)+16*16)
+	ids, variants := narrow[:sent*4096], narrow[sent*4096:sent*(4096+2048)]
+
+	for i, id := range ids {
+		variant := variants[i/2] >> (4 * (i % 2)) & 0xF
+		block := uint16(id)<<4 | uint16(variant)
+		data = append(data, byte(block), byte(block>>8))
+	}
+
+	data = append(data, narrow[sent*(4096+2048):]...)
+
+	return decodeBulkData1_8(t, version, chunk, uint16(rawMask), data)
+}
+
+// decodeBulkData1_8 reads one chunk's bytes as 1.8 lays them out in a map
+// chunk bulk into chunk, whose coordinates are read already.
+func decodeBulkData1_8(t *testing.T, version types.ProtocolVersion, chunk *clientboundPlay.LevelChunkWithLightClientboundPacket, rawMask uint16, data []byte) *clientboundPlay.LevelChunkWithLightClientboundPacket {
+	t.Helper()
+
+	mask := int64(rawMask) << legacySectionsBelowZero
 
 	sent := bits.OnesCount64(uint64(mask))
 	if want := sent*(2*4096+2*2048) + 16*16; len(data) != want {
