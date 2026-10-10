@@ -64,9 +64,13 @@ func completeLogin(client types.Client, profile types.GameProfile) error {
 	// Compression is announced before the success packet because the threshold
 	// has to reach the client before anything framed for it does. The registries
 	// that follow in the configuration phase are the bulk of what this
-	// connection will ever send.
-	if err := client.EnableCompression(compressionThreshold); err != nil {
-		return fmt.Errorf("failed to enable compression: %w", err)
+	// connection will ever send. A client from before there was a threshold to
+	// announce -- 1.7.6 -- is announced nothing, and everything it is sent goes
+	// out as it is: see HasCompression.
+	if client.ProtocolVersion().HasCompression() {
+		if err := client.EnableCompression(compressionThreshold); err != nil {
+			return fmt.Errorf("failed to enable compression: %w", err)
+		}
 	}
 
 	loginSuccess := clientboundLogin.LoginSuccessClientboundPacket{

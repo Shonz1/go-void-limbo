@@ -1630,7 +1630,7 @@ func TestHandlersRejectUnexpectedPacketType(t *testing.T) {
 // reads in play, then the rest of the join as any other version gets it.
 // Nothing is written in the login phase but the success packet itself.
 func TestHandleLoginStartServerboundPacketEntersPlayOnAVersionWithNoConfigurationPhase(t *testing.T) {
-	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_8, types.ProtocolVersions.MINECRAFT_1_9, types.ProtocolVersions.MINECRAFT_1_9_1, types.ProtocolVersions.MINECRAFT_1_9_2, types.ProtocolVersions.MINECRAFT_1_9_3, types.ProtocolVersions.MINECRAFT_1_10, types.ProtocolVersions.MINECRAFT_1_11, types.ProtocolVersions.MINECRAFT_1_11_1, types.ProtocolVersions.MINECRAFT_1_12, types.ProtocolVersions.MINECRAFT_1_12_1, types.ProtocolVersions.MINECRAFT_1_12_2, types.ProtocolVersions.MINECRAFT_1_13, types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2, types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4, types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2, types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1, types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20} {
+	for _, version := range []types.ProtocolVersion{types.ProtocolVersions.MINECRAFT_1_7_6, types.ProtocolVersions.MINECRAFT_1_8, types.ProtocolVersions.MINECRAFT_1_9, types.ProtocolVersions.MINECRAFT_1_9_1, types.ProtocolVersions.MINECRAFT_1_9_2, types.ProtocolVersions.MINECRAFT_1_9_3, types.ProtocolVersions.MINECRAFT_1_10, types.ProtocolVersions.MINECRAFT_1_11, types.ProtocolVersions.MINECRAFT_1_11_1, types.ProtocolVersions.MINECRAFT_1_12, types.ProtocolVersions.MINECRAFT_1_12_1, types.ProtocolVersions.MINECRAFT_1_12_2, types.ProtocolVersions.MINECRAFT_1_13, types.ProtocolVersions.MINECRAFT_1_13_1, types.ProtocolVersions.MINECRAFT_1_13_2, types.ProtocolVersions.MINECRAFT_1_14, types.ProtocolVersions.MINECRAFT_1_14_1, types.ProtocolVersions.MINECRAFT_1_14_2, types.ProtocolVersions.MINECRAFT_1_14_3, types.ProtocolVersions.MINECRAFT_1_14_4, types.ProtocolVersions.MINECRAFT_1_15, types.ProtocolVersions.MINECRAFT_1_15_1, types.ProtocolVersions.MINECRAFT_1_15_2, types.ProtocolVersions.MINECRAFT_1_16, types.ProtocolVersions.MINECRAFT_1_16_1, types.ProtocolVersions.MINECRAFT_1_16_2, types.ProtocolVersions.MINECRAFT_1_16_3, types.ProtocolVersions.MINECRAFT_1_16_4, types.ProtocolVersions.MINECRAFT_1_17, types.ProtocolVersions.MINECRAFT_1_17_1, types.ProtocolVersions.MINECRAFT_1_18, types.ProtocolVersions.MINECRAFT_1_18_2, types.ProtocolVersions.MINECRAFT_1_19, types.ProtocolVersions.MINECRAFT_1_19_1, types.ProtocolVersions.MINECRAFT_1_19_3, types.ProtocolVersions.MINECRAFT_1_19_4, types.ProtocolVersions.MINECRAFT_1_20} {
 		t.Run(version.Names[0], func(t *testing.T) {
 			entersPlayFromTheLogin(t, version)
 		})
@@ -1695,6 +1695,16 @@ func entersPlayFromTheLogin(t *testing.T, version types.ProtocolVersion) {
 
 	if client.joinedPlayerSync != 1 {
 		t.Errorf("joined the player sync %d times, want once", client.joinedPlayerSync)
+	}
+
+	// Compression is announced to every version that has a packet for it,
+	// which 1.7.6 has not: a 1.7.6 connection is never told a threshold.
+	if version.HasCompression() {
+		if !slices.Equal(client.compressionThresholds, []int32{compressionThreshold}) {
+			t.Errorf("enabled compression at %v, want the threshold announced once at %d", client.compressionThresholds, compressionThreshold)
+		}
+	} else if len(client.compressionThresholds) != 0 {
+		t.Errorf("enabled compression at %v, want none announced to a version with no packet for it", client.compressionThresholds)
 	}
 }
 
