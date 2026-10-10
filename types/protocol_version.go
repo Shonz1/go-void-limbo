@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_9     ProtocolVersion
 	MINECRAFT_1_9_1   ProtocolVersion
 	MINECRAFT_1_9_2   ProtocolVersion
 	MINECRAFT_1_9_3   ProtocolVersion
@@ -60,7 +61,26 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.9.1 has 108, its own, and is the oldest this server speaks. 1.9.2
+	// 1.9 has 107, its own, and is the oldest this server speaks. 1.9.1
+	// moved to 108 and shifted its jar's obfuscated names from the blocks'
+	// tile entities on, so the two were compared class by class with the
+	// names taken out. Every phase registers the same packets in the same
+	// order in both, and every registered packet is the same class with the
+	// names taken out but one, the play login: 1.9 reads its dimension as a
+	// byte where 1.9.1 reads an int, and nothing else in it moved. The
+	// packet buffer differs in the caps 1.9.1 put on its array readers,
+	// which read the same bytes; the data watcher reads a serializer's id as
+	// a byte where 1.9.1 reads a var int, which are the same byte for the
+	// ids there are; the chunk, the spawn player, the entity metadata, the
+	// entity's keys, the section, the block state container, the palettes,
+	// the bit array and the nibble arrays are the same classes with the
+	// names taken out; and the block state registry dumped slot by slot off
+	// the 1.9 jar is 1.9.1's to the last state. So 107 is 108 under every
+	// id, and the 1.9.1 step turns the login's dimension into a byte and
+	// carries everything else as it is.
+	MINECRAFT_1_9: ProtocolVersion{ID: 107, Names: []string{"1.9"}},
+
+	// 1.9.1 has 108, its own. 1.9.2
 	// moved to 109 without shifting its jar's obfuscated names: the two jars
 	// hold the same classes under the same names, and eighteen differ, every
 	// one for the version's number, its name or the data version its worlds
@@ -566,6 +586,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_9,
 	ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2,
 	ProtocolVersions.MINECRAFT_1_9_3,
@@ -624,6 +645,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_9.ID:     ProtocolVersions.MINECRAFT_1_9,
 	ProtocolVersions.MINECRAFT_1_9_1.ID:   ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2.ID:   ProtocolVersions.MINECRAFT_1_9_2,
 	ProtocolVersions.MINECRAFT_1_9_3.ID:   ProtocolVersions.MINECRAFT_1_9_3,
