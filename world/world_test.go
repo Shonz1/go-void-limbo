@@ -750,7 +750,8 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 // 1.18 would be sent, as decodeLegacyChunk does: the sections into 1.18's
 // layout, with the count worked out from the blocks, and the light into
 // 1.18's masks, where an array that holds no light at all is a section the
-// light is empty in. 1.13.2 is sent no heightmap, so none is read back.
+// light is empty in. 1.13.2 is sent no heightmap, so none is read back, and
+// 1.9.2 no count of block entities.
 func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
@@ -780,17 +781,21 @@ func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet
 		t.Fatalf("reading sections: %v", err)
 	}
 
-	blockEntities, err := ms.ReadVarInt()
-	if err != nil {
-		t.Fatalf("reading block entity count: %v", err)
-	}
+	// 1.9.3 is where the chunk grew its list of block entities; 1.9.2 reads a
+	// chunk that ends at its sections.
+	if version.ID >= types.ProtocolVersions.MINECRAFT_1_9_3.ID {
+		blockEntities, err := ms.ReadVarInt()
+		if err != nil {
+			t.Fatalf("reading block entity count: %v", err)
+		}
 
-	if blockEntities != 0 {
-		t.Fatalf("chunk carries %d block entities, want none", blockEntities)
+		if blockEntities != 0 {
+			t.Fatalf("chunk carries %d block entities, want none", blockEntities)
+		}
 	}
 
 	if rest, _ := ms.ReadRest(); len(rest) != 0 {
-		t.Fatalf("chunk holds %d bytes past its block entities", len(rest))
+		t.Fatalf("chunk holds %d bytes past its sections and block entities", len(rest))
 	}
 
 	blockStates, err := gamedata.BlockStatesFor(version)
