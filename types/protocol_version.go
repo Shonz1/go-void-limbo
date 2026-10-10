@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_9_1   ProtocolVersion
 	MINECRAFT_1_9_2   ProtocolVersion
 	MINECRAFT_1_9_3   ProtocolVersion
 	MINECRAFT_1_10    ProtocolVersion
@@ -59,7 +60,22 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.9.2 has 109, its own, and is the oldest this server speaks. 1.9.3
+	// 1.9.1 has 108, its own, and is the oldest this server speaks. 1.9.2
+	// moved to 109 without shifting its jar's obfuscated names: the two jars
+	// hold the same classes under the same names, and eighteen differ, every
+	// one for the version's number, its name or the data version its worlds
+	// are stamped with, but the packet buffer, whose reader of a var int
+	// array with no cap of its own caps the count at a quarter of the bytes
+	// left rather than at all of them -- a cap one packet reads under, the set
+	// passengers, which this server never sends. Every phase registers the
+	// same packets in the same order in both, and every registered packet is
+	// the same class with the names taken out; the block state registry
+	// dumped slot by slot off the 1.9.1 jar is 1.9.2's to the last state. So
+	// 108 is 109 under every id, and the 1.9.2 step carries everything as it
+	// is.
+	MINECRAFT_1_9_1: ProtocolVersion{ID: 108, Names: []string{"1.9.1"}},
+
+	// 1.9.2 has 109, its own. 1.9.3
 	// moved to 110 and shifted its jar's obfuscated names, so the two were
 	// compared class by class with the names taken out. Every phase registers
 	// the same packets in the same order in both but one: 1.9.2's play phase
@@ -550,6 +566,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2,
 	ProtocolVersions.MINECRAFT_1_9_3,
 	ProtocolVersions.MINECRAFT_1_10,
@@ -607,6 +624,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_9_1.ID:   ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2.ID:   ProtocolVersions.MINECRAFT_1_9_2,
 	ProtocolVersions.MINECRAFT_1_9_3.ID:   ProtocolVersions.MINECRAFT_1_9_3,
 	ProtocolVersions.MINECRAFT_1_10.ID:    ProtocolVersions.MINECRAFT_1_10,

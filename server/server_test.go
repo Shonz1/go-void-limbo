@@ -884,6 +884,7 @@ func TestStatusVersionIsTheClientsWhenThisServerSpeaksIt(t *testing.T) {
 		// client on either of them see a server it can join. The name is the
 		// first the version goes by, since a release that shares a protocol with
 		// another shares everything a client checks.
+		{name: "1.9.1", version: types.ProtocolVersions.MINECRAFT_1_9_1, want: types.ServerVersion{Name: "1.9.1", Protocol: types.ProtocolVersions.MINECRAFT_1_9_1.ID}},
 		{name: "1.9.2", version: types.ProtocolVersions.MINECRAFT_1_9_2, want: types.ServerVersion{Name: "1.9.2", Protocol: types.ProtocolVersions.MINECRAFT_1_9_2.ID}},
 		{name: "1.9.3", version: types.ProtocolVersions.MINECRAFT_1_9_3, want: types.ServerVersion{Name: "1.9.3", Protocol: types.ProtocolVersions.MINECRAFT_1_9_3.ID}},
 		{name: "1.10", version: types.ProtocolVersions.MINECRAFT_1_10, want: types.ServerVersion{Name: "1.10", Protocol: types.ProtocolVersions.MINECRAFT_1_10.ID}},
