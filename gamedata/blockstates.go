@@ -178,8 +178,9 @@ type blockStateProperty struct {
 // stored state's property 1.13's block lacks is passed over, as for any
 // version, so a world's TNT and corals resolve on 393 as well. 1.12.2 names
 // 1.13's table too, and goes through it to a number of its own, and 1.12.1,
-// 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1 and 1.9 with it: see blockIdsFiles.
+// 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 with it: see blockIdsFiles.
 var blockStatesFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_8.ID:     "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_9.ID:     "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_9_1.ID:   "blockstates_minecraft_1_13.json",
 	types.ProtocolVersions.MINECRAFT_1_9_2.ID:   "blockstates_minecraft_1_13.json",
@@ -304,7 +305,26 @@ var blockStatesFiles = map[types.ProtocolId]string{
 // off the two jars are the same to the last state, so 1.9.2 reads 1.9.3's
 // file, and 1.9.1, whose dump is 1.9.2's to the last state, reads it too, as
 // does 1.9, whose dump is 1.9.1's.
+//
+// 1.8 registers every block 1.9 does but the eighteen 1.9 added -- the end
+// rod, the chorus plant and flower, the purpur block, pillar, stairs and
+// slabs, the end bricks, the beetroots, the grass path, the end gateway, the
+// repeating and chain command blocks, the frosted ice and the structure
+// block -- and numbers every other slot as 1.9 does, which the two jars'
+// registries say when dumped slot by slot and read side by side: 1.9 took
+// properties off the fire and the tripwire and gave the double plant a
+// facing, which changed what a slot's state is called and not which block
+// and variant it is. The command block is the one block the two read a
+// slot of differently: 1.8 keeps whether it was triggered in its variant,
+// and 1.9 its facing, so every command block 1.13 names goes to 1.8 as the
+// untriggered one. So 1.8's file is 1.9.3's with the eighteen blocks' 205
+// states at -1, the command block's at 2192, and a count of 7,770 -- more
+// than 1.9's 5,154, since 1.8 registers every state its fire's three extra
+// properties make -- which still packs a directly-numbered section at
+// thirteen bits, not that a 1.8 section is ever packed: see the 1.9 step's
+// chunk transformer.
 var blockIdsFiles = map[types.ProtocolId]string{
+	types.ProtocolVersions.MINECRAFT_1_8.ID:    "blockids_minecraft_1_8.json",
 	types.ProtocolVersions.MINECRAFT_1_9.ID:    "blockids_minecraft_1_9_3.json",
 	types.ProtocolVersions.MINECRAFT_1_9_1.ID:  "blockids_minecraft_1_9_3.json",
 	types.ProtocolVersions.MINECRAFT_1_9_2.ID:  "blockids_minecraft_1_9_3.json",
@@ -325,7 +345,7 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // to the version before it without a hole. 1.20.3 is where grass became
 // short grass, so every version before it answers to both names, and 1.17 is
 // where the grass path became the dirt path, which 1.16.4, 1.16.3, 1.16.2,
-// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1 and 1.9 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
+// 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 answer to as well. 1.17 is also where the cauldron split by what it holds, and the
 // water cauldron of three levels is 1.16.4's cauldron at the same levels,
 // which holds nothing else: the one rename that narrows a block rather than
 // matching it, since 1.16.4's cauldron has an empty level the water cauldron
@@ -333,11 +353,19 @@ var blockIdsFiles = map[types.ProtocolId]string{
 // of the other woods it added, the wall sign the oak wall sign with them,
 // and the stone slab the smooth stone slab, which it looks like, for a
 // stone slab of plain stone to take its name: 1.13.2, 1.13.1, 1.13, 1.12.2,
-// 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1 and 1.9 answer
+// 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 answer
 // to the three newer names, and a world's slab of plain stone is 1.13.2's stone
 // slab by its own name, which draws it smooth, the one block 1.13.2 has for
 // either.
 var blockStateRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_8.ID: {
+		"minecraft:short_grass":       "minecraft:grass",
+		"minecraft:dirt_path":         "minecraft:grass_path",
+		"minecraft:water_cauldron":    "minecraft:cauldron",
+		"minecraft:oak_sign":          "minecraft:sign",
+		"minecraft:oak_wall_sign":     "minecraft:wall_sign",
+		"minecraft:smooth_stone_slab": "minecraft:stone_slab",
+	},
 	types.ProtocolVersions.MINECRAFT_1_9.ID: {
 		"minecraft:short_grass":       "minecraft:grass",
 		"minecraft:dirt_path":         "minecraft:grass_path",
@@ -532,6 +560,11 @@ var blockStateRenames = map[types.ProtocolId]map[string]string{
 // 1.11, on 1.10, on 1.9.3, on 1.9.2, on 1.9.1 and on 1.9, and one stored with
 // none does not.
 var blockStateValueRenames = map[types.ProtocolId]map[string]string{
+	types.ProtocolVersions.MINECRAFT_1_8.ID: {
+		"none": "false",
+		"low":  "true",
+		"tall": "true",
+	},
 	types.ProtocolVersions.MINECRAFT_1_9.ID: {
 		"none": "false",
 		"low":  "true",

@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_8     ProtocolVersion
 	MINECRAFT_1_9     ProtocolVersion
 	MINECRAFT_1_9_1   ProtocolVersion
 	MINECRAFT_1_9_2   ProtocolVersion
@@ -61,7 +62,38 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.9 has 107, its own, and is the oldest this server speaks. 1.9.1
+	// The ten releases of the 1.8 cycle share a protocol, 47, so a client on
+	// any of them is a client on this version, the oldest this server
+	// speaks. 1.9 moved to 107 and rebuilt the play phase: it registers its
+	// packets afresh in both directions, so no play id is 1.8's, which the
+	// id tables say, and the handshake, the status and the login phases are
+	// numbered and laid out alike. The 1.8 jar was read packet by packet, by
+	// the calls each makes on the byte buffer, beside 1.9's. Of the play
+	// packets this server sends, the keep alive, the login, the animate, the
+	// player list, the entity removal, the head rotation and the spawn
+	// position are laid out alike; and four are not, plus the chunk. The
+	// player position lacks the teleport id 1.9 put on its end, and a 1.8
+	// client acknowledges no teleport. The spawn player and the teleport
+	// hold a position as three ints of thirty-seconds of a block where 1.9
+	// holds three doubles, and the spawn player carries the held item as a
+	// short in front of the metadata as well. The entity metadata is the
+	// older form: each entry a byte that packs the kind in its top three
+	// bits and the index in the low five, then the value, and the run ends
+	// with 0x7F where 1.9 ends with 0xFF and names the kind in a var int of
+	// its own. And the chunk knows no palette: a section is its blocks as
+	// little-endian shorts, a block's number shifted up four bits with its
+	// variant in the low four, the sections' block light behind all of them
+	// and their sky light behind that, with the mask a short in front; and
+	// a whole chunk with no section in it is one the client unloads. Of
+	// what this server reads, the swing carries no hand, and the player
+	// command's actions stop at opening the inventory, which sits one lower
+	// than on 1.9. The blocks are 1.9's less the eighteen 1.9 added, under
+	// the same numbers: see package gamedata, and the 1.9 step's
+	// transformers.
+	MINECRAFT_1_8: ProtocolVersion{ID: 47, Names: []string{"1.8", "1.8.1", "1.8.2", "1.8.3", "1.8.4", "1.8.5", "1.8.6", "1.8.7", "1.8.8", "1.8.9"}},
+
+	// 1.9 has 107, its own: 1.8 sits on 47 below it, and the 1.9 step carries
+	// everything down to it. 1.9.1
 	// moved to 108 and shifted its jar's obfuscated names from the blocks'
 	// tile entities on, so the two were compared class by class with the
 	// names taken out. Every phase registers the same packets in the same
@@ -586,6 +618,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_8,
 	ProtocolVersions.MINECRAFT_1_9,
 	ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2,
@@ -645,6 +678,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_8.ID:     ProtocolVersions.MINECRAFT_1_8,
 	ProtocolVersions.MINECRAFT_1_9.ID:     ProtocolVersions.MINECRAFT_1_9,
 	ProtocolVersions.MINECRAFT_1_9_1.ID:   ProtocolVersions.MINECRAFT_1_9_1,
 	ProtocolVersions.MINECRAFT_1_9_2.ID:   ProtocolVersions.MINECRAFT_1_9_2,
@@ -749,7 +783,7 @@ func PreviousProtocolVersion(version ProtocolVersion) (ProtocolVersion, bool) {
 // HasConfigurationPhase reports whether a client on this version passes
 // through the configuration phase on its way from the login to the play
 // phase. 1.20.2 is where the phase appeared. A client before it -- 1.20,
-// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2 and 1.12.1 -- is in play the
+// 1.19.4, 1.19.3, 1.19.1, 1.19, 1.18.2, 1.18, 1.17.1, 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 -- is in play the
 // moment its login succeeds, with nothing acknowledged in between, and what the phase carries
 // from 1.20.2 on -- the registries and the tags -- reaches such a client
 // through the play phase instead: the registries inside the play login
@@ -761,7 +795,7 @@ func (v ProtocolVersion) HasConfigurationPhase() bool {
 // HasLoginPluginMessages reports whether a client on this version answers a
 // login plugin request, which is how a proxy with a forwarding secret is
 // asked for the login it holds. 1.13 is where the two packets appeared. A
-// client before it -- 1.12.2 or 1.12.1 -- has neither, and a request sent to
+// client before it -- 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 or 1.8 -- has neither, and a request sent to
 // one is a packet it cannot read; so a login on it goes the way one does when the
 // client says it has never heard of the channel, and a proxy in front of it
 // can forward only in the handshake.
@@ -776,7 +810,7 @@ func (v ProtocolVersion) HasLoginPluginMessages() bool {
 // signs the challenge under it and never encrypts it; a client without one
 // encrypts it as every version does. 1.19.3 is where the key left the login,
 // so from it on the challenge is always encrypted, and 1.18.2, 1.18, 1.17.1,
-// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2 and 1.12.1, from before the key, have nothing to sign with and encrypt it as well:
+// 1.17, 1.16.4, 1.16.3, 1.16.2, 1.16.1, 1.16, 1.15.2, 1.15.1, 1.15, 1.14.4, 1.14.3, 1.14.2, 1.14.1, 1.14, 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8, from before the key, have nothing to sign with and encrypt it as well:
 // 1.19 and 1.19.1 are the two versions that may sign. A signature is a thing this server
 // cannot check, since it does not keep the key the client sent with its
 // hello, and a version that may sign is a version whose response is let

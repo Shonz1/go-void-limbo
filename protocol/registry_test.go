@@ -330,7 +330,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 	}
 	login := &clientboundPlay.LoginClientboundPacket{EntityId: 1, Dimensions: []string{"minecraft:overworld"}, SpawnInfo: clientboundPlay.SpawnInfo{Dimension: "minecraft:overworld"}}
 
-	for _, version := range types.SupportedProtocolVersions[21:35] {
+	for _, version := range types.SupportedProtocolVersions[22:36] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -420,12 +420,12 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	// 1.15.2 reads nothing of a registry out of its login, 1.15.1 and 1.15
 	// below it read the same login, 1.14.4, 1.14.3, 1.14.2, 1.14.1 and 1.14 that login less its
-	// seed and its last flag, and 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1 and 1.9 theirs with the difficulty and
+	// seed and its last flag, and 1.13.2, 1.13.1, 1.13, 1.12.2, 1.12.1, 1.12, 1.11.1, 1.11, 1.10, 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 theirs with the difficulty and
 	// without the view distance, so theirs
 	// carries no version's: not the registries, not a dimension type, not a
 	// name. It comes down the same chain all the same, which refuses it
 	// above without what 1.16.1's login is made of.
-	for _, oldest := range types.SupportedProtocolVersions[:21] {
+	for _, oldest := range types.SupportedProtocolVersions[:22] {
 		body, err := NewDefaultRegistry(codecs).EncodeClientbound(types.PhasePlay, oldest, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", oldest.ID, err)
@@ -450,7 +450,7 @@ func TestEncodeClientboundWritesTheRegistriesIntoALoginBefore1_20_2(t *testing.T
 
 	codec := codecs
 
-	for _, version := range types.SupportedProtocolVersions[35:] {
+	for _, version := range types.SupportedProtocolVersions[36:] {
 		with, err := NewDefaultRegistry(codec).EncodeClientbound(types.PhasePlay, version, login)
 		if err != nil {
 			t.Fatalf("protocol %d: EncodeClientbound() error: %v", version.ID, err)
@@ -920,7 +920,7 @@ func TestTheChunkWithSectionLightArrivesAtTheStepAsTheTwoPackets1_14IsSent(t *te
 
 	light := &clientboundPlay.LightUpdateClientboundPacket{X: chunk.X, Z: chunk.Z, LightData: chunk.LightData}
 
-	for _, version := range types.SupportedProtocolVersions[13:] {
+	for _, version := range types.SupportedProtocolVersions[14:] {
 		body := func(packet types.ClientboundPacket) []byte {
 			t.Helper()
 
@@ -953,5 +953,135 @@ func TestTheChunkWithSectionLightArrivesAtTheStepAsTheTwoPackets1_14IsSent(t *te
 		if got := body(&clientboundPlay.LevelChunkWithSectionLightClientboundPacket{Chunk: chunk}); !bytes.Equal(got, want) {
 			t.Errorf("protocol %d: the chunk with section light is not the chunk and the light that version is sent", version.ID)
 		}
+	}
+}
+
+// 1.8 numbers the play phase its own way, read off its jar's
+// registrations: 1.9 registered the whole phase afresh in both directions.
+// The handshake, the status and the login phases are numbered as 1.9's,
+// and the chunk goes out as 1.8's map chunk bulk rather than its chunk
+// data, under the bulk's id. Five packets are laid out differently on the
+// way down, and two on the way up.
+func TestProtocol47IsNumberedByItsOwnJar(t *testing.T) {
+	older, newer := types.ProtocolVersions.MINECRAFT_1_8.ID, types.ProtocolVersions.MINECRAFT_1_9.ID
+
+	serverbound := map[reflect.Type]types.PacketId{
+		reflect.TypeOf(serverboundCommon.KeepAliveServerboundPacket{}):                0x00,
+		reflect.TypeOf(serverboundPlay.MovePlayerPositionServerboundPacket{}):         0x04,
+		reflect.TypeOf(serverboundPlay.MovePlayerPositionRotationServerboundPacket{}): 0x06,
+		reflect.TypeOf(serverboundPlay.MovePlayerRotationServerboundPacket{}):         0x05,
+		reflect.TypeOf(serverboundPlay.MovePlayerStatusServerboundPacket{}):           0x03,
+		reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}):              0x0B,
+		reflect.TypeOf(serverboundPlay.PlayerInputServerboundPacket{}):                0x0C,
+		reflect.TypeOf(serverboundPlay.PunchServerboundPacket{}):                      0x0A,
+	}
+
+	// 1.8 acknowledges no teleport: 1.9 is where the teleport took on its id.
+	serverboundAbsent := map[reflect.Type]bool{
+		reflect.TypeOf(serverboundPlay.AcceptTeleportationServerboundPacket{}): true,
+	}
+
+	for _, packet := range serverboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want, wantOk := newerId, newerOk
+		if packet.phase == types.PhasePlay {
+			if id, ok := serverbound[packet.packet]; ok {
+				want, wantOk = id, true
+			} else if serverboundAbsent[packet.packet] {
+				want, wantOk = 0, false
+			} else if newerOk {
+				t.Errorf("%s: no 1.8 id is expected of it, and 1.9 has one", packet.packet.Name())
+			}
+		}
+
+		if olderOk != wantOk || olderId != want {
+			t.Errorf("%s: 1.8 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, wantOk)
+		}
+	}
+
+	clientbound := map[reflect.Type]types.PacketId{
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}):                  0x0C,
+		reflect.TypeOf(clientboundPlay.SwingAnimationClientboundPacket{}):             0x0B,
+		reflect.TypeOf(clientboundPlay.EntityPositionSyncClientboundPacket{}):         0x18,
+		reflect.TypeOf(clientboundPlay.GameEventClientboundPacket{}):                  0x05,
+		reflect.TypeOf(clientboundCommon.KeepAliveClientboundPacket{}):                0x00,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}): 0x26,
+		reflect.TypeOf(clientboundPlay.LoginClientboundPacket{}):                      0x01,
+		reflect.TypeOf(clientboundPlay.PlayerInfoRemoveClientboundPacket{}):           0x38,
+		reflect.TypeOf(clientboundPlay.PlayerInfoUpdateClientboundPacket{}):           0x38,
+		reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}):             0x08,
+		reflect.TypeOf(clientboundPlay.RemoveEntitiesClientboundPacket{}):             0x13,
+		reflect.TypeOf(clientboundPlay.RotateHeadClientboundPacket{}):                 0x19,
+		reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}):              0x1C,
+	}
+
+	for _, packet := range clientboundPackets {
+		olderId, olderOk := packet.ids[older]
+		newerId, newerOk := packet.ids[newer]
+
+		want, wantOk := newerId, newerOk
+		if packet.phase == types.PhasePlay {
+			if id, ok := clientbound[packet.packet]; ok {
+				want, wantOk = id, true
+			} else if newerOk {
+				t.Errorf("%s: no 1.8 id is expected of it, and 1.9 has one", packet.packet.Name())
+			}
+		}
+
+		if olderOk != wantOk || olderId != want {
+			t.Errorf("%s: 1.8 has id %#x (%t), want %#x (%t)", packet.packet.Name(), olderId, olderOk, want, wantOk)
+		}
+	}
+
+	registry := NewDefaultRegistry(nil)
+
+	upgraded := map[reflect.Type]bool{}
+	for key := range registry.upgrades {
+		if key.ProtocolID == older {
+			upgraded[key.PacketType] = true
+		}
+	}
+
+	wantUpgraded := map[reflect.Type]bool{
+		reflect.TypeOf(serverboundPlay.PunchServerboundPacket{}):         true,
+		reflect.TypeOf(serverboundPlay.PlayerCommandServerboundPacket{}): true,
+	}
+
+	if !reflect.DeepEqual(upgraded, wantUpgraded) {
+		t.Errorf("the upgrades registered from 1.8 are %v, want the swing and the player command", upgraded)
+	}
+
+	downgraded := map[reflect.Type]bool{}
+	for key := range registry.downgrades {
+		if key.ProtocolID == newer {
+			downgraded[key.PacketType] = true
+		}
+	}
+
+	wantDowngraded := map[reflect.Type]bool{
+		reflect.TypeOf(clientboundPlay.PlayerPositionClientboundPacket{}):             true,
+		reflect.TypeOf(clientboundPlay.EntityPositionSyncClientboundPacket{}):         true,
+		reflect.TypeOf(clientboundPlay.AddEntityClientboundPacket{}):                  true,
+		reflect.TypeOf(clientboundPlay.SetEntityDataClientboundPacket{}):              true,
+		reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}): true,
+	}
+
+	if !reflect.DeepEqual(downgraded, wantDowngraded) {
+		t.Errorf("the downgrades registered at 1.9 are %v, want the player position, the teleport, the spawn player, the entity metadata and the chunk", downgraded)
+	}
+
+	// The player position comes out of the chain as 1.8 reads it: the
+	// position, the rotation and the flags, with no teleport id behind.
+	position := &clientboundPlay.PlayerPositionClientboundPacket{X: 8.5, Y: 65, Z: 8.5, Yaw: 90, TeleportId: 7}
+
+	body, err := registry.EncodeClientbound(types.PhasePlay, types.ProtocolVersions.MINECRAFT_1_8, position)
+	if err != nil {
+		t.Fatalf("EncodeClientbound() error: %v", err)
+	}
+
+	if body[0] != 0x08 || len(body) != 1+3*8+2*4+1 {
+		t.Errorf("the player position is % x, want id 0x08 and thirty-three bytes behind it", body)
 	}
 }
