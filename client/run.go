@@ -166,7 +166,7 @@ func (c *Client) SendKeepAlive() error {
 	// Any id the answer can be matched against works. The clock is what vanilla
 	// uses, and it never repeats a value inside a connection. The low
 	// thirty-two bits of it, widened with their sign, is what fits a 1.12.1
-	// 1.12, 1.11.1, 1.11 or 1.10 client, which reads the id as a var int where every later
+	// 1.12, 1.11.1, 1.11, 1.10 or 1.9.3 client, which reads the id as a var int where every later
 	// version reads a long, and is carried to it by the 1.12.2 step: an id of more bits than
 	// its var int holds would come back as a number matching nothing. Those
 	// bits wrap once in forty-nine days, which is as unique as a connection

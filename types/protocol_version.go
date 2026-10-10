@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_9_3   ProtocolVersion
 	MINECRAFT_1_10    ProtocolVersion
 	MINECRAFT_1_11    ProtocolVersion
 	MINECRAFT_1_11_1  ProtocolVersion
@@ -57,8 +58,36 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.10 has 210, shared with 1.10.1 and 1.10.2, and is the oldest this
-	// server speaks. 1.11 moved to 315 over the exploration update, and the
+	// 1.9.3 has 110, shared with 1.9.4, and is the oldest this server speaks.
+	// 1.10 moved to 210 over the frostburn update, and the two jars were
+	// compared class by class with the names taken out: every phase registers
+	// the same packets in the same order in both -- one handshake, thirty
+	// serverbound and seventy-six clientbound play packets, two and two
+	// status, two and four login -- so not an id moved, and of the eight
+	// registered packets whose class differs, none is one this server speaks:
+	// the resource pack status lost its hash, the two sound effects' pitch
+	// went from a byte to a float, the plugin message checks its payload for
+	// null, the spawn mob and the entity velocity clamp their velocity by a
+	// constant rather than a variable, the destroy entities writes its ids
+	// through an index rather than an iterator, and the tab complete's field
+	// turned final. The chunk packet, the spawn player, the entity metadata,
+	// the data watcher and its serializers are the same classes with the
+	// names taken out, as are the palettes, the bit array and the nibble
+	// arrays; the block state container zeroes its bits before setting them
+	// and the section's fields turned final, neither on the wire; the packet
+	// buffer writes its arrays through an index rather than an iterator; and
+	// the entity's flags are the first thing it defines in both, 1.10 adding
+	// a sixth boolean -- no gravity -- behind the five 1.9.3 defines. So 110
+	// is 210 under the same ids: 1.12.2's chunk, its keep alive carried
+	// across the 1.12.2 step, no tags, a login that cannot be asked, and
+	// 1.10's block numbers but for the five blocks 1.10 added -- the magma
+	// block, the nether wart block, the red nether bricks, the bone block and
+	// the structure void -- which 1.9.3 has no number for: see package
+	// gamedata.
+	MINECRAFT_1_9_3: ProtocolVersion{ID: 110, Names: []string{"1.9.3", "1.9.4"}},
+
+	// 1.10 has 210, shared with 1.10.1 and 1.10.2. 1.11 moved to 315 over
+	// the exploration update, and the
 	// two jars were compared class by class with the names taken out: every
 	// phase registers the same packets in the same order in both -- one
 	// handshake, thirty serverbound and seventy-six clientbound play packets,
@@ -495,6 +524,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_9_3,
 	ProtocolVersions.MINECRAFT_1_10,
 	ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1,
@@ -550,6 +580,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_9_3.ID:   ProtocolVersions.MINECRAFT_1_9_3,
 	ProtocolVersions.MINECRAFT_1_10.ID:    ProtocolVersions.MINECRAFT_1_10,
 	ProtocolVersions.MINECRAFT_1_11.ID:    ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1.ID:  ProtocolVersions.MINECRAFT_1_11_1,
