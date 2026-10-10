@@ -9,6 +9,7 @@ func TestGetProtocolVersionById(t *testing.T) {
 		want ProtocolVersion
 	}{
 		{"zero", ProtocolVersions.ZERO.ID, ProtocolVersions.ZERO},
+		{"minecraft_1_10", ProtocolVersions.MINECRAFT_1_10.ID, ProtocolVersions.MINECRAFT_1_10},
 		{"minecraft_1_11", ProtocolVersions.MINECRAFT_1_11.ID, ProtocolVersions.MINECRAFT_1_11},
 		{"minecraft_1_11_1", ProtocolVersions.MINECRAFT_1_11_1.ID, ProtocolVersions.MINECRAFT_1_11_1},
 		{"minecraft_1_12", ProtocolVersions.MINECRAFT_1_12.ID, ProtocolVersions.MINECRAFT_1_12},
@@ -304,10 +305,10 @@ func TestIsSupportedProtocolVersion(t *testing.T) {
 }
 
 // 1.20.2 is where the configuration phase appeared: every version from it on
-// passes through the phase, and the thirty versions below it go from their
+// passes through the phase, and the thirty-one versions below it go from their
 // login straight into play.
 func TestHasConfigurationPhase(t *testing.T) {
-	for _, version := range SupportedProtocolVersions[:30] {
+	for _, version := range SupportedProtocolVersions[:31] {
 		if version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has a configuration phase, want the login to lead straight into play", version.ID)
 		}
@@ -345,7 +346,7 @@ func TestHasConfigurationPhase(t *testing.T) {
 		t.Error("1.17.1 has a configuration phase, want the login to lead straight into play")
 	}
 
-	for _, version := range SupportedProtocolVersions[30:] {
+	for _, version := range SupportedProtocolVersions[31:] {
 		if !version.HasConfigurationPhase() {
 			t.Errorf("protocol %d has no configuration phase, want one on every version from 1.20.2", version.ID)
 		}
@@ -357,9 +358,13 @@ func TestHasConfigurationPhase(t *testing.T) {
 }
 
 // 1.13 is where the login plugin messages appeared: 1.12.2, 1.12.1, 1.12,
-// 1.11.1 and 1.11 below it have none, and every version from it on answers a
-// request.
+// 1.11.1, 1.11 and 1.10 below it have none, and every version from it on
+// answers a request.
 func TestHasLoginPluginMessages(t *testing.T) {
+	if ProtocolVersions.MINECRAFT_1_10.HasLoginPluginMessages() {
+		t.Error("1.10 has login plugin messages, want a client that has no packet for them")
+	}
+
 	if ProtocolVersions.MINECRAFT_1_11.HasLoginPluginMessages() {
 		t.Error("1.11 has login plugin messages, want a client that has no packet for them")
 	}
@@ -380,7 +385,7 @@ func TestHasLoginPluginMessages(t *testing.T) {
 		t.Error("1.12.2 has login plugin messages, want a client that has no packet for them")
 	}
 
-	for _, version := range SupportedProtocolVersions[5:] {
+	for _, version := range SupportedProtocolVersions[6:] {
 		if !version.HasLoginPluginMessages() {
 			t.Errorf("protocol %d has no login plugin messages, want them on every version from 1.13", version.ID)
 		}
@@ -413,7 +418,7 @@ func TestMaySignEncryptionChallenge(t *testing.T) {
 		t.Error("1.19.1 may not sign the encryption challenge, want a client with a profile key allowed to")
 	}
 
-	for _, version := range SupportedProtocolVersions[27:] {
+	for _, version := range SupportedProtocolVersions[28:] {
 		if version.MaySignEncryptionChallenge() {
 			t.Errorf("protocol %d may sign the encryption challenge, want every version from 1.19.3 to encrypt it", version.ID)
 		}

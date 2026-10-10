@@ -9,6 +9,7 @@ type ProtocolVersion struct {
 
 var ProtocolVersions = struct {
 	ZERO              ProtocolVersion
+	MINECRAFT_1_10    ProtocolVersion
 	MINECRAFT_1_11    ProtocolVersion
 	MINECRAFT_1_11_1  ProtocolVersion
 	MINECRAFT_1_12    ProtocolVersion
@@ -56,7 +57,30 @@ var ProtocolVersions = struct {
 }{
 	ZERO: ProtocolVersion{ID: 0, Names: []string{}},
 
-	// 1.11 has 315 to itself, and is the oldest this server speaks. 1.11.1
+	// 1.10 has 210, shared with 1.10.1 and 1.10.2, and is the oldest this
+	// server speaks. 1.11 moved to 315 over the exploration update, and the
+	// two jars were compared class by class with the names taken out: every
+	// phase registers the same packets in the same order in both -- one
+	// handshake, thirty serverbound and seventy-six clientbound play packets,
+	// two and two status, two and four login -- so not an id moved, and of the
+	// fourteen registered packets whose class differs, three are ones this
+	// server speaks, and each differs outside what it writes: the spawn player
+	// caches its metadata list on 1.10 and reads it fresh on 1.11, the chunk
+	// works out whether its world has a sky one way and the other, and the
+	// entity metadata clears its dirty flag on 1.11 and not on 1.10. The
+	// chunk's sections, their palettes, the bit array and the nibble arrays
+	// are the same classes with the names taken out, as are the metadata
+	// serializers and their order, in which the byte is the first registered,
+	// and the entity's flags are the first thing it defines in both. The
+	// packet buffer differs in reading an item stack, which 1.11 made empty
+	// rather than null, and in the wording of an error. So 210 is 315 under
+	// the same ids: 1.12.2's chunk, its keep alive carried across the 1.12.2
+	// step, no tags, a login that cannot be asked, and 1.11.1's block numbers
+	// but for the seventeen blocks 1.11 added -- the observer and the sixteen
+	// shulker boxes -- which 1.10 has no number for: see package gamedata.
+	MINECRAFT_1_10: ProtocolVersion{ID: 210, Names: []string{"1.10", "1.10.1", "1.10.2"}},
+
+	// 1.11 has 315 to itself. 1.11.1
 	// moved to 316 over nothing on the wire: the two jars register the same
 	// packets in the same order in every phase and direction -- one
 	// handshake, thirty serverbound and seventy-six clientbound play packets,
@@ -471,6 +495,7 @@ var ProtocolVersions = struct {
 // ZERO is not among them. It is what a connection speaks before its handshake
 // says otherwise, which is not a version anything is transformed to or from.
 var SupportedProtocolVersions = []ProtocolVersion{
+	ProtocolVersions.MINECRAFT_1_10,
 	ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12,
@@ -525,6 +550,7 @@ var LatestProtocolVersion = SupportedProtocolVersions[len(SupportedProtocolVersi
 
 var protocolVersionsById = map[ProtocolId]ProtocolVersion{
 	ProtocolVersions.ZERO.ID:              ProtocolVersions.ZERO,
+	ProtocolVersions.MINECRAFT_1_10.ID:    ProtocolVersions.MINECRAFT_1_10,
 	ProtocolVersions.MINECRAFT_1_11.ID:    ProtocolVersions.MINECRAFT_1_11,
 	ProtocolVersions.MINECRAFT_1_11_1.ID:  ProtocolVersions.MINECRAFT_1_11_1,
 	ProtocolVersions.MINECRAFT_1_12.ID:    ProtocolVersions.MINECRAFT_1_12,
