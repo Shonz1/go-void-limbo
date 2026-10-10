@@ -9,7 +9,7 @@ import (
 
 // The 1.12.2 step is where the keep alive's id became a long. 1.12.1 below
 // it reads a var int there and sends one back, and 1.12, 1.11.1, 1.11, 1.10,
-// 1.9.3, 1.9.2, 1.9.1 and 1.9 below that read and send the same packet, so what goes to
+// 1.9.3, 1.9.2, 1.9.1, 1.9 and 1.8 below that read and send the same packet, so what goes to
 // 1.12.1 goes on to them as it is. The keep alive is the whole of what
 // 1.12.1 and 1.12.2 differ in on the wire: of the fifty classes 1.12.2's jar
 // changed, three are packets -- the two keep alives, and the handshake for

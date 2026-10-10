@@ -751,13 +751,18 @@ func decodeLegacyChunk(t *testing.T, version types.ProtocolVersion, lightPacket,
 // layout, with the count worked out from the blocks, and the light into
 // 1.18's masks, where an array that holds no light at all is a section the
 // light is empty in. 1.13.2 is sent no heightmap, so none is read back, and
-// 1.9.2, 1.9.1 and 1.9 no count of block entities.
+// 1.9.2, 1.9.1 and 1.9 no count of block entities. 1.8 is sent the chunk as
+// a map chunk bulk of one, laid out another way again: see decodeBulkChunk1_8.
 func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet types.ClientboundPacket) *clientboundPlay.LevelChunkWithLightClientboundPacket {
 	t.Helper()
 
 	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
 
 	ms := openPrepared(t, version, packet, reflect.TypeOf(clientboundPlay.LevelChunkWithSectionLightClientboundPacket{}))
+
+	if version.ID < types.ProtocolVersions.MINECRAFT_1_9.ID {
+		return decodeBulkChunk1_8(t, version, ms)
+	}
 
 	var err error
 
@@ -883,6 +888,137 @@ func decodeSectionLightChunk(t *testing.T, version types.ProtocolVersion, packet
 
 	if r.pos != len(r.data) {
 		t.Fatalf("section buffer holds %d bytes past the sections the mask names", len(r.data)-r.pos)
+	}
+
+	all := int64(1)<<lightSectionCount - 1
+	chunk.SkyLightMask, chunk.EmptySkyLightMask = []int64{skyMask}, []int64{all &^ skyMask}
+	chunk.BlockLightMask, chunk.EmptyBlockLightMask = []int64{blockMask}, []int64{all &^ blockMask}
+
+	return chunk
+}
+
+// decodeBulkChunk1_8 reads a chunk as 1.8 is sent it: a map chunk bulk
+// holding that one chunk, which says the sky light is there, counts one
+// chunk, names its coordinates and its mask -- a short -- and carries its
+// bytes with no count in front, since the mask says how many there are:
+// every section's blocks as little-endian shorts, then every section's
+// block light, then every section's sky light, then the biomes, a byte for
+// each column. It is read back into the packet 1.18 would be sent, as
+// decodeSectionLightChunk does, with each section's blocks laid out as a
+// container that packs its ids directly, which is the one form the section
+// decoder reads a short's worth of ids in.
+func decodeBulkChunk1_8(t *testing.T, version types.ProtocolVersion, ms *streams.MinecraftStream) *clientboundPlay.LevelChunkWithLightClientboundPacket {
+	t.Helper()
+
+	chunk := &clientboundPlay.LevelChunkWithLightClientboundPacket{}
+
+	skyLightSent, err := ms.ReadBoolean()
+	if err != nil || !skyLightSent {
+		t.Fatalf("sky light flag = %t, %v, want true: this server's chunks are the overworld's", skyLightSent, err)
+	}
+
+	if count, err := ms.ReadVarInt(); err != nil || count != 1 {
+		t.Fatalf("the bulk holds %d chunks, %v, want one", count, err)
+	}
+
+	if chunk.X, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading x: %v", err)
+	}
+
+	if chunk.Z, err = ms.ReadInt(); err != nil {
+		t.Fatalf("reading z: %v", err)
+	}
+
+	rawMask, err := ms.ReadShort()
+	if err != nil {
+		t.Fatalf("reading mask: %v", err)
+	}
+
+	mask := int64(uint16(rawMask)) << legacySectionsBelowZero
+
+	data, err := ms.ReadRest()
+	if err != nil {
+		t.Fatalf("reading the chunk's bytes: %v", err)
+	}
+
+	sent := bits.OnesCount64(uint64(mask))
+	if want := sent*(2*4096+2*2048) + 16*16; len(data) != want {
+		t.Fatalf("the chunk is %d bytes for %d sections, want %d", len(data), sent, want)
+	}
+
+	blockStates, err := gamedata.BlockStatesFor(version)
+	if err != nil {
+		t.Fatalf("BlockStatesFor() error: %v", err)
+	}
+
+	// The blocks of every section the mask names come first.
+	wireBits := bits.Len(uint(blockStates.StateCount() - 1))
+	perLong := 64 / wireBits
+	longCount := (4096 + perLong - 1) / perLong
+
+	pos := 0
+	for i := 0; i < sectionCount; i++ {
+		if mask&(1<<i) == 0 {
+			chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+			continue
+		}
+
+		blockCount := int32(0)
+		longs := make([]uint64, longCount)
+
+		for j := range 4096 {
+			id := uint64(data[pos]) | uint64(data[pos+1])<<8
+			pos += 2
+
+			if id != 0 {
+				blockCount++
+			}
+
+			longs[j/perLong] |= id << ((j % perLong) * wireBits)
+		}
+
+		if blockCount == 0 {
+			t.Fatalf("section %d is sent holding no block, which the mask leaves out", i)
+		}
+
+		chunk.SectionData = append(chunk.SectionData, byte(blockCount>>8), byte(blockCount), byte(wireBits))
+		chunk.SectionData = streams.AppendVarInt(chunk.SectionData, int32(longCount))
+		for _, long := range longs {
+			chunk.SectionData = binary.BigEndian.AppendUint64(chunk.SectionData, long)
+		}
+
+		chunk.SectionData = append(chunk.SectionData, 0x00, 0x00, 0x00)
+	}
+
+	// Then every section's block light, then every section's sky light,
+	// each named from one section below the lowest.
+	skyMask, blockMask := int64(0), int64(0)
+
+	for _, light := range []struct {
+		mask   *int64
+		arrays *[][]byte
+	}{{&blockMask, &chunk.BlockLight}, {&skyMask, &chunk.SkyLight}} {
+		for i := 0; i < sectionCount; i++ {
+			if mask&(1<<i) == 0 {
+				continue
+			}
+
+			array := data[pos : pos+2048]
+			pos += 2048
+
+			if !bytes.Equal(array, make([]byte, 2048)) {
+				*light.mask |= int64(1) << (i + 1)
+				*light.arrays = append(*light.arrays, array)
+			}
+		}
+	}
+
+	for i := range 16 * 16 {
+		if data[pos] != 1 {
+			t.Fatalf("biome %d = %d, want 1, the client's own plains", i, data[pos])
+		}
+
+		pos++
 	}
 
 	all := int64(1)<<lightSectionCount - 1
